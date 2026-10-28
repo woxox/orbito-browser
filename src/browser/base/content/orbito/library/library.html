@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; img-src chrome: data:; object-src 'none'"
+    />
+    <title data-l10n-id="orbito-library-page-title">Orbito Library</title>
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link rel="stylesheet" href="chrome://browser/skin/orbito/tokens.css" />
+    <!-- The settings page's layout, cards and hints. -->
+    <link rel="stylesheet" href="chrome://browser/content/orbito/settings/settings.css" />
+    <link rel="stylesheet" href="chrome://browser/content/orbito/library/library.css" />
+    <script src="chrome://browser/content/orbito/library/library.js"></script>
+    <link rel="localization" href="orbito/pages.ftl" />
+  </head>
+  <body>
+    <main>
+      <h1 data-l10n-id="orbito-library-heading">Library</h1>
+      <p class="hint" data-l10n-id="orbito-library-timeline-hint">
+        <a id="open-timeline" class="link" href="#" role="button" data-l10n-name="open-timeline"></a>
+      </p>
+      <input
+        id="search"
+        type="search"
+        data-l10n-id="orbito-library-search"
+        placeholder="Search documents and Threads"
+        aria-label="Search"
+      />
+      <div id="tools">
+        <div id="tabs" role="tablist">
+          <button id="tab-artifacts" role="tab" aria-controls="artifacts" aria-selected="true">
+            <span data-l10n-id="orbito-library-tab-documents">Documents</span> <span class="count"></span>
+          </button>
+          <button id="tab-threads" role="tab" aria-controls="threads" aria-selected="false">
+            <span data-l10n-id="orbito-library-tab-threads">Threads</span> <span class="count"></span>
+          </button>
+        </div>
+        <!-- Both lists show the documents and Threads of this Space or of all. -->
+        <div id="scope" role="group" data-l10n-id="orbito-library-scope" aria-label="Show" hidden>
+          <button data-scope="space" aria-pressed="true" data-l10n-id="orbito-library-this-space">This Space</button>
+          <button data-scope="all" aria-pressed="false" data-l10n-id="orbito-library-all-spaces">All Spaces</button>
+        </div>
+      </div>
+
+      <section id="artifacts" role="tabpanel">
+        <ul class="cards"></ul>
+        <p class="hint empty"></p>
+      </section>
+
+      <section id="threads" role="tabpanel" hidden>
+        <ul class="cards"></ul>
+        <p class="hint empty"></p>
+      </section>
+    </main>
+  </body>
+</html>

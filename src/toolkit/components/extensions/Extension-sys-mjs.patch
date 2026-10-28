@@ -1,0 +1,56 @@
+diff --git a/toolkit/components/extensions/Extension.sys.mjs b/toolkit/components/extensions/Extension.sys.mjs
+index 6e813967d5bb2d53fa8c4c85dada82e985757daf..12adca66af10618408d9552e18d0a6e180a8dc69 100644
+--- a/toolkit/components/extensions/Extension.sys.mjs
++++ b/toolkit/components/extensions/Extension.sys.mjs
+@@ -4678,7 +4678,12 @@ export class Langpack extends ExtensionData {
+ 
+   async startup() {
+     this.chromeRegistryHandle = null;
+-    if (this.startupData.chromeEntries.length) {
++    // Orbito: Firefox's langpacks bring Firefox's branding; the app's own
++    // (in English, for every language) stays instead.
++    const chromeEntries = this.startupData.chromeEntries.filter(
++      ([type, pkg]) => !(type == "locale" && pkg == "branding")
++    );
++    if (chromeEntries.length) {
+       const manifestURI = Services.io.newURI(
+         "manifest.json",
+         null,
+@@ -4686,7 +4691,7 @@ export class Langpack extends ExtensionData {
+       );
+       this.chromeRegistryHandle = lazy.aomStartup.registerChrome(
+         manifestURI,
+-        this.startupData.chromeEntries
++        chromeEntries
+       );
+     }
+ 
+@@ -4705,6 +4710,20 @@ export class Langpack extends ExtensionData {
+       );
+     });
+ 
++    // Orbito: last in the langpack's metasource, where a later source wins,
++    // so the app's branding/brand.ftl is the one used.
++    const appBranding = "resource://app/localization/en-US/";
++    fileSources.push(
++      new L10nFileSource(
++        `orbito-branding-${langpackId}`,
++        langpackId,
++        this.startupData.languages,
++        appBranding,
++        {},
++        [`${appBranding}branding/brand.ftl`]
++      )
++    );
++
+     L10nRegistry.getInstance().registerSources(fileSources);
+ 
+     Langpack.activeLangpackIds.add(langpackId);
+@@ -4725,6 +4744,7 @@ export class Langpack extends ExtensionData {
+     const sourcesToRemove = Object.keys(
+       this.startupData.l10nRegistrySources
+     ).map(sourceName => `${sourceName}-${this.startupData.langpackId}`);
++    sourcesToRemove.push(`orbito-branding-${this.startupData.langpackId}`);
+     L10nRegistry.getInstance().removeSources(sourcesToRemove);
+ 
+     if (this.chromeRegistryHandle) {

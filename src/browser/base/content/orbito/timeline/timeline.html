@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; img-src chrome: data:; object-src 'none'"
+    />
+    <title data-l10n-id="orbito-timeline-page-title"></title>
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link rel="stylesheet" href="chrome://browser/skin/orbito/tokens.css" />
+    <!-- The settings page's layout, cards and hints. -->
+    <link rel="stylesheet" href="chrome://browser/content/orbito/settings/settings.css" />
+    <link rel="stylesheet" href="chrome://browser/content/orbito/timeline/timeline.css" />
+    <script src="chrome://browser/content/orbito/timeline/timeline.js"></script>
+    <link rel="localization" href="orbito/pages.ftl" />
+  </head>
+  <body>
+    <main>
+      <h1 data-l10n-id="orbito-timeline-heading"></h1>
+      <p class="hint" data-l10n-id="orbito-timeline-hint">
+        <a id="open-settings" class="link" href="#" role="button" data-l10n-name="open-settings"></a>
+      </p>
+      <input id="search" type="search" data-l10n-id="orbito-timeline-search" />
+      <div id="days"></div>
+      <p id="empty" class="hint" hidden></p>
+      <div id="more" aria-hidden="true"></div>
+    </main>
+  </body>
+</html>

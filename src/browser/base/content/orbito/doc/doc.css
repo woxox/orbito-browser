@@ -1,0 +1,172 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The document page. Markdown blocks look like the panel's, given room. */
+
+:root {
+  --doc-muted: light-dark(#5b5b66, #b3b3bd);
+  --doc-hairline: light-dark(#d7d7db, #4a4a55);
+  --doc-fill: light-dark(#f2f2f5, #2b2a33);
+  --doc-accent: light-dark(#5b4bdb, #a99cff);
+  color-scheme: light dark;
+  font: 16px/1.6 system-ui, sans-serif;
+  background: light-dark(#fff, #1c1b22);
+  color: light-dark(#15141a, #fbfbfe);
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 48px 24px;
+}
+
+main {
+  width: min(860px, 100%);
+  overflow-wrap: anywhere;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+#sources,
+#status,
+#actions,
+#history,
+#error {
+  color: var(--doc-muted);
+  font-size: 13px;
+}
+
+#actions,
+#history {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+/* The PDF holds the document, not the page's controls. */
+@media print {
+  #actions,
+  #history,
+  #error {
+    display: none !important;
+  }
+
+  body {
+    padding: 0;
+  }
+}
+
+article {
+  margin-top: 24px;
+
+  p,
+  ul,
+  ol,
+  pre,
+  blockquote,
+  table {
+    margin: 0 0 14px;
+  }
+
+  ul,
+  ol {
+    padding-inline-start: 24px;
+  }
+
+  li > :last-child {
+    margin-bottom: 0;
+  }
+
+  h3,
+  h4,
+  h5 {
+    margin: 24px 0 8px;
+    line-height: 1.3;
+  }
+
+  h3 {
+    font-size: 21px;
+  }
+
+  h4 {
+    font-size: 17px;
+  }
+
+  h5 {
+    font-size: 15px;
+    color: var(--doc-muted);
+  }
+
+  a {
+    color: var(--doc-accent);
+  }
+
+  del {
+    color: var(--doc-muted);
+  }
+
+  blockquote {
+    padding-inline-start: 14px;
+    border-inline-start: 3px solid var(--doc-hairline);
+    color: var(--doc-muted);
+  }
+
+  hr {
+    margin: 20px 0;
+    border: none;
+    border-top: 1px solid var(--doc-hairline);
+  }
+
+  table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th,
+  td {
+    min-width: 4em;
+    padding: 6px 10px;
+    border: 1px solid var(--doc-hairline);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  th {
+    background: var(--doc-fill);
+    font-weight: 600;
+  }
+
+  code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--doc-fill);
+    font-family: ui-monospace, monospace;
+    font-size: 0.9em;
+  }
+
+  pre {
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--doc-fill);
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      background: none;
+    }
+  }
+}

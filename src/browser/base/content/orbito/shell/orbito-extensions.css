@@ -1,0 +1,59 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* On top of top-bar-panel.css. */
+
+.icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.extension[aria-disabled="true"] {
+  color: var(--orbito-page-text-muted);
+
+  & .icon {
+    opacity: 0.5;
+  }
+}
+
+/* The extension's badge, as on its toolbar button. */
+.badge {
+  flex: none;
+  min-width: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background-color: var(--orbito-page-sunk);
+  color: var(--orbito-page-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.empty {
+  padding: 6px 10px 8px;
+}
+
+.empty-title {
+  font-weight: 600;
+}
+
+/* An extension's row, and its panel button after it. */
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+
+  & > .extension {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.side-panel {
+  flex: none;
+  width: auto;
+  padding-inline: 4px;
+}

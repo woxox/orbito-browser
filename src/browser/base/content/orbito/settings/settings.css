@@ -1,0 +1,484 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+/* The page takes Orbito's tokens (tokens.css): its colors, and the accent
+ * for Firefox's in-content controls (buttons, links, checkboxes, focus). */
+:root {
+  --color-accent-primary: var(--orbito-accent);
+  --color-accent-primary-hover: color-mix(in oklab, var(--orbito-accent) 88%, var(--orbito-page-text));
+  --color-accent-primary-active: color-mix(in oklab, var(--orbito-accent) 76%, var(--orbito-page-text));
+  --text-color-accent-primary-selected: var(--orbito-accent-ink);
+  --button-text-color-primary: var(--orbito-accent-ink);
+  --button-text-color-primary-hover: var(--orbito-accent-ink);
+  --button-text-color-primary-active: var(--orbito-accent-ink);
+  --focus-outline-color: var(--orbito-accent);
+  --link-color: var(--orbito-accent);
+  --link-color-hover: var(--orbito-accent);
+  --link-color-active: var(--orbito-accent);
+}
+
+:root,
+body {
+  background-color: var(--orbito-page);
+}
+
+body {
+  color: var(--orbito-page-text);
+  /* The Shell's stack (tokens.css), at Firefox's in-content sizes. */
+  font-family: var(--orbito-font-ui);
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+}
+
+main {
+  width: min(720px, 100%);
+}
+
+section {
+  margin-block-end: 40px;
+}
+
+.hint {
+  color: var(--text-color-deemphasized);
+  margin-block: 4px 12px;
+}
+
+.error {
+  color: var(--text-color-error, #d70022);
+  margin-block: 4px;
+}
+
+button.link {
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  border: none;
+  background: none;
+  color: var(--link-color, LinkText);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  border: 1px solid var(--border-color, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-block-end: 12px;
+}
+
+.card h3 {
+  margin-block: 0 8px;
+}
+
+:is(form, .space) label {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-block: 6px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-block-start: 8px;
+}
+
+.server-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.server-name {
+  font-weight: 600;
+}
+
+.server-url {
+  color: var(--text-color-deemphasized);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.status {
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.9em;
+}
+
+.status[data-status="connected"] {
+  background: color-mix(in srgb, #2ac3a2 25%, transparent);
+}
+
+.status[data-status="error"],
+.status[data-status="needs_login"] {
+  background: color-mix(in srgb, #ff4f5e 25%, transparent);
+}
+
+.tools li {
+  margin-block: 2px;
+}
+
+.tool-name {
+  font-family: monospace;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-block: 8px;
+}
+
+.options label.checkbox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+:is(#memory, #layout) > label.checkbox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-block-end: 12px;
+}
+
+.memory-text {
+  margin-block: 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.memory .hint {
+  margin-block: 2px;
+}
+
+.memory-source a {
+  overflow-wrap: anywhere;
+}
+
+.memory textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#memories-clear {
+  align-items: center;
+}
+
+#claude > label.checkbox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#claude-command {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+#recall > label.checkbox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#recall > h3 {
+  margin-block: 16px 0;
+  font-size: 1em;
+}
+
+.domain {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-block: 6px;
+  margin-block-end: 6px;
+  overflow-wrap: anywhere;
+}
+
+#recall-domain-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#recall-domain-form input {
+  flex: 1 1 200px;
+}
+
+#recall-domain-form .error {
+  flex-basis: 100%;
+}
+
+#delete-data {
+  align-items: center;
+  margin: 0;
+}
+
+.skill-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.skill-name {
+  font-weight: 600;
+}
+
+.skill-kind {
+  color: var(--text-color-deemphasized);
+  font-size: 0.9em;
+}
+
+.skill-description {
+  margin-block: 4px;
+}
+
+.skill .actions {
+  align-items: center;
+}
+
+.skill label.checkbox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.skill-space,
+.memory-space {
+  margin-inline-end: auto;
+}
+
+/* What a Space keeps for itself only, under its settings. */
+.space h4 {
+  margin-block: 12px 4px;
+  font-size: inherit;
+}
+
+.space :is(ul.space-memories, ul.space-skills) {
+  margin: 0;
+  padding-inline-start: 1.2em;
+}
+
+.space p:is(.space-memories, .space-skills) {
+  margin: 0;
+}
+
+.space-remove-form p {
+  margin-block: 12px 0;
+  font-weight: 600;
+}
+
+#skill-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-block-start: 6px;
+}
+
+.task-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.task-name {
+  font-weight: 600;
+}
+
+.task-schedule {
+  color: var(--text-color-deemphasized);
+}
+
+.task .hint {
+  margin-block: 4px;
+}
+
+.task .actions {
+  align-items: center;
+}
+
+.task label.checkbox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-inline-end: auto;
+}
+
+.task-runs li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-block: 4px;
+}
+
+.task-runs .run-status[data-status="ok"] {
+  color: var(--text-color-success, #058b00);
+}
+
+.task-runs .run-status[data-status="failed"] {
+  color: var(--text-color-error, #d70022);
+}
+
+.run-tokens {
+  color: var(--text-color-deemphasized);
+}
+
+.run-error {
+  overflow-wrap: anywhere;
+}
+
+#task-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.allowed-tools,
+.skill-inputs {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.skill-inputs .input-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#task-form .warning {
+  margin-block: 4px;
+  color: var(--text-color-warning, #a35b00);
+}
+
+#task-form :is(.warning, fieldset)[hidden] {
+  display: none;
+}
+
+.allowed-tools .tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.allowed-tools label.checkbox {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#task-form label[hidden] {
+  display: none;
+}
+
+/* Appearance, Account and Advanced: one setting a row, its name and hint
+ * first, its control at the end. */
+.setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding-block: 12px;
+}
+
+.setting > div:first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.setting h3 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.setting .hint {
+  margin-block: 2px 0;
+}
+
+#sync-status {
+  margin-block: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+#sync-status:empty {
+  display: none;
+}
+
+#sync-actions {
+  margin: 0;
+}
+
+.segments {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--orbito-page-sunk);
+  box-shadow: inset 0 0 0 1px var(--orbito-hairline);
+}
+
+.segments > button {
+  min-height: 0;
+  margin: 0;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--orbito-page-text);
+  font-weight: normal;
+}
+
+.segments > button:hover {
+  background: var(--orbito-surface-hover);
+}
+
+.segments > button[aria-checked="true"] {
+  background: var(--orbito-page);
+  box-shadow: var(--orbito-shadow-item);
+}
+
+.swatches {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+}
+
+.swatches > .swatch {
+  width: 16px;
+  height: 16px;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: oklch(0.6 var(--swatch-chroma) var(--swatch-hue));
+}
+
+.swatches > .swatch[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--orbito-page), 0 0 0 4px var(--orbito-page-text);
+}
+
+:is(.segments, .swatches) > button:focus-visible {
+  outline: var(--orbito-focus-ring);
+  outline-offset: 2px;
+}
+
+.swatches > .swatch:focus-visible {
+  outline-offset: 5px;
+}

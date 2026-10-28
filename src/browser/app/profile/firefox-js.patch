@@ -1,0 +1,10 @@
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+index a7dc185499c7a6600701db3136515993ede95dc4..04c44c02751ef66f860e7a54bc5f31e5b3d3570e 100644
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -3824,3 +3824,5 @@ pref("distribution.mozillaonline.ignore", true);
+ #ifdef XP_MACOSX
+   pref("browser.macAppMenu.setAsDefaultShown", false);
+ #endif
++
++#include orbito.js

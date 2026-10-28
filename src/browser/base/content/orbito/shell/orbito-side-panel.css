@@ -1,0 +1,80 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+/* The side panel's head (orbito-side-panel.mjs). The card around it is
+ * orbito.css's. */
+:host {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 44px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--orbito-page-line);
+  color: var(--orbito-popover-text);
+}
+
+.icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background-color: var(--orbito-page-sunk);
+  color: var(--orbito-page-text-muted);
+  font-size: 11px;
+}
+
+.close {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &:hover:active {
+    background-color: var(--orbito-surface-active);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--orbito-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

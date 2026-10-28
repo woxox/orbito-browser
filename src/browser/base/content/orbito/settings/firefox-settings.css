@@ -1,0 +1,24 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* about:preferences (OrbitoPages adds this sheet): the sections that set up
+ * what the Shell replaced are hidden. Orbito's settings pick light, dark and
+ * the accent (so no Firefox theme, website appearance or window density),
+ * the Shell's layout is fixed (no horizontal or vertical tabs choice),
+ * the new tab page is Orbito's (no Firefox Home content), and the Sidebar's
+ * tab list has no tab previews or drag-to-group. The app's language is
+ * picked in Orbito's settings, among the languages Orbito comes in. */
+#category-appearance,
+setting-group:is(
+    [groupid="appearance"],
+    [groupid="browserTheme"],
+    [groupid="windowDensity"],
+    [groupid="browserLayout"],
+    [groupid="home"],
+    [groupid="browserLanguage"]
+  ),
+#setting-control-tabPreviewShowThumbnails,
+#setting-control-tabGroupDragToCreate {
+  display: none !important;
+}

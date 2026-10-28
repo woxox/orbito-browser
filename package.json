@@ -1,0 +1,36 @@
+{
+  "name": "orbito-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MPL-2.0",
+  "scripts": {
+    "init": "pnpm run download && pnpm run import && pnpm run bootstrap",
+    "download": "surfer download",
+    "import": "scripts/reset-patched.sh && surfer set brand release && surfer import && scripts/branding-prefs.sh",
+    "bootstrap": "surfer bootstrap",
+    "agent-runtime": "python3 scripts/agent-runtime.py",
+    "recall-model": "python3 scripts/recall-model.py",
+    "build": "python3 scripts/agent-runtime.py && python3 scripts/recall-model.py && surfer build",
+    "build:ui": "surfer build --ui",
+    "build:remote": "scripts/remote/build.sh",
+    "build:artifact": "python3 scripts/agent-runtime.py && python3 scripts/recall-model.py && ORBITO_ARTIFACT_BUILD=1 MOZ_ARTIFACT_FILE=\"$PWD/dist/remote/aarch64/target.dmg:$PWD/dist/remote/aarch64/target.update_framework_artifacts.zip:$PWD/dist/remote/aarch64/target.xpt_artifacts.zip\" surfer build",
+    "build:artifact:win": "python3 scripts/agent-runtime.py && python3 scripts/recall-model.py && SURFER_MOZCONFIG_ONLY=1 surfer build && cd engine && ORBITO_ARTIFACT_BUILD=1 MOZ_ARTIFACT_FILE=\"$(pwd -W)/../dist/remote/windows-x86_64/target.zip;$(pwd -W)/../dist/remote/windows-x86_64/target.xpt_artifacts.zip\" python3 ./mach build",
+    "start:artifact": "cd engine && ORBITO_ARTIFACT_BUILD=1 python3 ./mach run --noprofile",
+    "start": "cd engine && python3 ./mach run --noprofile",
+    "export": "surfer export",
+    "package": "surfer package",
+    "reset-ff": "surfer reset",
+    "sync:raw": "surfer update",
+    "surfer": "surfer"
+  },
+  "devDependencies": {
+    "@zen-browser/surfer": "^1.14.9"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp"
+    ]
+  }
+}

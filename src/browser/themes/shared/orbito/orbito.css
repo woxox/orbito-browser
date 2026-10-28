@@ -1,0 +1,651 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The Orbito Shell (ADR 0001): the window's fixed layout (full-height
+ * Sidebar, short Top bar over the page, Assistant panel on the right), and
+ * the Firefox chrome it replaces, hidden but left in the DOM.
+ *
+ * The Shell uses only --orbito-* tokens (tokens.css) and leaves Firefox's
+ * (Nova) tokens alone. Light and dark follow the chrome's color scheme. */
+
+@import url("chrome://browser/skin/orbito/tokens.css");
+
+:root {
+  --orbito-sidebar-width: 244px;
+  --orbito-top-bar-height: 42px;
+}
+
+/* Firefox chrome the Shell replaces. Firefox code expects these elements,
+ * so they stay in the DOM; they are only never shown. */
+#TabsToolbar,
+#nav-bar,
+#sidebar-container,
+#sidebar-launcher-splitter,
+#ai-window-splitter,
+#ai-window-box,
+#navigator-toolbox .titlebar-buttonbox-container,
+#PersonalToolbar {
+  display: none !important;
+}
+
+/* The menu bar of Windows and Linux. Without a frame it also ignores Alt,
+ * F10 and access keys. macOS keeps its native menu bar. */
+@media not (-moz-platform: macos) {
+  #toolbar-menubar {
+    display: none !important;
+  }
+}
+
+#navigator-toolbox {
+  background: none !important;
+  border-bottom: none !important;
+
+  &::after {
+    display: none !important;
+  }
+}
+
+/* The frame paints the whole window, whatever a Firefox theme says. */
+body {
+  background: var(--orbito-frame) !important;
+  color: var(--orbito-text);
+  isolation: isolate;
+}
+
+/* Frame state (shell/frame-state.mjs): a tint over the frame, under the
+ * Shell and the page, for what the window's agent is doing. A faint accent
+ * tint breathes every 7 seconds while it works, faint amber in the corners
+ * every 4 seconds while it waits for an approval, red stays while a
+ * demonstration is recorded. Without motion the colors stay still. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity calc(var(--orbito-duration-long) * 3) var(--orbito-ease);
+}
+
+:root[orbito-frame="agent"] body::before {
+  opacity: 1;
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--orbito-accent) 22%, transparent),
+    transparent 55%,
+    color-mix(in oklab, var(--orbito-accent) 12%, transparent)
+  );
+  animation: orbito-frame-breathe 7s ease-in-out infinite;
+}
+
+:root[orbito-frame="attention"] body::before {
+  opacity: 1;
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--orbito-warn) 16%, transparent),
+    transparent 55%,
+    color-mix(in oklab, var(--orbito-warn) 8%, transparent)
+  );
+  animation: orbito-frame-breathe 4s ease-in-out infinite;
+}
+
+:root[orbito-frame="record"] body::before {
+  opacity: 1;
+  background: linear-gradient(
+    150deg,
+    color-mix(in oklab, var(--orbito-danger) 48%, transparent),
+    color-mix(in oklab, var(--orbito-danger) 14%, transparent) 60%,
+    color-mix(in oklab, var(--orbito-danger) 32%, transparent)
+  );
+}
+
+@keyframes orbito-frame-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    transition: none;
+  }
+
+  :root[orbito-frame] body::before {
+    animation: none;
+  }
+}
+
+/* Layout: the Sidebar takes the full height on the left; the Top bar spans
+ * the rest of the first row, over the page and the Assistant panel. Firefox's
+ * own sidebar (history, extensions) floats over the page as the side panel
+ * (below), so its columns stay empty. */
+#browser {
+  display: grid;
+  grid-template-columns: var(--orbito-sidebar-width) auto auto minmax(0, 1fr) auto;
+  grid-template-rows: var(--orbito-top-bar-height) minmax(0, 1fr);
+  grid-template-areas:
+    "sidebar top top top top"
+    "sidebar firefox-sidebar firefox-sidebar-splitter page assistant";
+}
+
+/* Windows and Linux, where the Shell draws the title bar: the open
+ * Assistant panel takes the full height, with the window controls at its
+ * top (shell.mjs moves them there), and the Top bar ends over the page. */
+:root[customtitlebar]:not([inFullscreen])
+  #browser:has(> #orbito-assistant[full]:not([hidden])) {
+  grid-template-areas:
+    "sidebar top top top assistant"
+    "sidebar firefox-sidebar firefox-sidebar-splitter page assistant";
+}
+
+:root:is(:not([customtitlebar]), [inFullscreen])
+  #orbito-assistant::part(window-bar) {
+  display: none;
+}
+
+/* The Shell's text: the design's stack at 13px (tokens.css), whatever the
+ * platform's chrome font. The elements' shadow trees inherit it. */
+#orbito-sidebar,
+#orbito-top-bar,
+#orbito-assistant,
+#orbito-side-panel-header,
+#orbito-site-info-panel,
+#orbito-extensions-panel,
+#orbito-downloads-panel {
+  font: var(--orbito-font);
+}
+
+#orbito-sidebar {
+  grid-area: sidebar;
+}
+
+/* The collapsed Sidebar leaves the layout (its column keeps only the gap
+ * before the page) and waits off the window's left edge. It peeks over the
+ * page from the edge strip, as a floating card. With reduced motion it does
+ * not slide (shell/motion.css, from the Sidebar's shadow tree). */
+#browser:has(> :where(#orbito-sidebar[collapsed])) {
+  grid-template-columns: var(--orbito-gap) auto auto minmax(0, 1fr) auto;
+}
+
+#orbito-sidebar[collapsed] {
+  position: fixed;
+  z-index: 10;
+  inset-block: var(--orbito-gap);
+  inset-inline-start: var(--orbito-gap);
+  box-sizing: border-box;
+  width: var(--orbito-sidebar-width);
+  border-radius: var(--orbito-radius-card);
+  background: linear-gradient(160deg, var(--orbito-frame-leading), var(--orbito-frame-base) 70%);
+  box-shadow: var(--orbito-shadow-pop);
+  translate: calc(-100% - 20px);
+  visibility: hidden;
+  transition:
+    translate var(--orbito-duration-long) var(--orbito-ease),
+    visibility 0s var(--orbito-duration-long);
+
+  &:dir(rtl) {
+    translate: calc(100% + 20px);
+  }
+
+  &[peeking] {
+    translate: none;
+    visibility: visible;
+    transition: translate var(--orbito-duration-long) var(--orbito-ease);
+  }
+}
+
+/* While a tab is dragged, an empty Pin grid and an empty Dock keep an
+ * invisible place to drop on, both over parts of the Sidebar no drop goes
+ * to, so that the rows stay where they are: the grid's (40px) over the
+ * Sidebar's top row (28px, 8px above the grid), the Dock's (8px) over the
+ * Space's name (22px above the Dock). */
+#orbito-pins {
+  --orbito-pins-drop-offset: -40px;
+}
+
+#orbito-dock {
+  --orbito-dock-drop-offset: -18px;
+}
+
+#orbito-sidebar-edge {
+  position: fixed;
+  z-index: 9;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 10px;
+
+  #orbito-sidebar:not([collapsed]) ~ & {
+    display: none;
+  }
+}
+
+#orbito-top-bar {
+  grid-area: top;
+  padding-inline-end: var(--orbito-gap);
+}
+
+/* The side panel: Firefox's sidebar (an extension's sidebar_action, or
+ * Firefox's history and bookmarks) floats as a card next to the Sidebar,
+ * over the page's start, under the Top bar. The page keeps its width.
+ * orbito-side-panel.mjs gives an extension's panel its head. */
+#sidebar-box {
+  grid-area: page;
+  justify-self: start;
+  /* Over the page (Firefox's tabbox, z-index 2). */
+  z-index: 3;
+  box-sizing: border-box;
+  width: min(300px, 100%) !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 0 var(--orbito-gap) !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: var(--orbito-radius-card) !important;
+  background: var(--orbito-popover) !important;
+  color: var(--orbito-popover-text) !important;
+  box-shadow: var(--orbito-shadow-pop);
+  overflow: clip;
+  animation: orbito-side-panel-in var(--orbito-duration-medium) var(--orbito-ease);
+
+  & #sidebar {
+    border-radius: 0 !important;
+  }
+
+  /* Firefox's own panels draw their own head. */
+  &:not([orbito-extension]) > #orbito-side-panel-header {
+    display: none;
+  }
+}
+
+@keyframes orbito-side-panel-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+    scale: 0.98;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #sidebar-box {
+    animation: none;
+  }
+}
+
+/* The card is not resized. */
+#sidebar-splitter {
+  display: none !important;
+}
+
+#tabbrowser-tabbox {
+  grid-area: page;
+  margin: 0 var(--orbito-gap) var(--orbito-gap) 0;
+}
+
+/* Drawn on the frame right of the page, as wide as its handle says. */
+#orbito-assistant {
+  grid-area: assistant;
+  width: var(--orbito-assistant-width, 340px);
+  margin-inline-end: var(--orbito-gap);
+}
+
+/* The page: a floating card. */
+:root:not([inDOMFullscreen]) {
+  .browserContainer,
+  .browserStack,
+  .browserStack > browser {
+    border-radius: var(--orbito-radius-card) !important;
+  }
+
+  /* The card clips what opens in it, like the find bar at its bottom (and
+   * that bar sliding out of it as it closes). */
+  .browserContainer {
+    box-shadow: var(--orbito-shadow-card);
+    outline: none !important;
+    overflow: clip;
+  }
+
+  .browserStack {
+    overflow: clip;
+  }
+
+  /* With the find bar open, the page meets it with square corners. */
+  .browserStack:has(~ findbar:not([hidden])),
+  .browserStack:has(~ findbar:not([hidden])) > browser {
+    border-end-start-radius: 0 !important;
+    border-end-end-radius: 0 !important;
+  }
+}
+
+/* Firefox surfaces the Shell does not rebuild (ADR 0001): doorhangers and
+ * other arrow panels, notification bars, the find bar and, outside macOS,
+ * menus. Their markup stays Firefox's; they take the Shell's tokens through
+ * Firefox's own variables, so they follow light/dark and the accent. Firefox
+ * resolves its derived variables (button colors, focus outline, links) on
+ * the root, so each one these surfaces use is set again here. macOS menus
+ * stay native. With forced colors, Firefox's system colors stay. */
+@media not (forced-colors) {
+  panel[type="arrow"],
+  notification-message,
+  .browserContainer > findbar {
+    --color-accent-primary: var(--orbito-accent);
+    --color-accent-primary-hover: color-mix(in oklab, var(--orbito-accent) 86%, var(--orbito-text));
+    --color-accent-primary-active: color-mix(in oklab, var(--orbito-accent) 74%, var(--orbito-text));
+    --color-accent-primary-selected: var(--color-accent-primary-active);
+    --focus-outline-color: var(--orbito-accent);
+    --focus-outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    --link-color: var(--color-accent-primary);
+    --link-color-hover: var(--color-accent-primary-hover);
+    --link-color-active: var(--color-accent-primary-active);
+    --toolbar-field-border-color-focus: var(--focus-outline-color);
+    --toolbarbutton-icon-fill-attention: var(--color-accent-primary);
+
+    /* Primary buttons are accent pills; the others are outlined in the
+     * accent and fill with its soft tint, like the Top bar's Ask button. */
+    --button-background-color-primary: var(--color-accent-primary);
+    --button-background-color-primary-hover: var(--color-accent-primary-hover);
+    --button-background-color-primary-active: var(--color-accent-primary-active);
+    --button-text-color-primary: var(--orbito-accent-ink);
+    --button-text-color-primary-hover: var(--button-text-color-primary);
+    --button-text-color-primary-active: var(--button-text-color-primary);
+    --button-background-color: transparent;
+    --button-background-color-hover: var(--orbito-accent-soft);
+    --button-background-color-active: color-mix(in oklab, var(--orbito-accent) 22%, transparent);
+    --button-background-color-ghost-hover: var(--button-background-color-hover);
+    --button-background-color-ghost-active: var(--button-background-color-active);
+    --button-text-color: currentColor;
+    --button-text-color-hover: var(--button-text-color);
+    --button-text-color-active: var(--button-text-color);
+    --button-border-color: var(--orbito-accent);
+    --button-border-color-hover: var(--button-border-color);
+    --button-border-color-active: var(--button-border-color);
+    --button-border: var(--border-width) solid var(--button-border-color);
+  }
+
+  /* Doorhangers and every other arrow panel: the floating card of the
+   * panels under the Top bar's buttons (shell/top-bar-panel.mjs). */
+  panel[type="arrow"] {
+    --panel-background-color: var(--orbito-popover);
+    --panel-text-color: var(--orbito-popover-text);
+    --panel-border-color: transparent;
+    --panel-border-radius: var(--orbito-radius-card);
+    --panel-box-shadow: var(--orbito-shadow-pop);
+    --panel-separator-color: var(--orbito-page-line);
+  }
+
+  /* Notification bars (Firefox keeps them in a strip at the top of the
+   * window): cards on the frame, like the Sidebar's rows. */
+  #notifications-toolbar {
+    --info-bar-margin: var(--orbito-gap);
+  }
+
+  /* One gap between the window's bars and the tab's below them. */
+  #notifications-toolbar:has(.global-notificationbox notification-message)
+    #tab-notification-deck
+    notification-message:first-of-type {
+    margin-block-start: 0;
+  }
+
+  notification-message {
+    --info-bar-background-color: var(--orbito-surface);
+    --info-bar-text-color: var(--orbito-text);
+    --info-bar-border-color: transparent;
+    --info-bar-box-shadow: var(--orbito-shadow-item);
+    --message-bar-icon-color: var(--orbito-accent);
+    border-radius: var(--orbito-radius-item);
+
+    &[type="warning"] {
+      --message-bar-icon-color: var(--orbito-warn);
+    }
+
+    &:is([type="critical"], [type="error"]) {
+      --message-bar-icon-color: var(--orbito-danger);
+    }
+
+    &[type="success"] {
+      --message-bar-icon-color: var(--orbito-ok);
+    }
+  }
+
+  /* The find bar: the bottom of the page card it opens in (see the page
+   * card's rules below). */
+  .browserContainer > findbar {
+    background-color: var(--orbito-popover);
+    color: var(--orbito-popover-text);
+    border-top-color: var(--orbito-hairline);
+    --toolbarbutton-icon-fill: currentColor;
+    --toolbarbutton-background-color-hover: var(--button-background-color-hover);
+    --toolbarbutton-background-color-active: var(--button-background-color-active);
+    --toolbarbutton-outline-color: transparent;
+    --toolbar-field-background-color: color-mix(in oklab, currentColor 6%, transparent);
+    --toolbar-field-background-color-focus: var(--toolbar-field-background-color);
+    --toolbar-field-text-color: currentColor;
+    --toolbar-field-text-color-focus: currentColor;
+    --border-color-interactive: color-mix(in oklab, currentColor 18%, transparent);
+  }
+
+  /* Menus outside macOS (context menus, the tab menu, the back/forward
+   * history): the popover surface, the accent's soft tint on the active
+   * item. Not the dropdowns of pages' <select>s, which take the page's
+   * colors. */
+  @media not (-moz-platform: macos) {
+    menupopup:not(menulist > menupopup) {
+      --panel-background-color: var(--orbito-popover);
+      --panel-text-color: var(--orbito-popover-text);
+      --panel-border-color: var(--orbito-hairline);
+      --panel-separator-color: var(--orbito-hairline);
+      --focus-outline-color: var(--orbito-accent);
+
+      /* With Windows' mica backdrop the system draws the corners. */
+      @media not (-moz-windows-mica-popups) {
+        --panel-border-radius: var(--orbito-radius-item);
+      }
+
+      > :is(menu, menuitem)[_moz-menuactive]:not([disabled]) {
+        background-color: var(--orbito-accent-soft);
+        color: inherit;
+      }
+    }
+  }
+}
+
+/* The Top bar's panels and the doorhangers (PopupNotifications' panel,
+ * which the Shell anchors to the Top bar: see anchorDoorhangers in
+ * shell/shell.mjs) open 4px under their button and pop in as the design's
+ * popovers do, in place of Firefox's long slide. The Top bar's panels fade
+ * out, quicker (top-bar-panel.mjs waits for it); doorhangers, which
+ * PopupNotifications closes without waiting, close at once. Other
+ * arrow panels keep Firefox's. On macOS a panel moves as a window
+ * (-moz-window-transform, which has no origin: the translate scales it
+ * about its middle) and does not fade, as Firefox's do not since Big Sur,
+ * whose fading windows lose their shadow (bug 1672091). Firefox's rules
+ * are matched selector for selector; :where() keeps their specificity, so
+ * Firefox's open and cancel states still win. */
+panel[type="arrow"]:where(
+    #orbito-site-info-panel,
+    #orbito-extensions-panel,
+    #orbito-downloads-panel,
+    #notification-popup
+  ) {
+  margin-top: calc(4px - var(--panel-box-shadow-margin));
+
+  @media (prefers-reduced-motion: no-preference) {
+    @media not (-moz-platform: macos) {
+      transform: translateY(-4px) scale(0.98);
+
+      @media not (-moz-panel-animations) {
+        transform: none;
+      }
+    }
+
+    @media (-moz-platform: macos) {
+      -moz-window-transform: translate(1%, calc(1% - 4px)) scale(0.98);
+    }
+  }
+
+  &:not([animate="false"]) {
+    transition-duration: var(--orbito-duration-medium);
+  }
+
+  &:is([animate="false"], [animate="open"]) {
+    transition-timing-function: var(--orbito-ease);
+  }
+
+  &[animate="cancel"] {
+    transition-duration: 0s;
+
+    @media (prefers-reduced-motion: no-preference) {
+      &:not(#notification-popup) {
+        transition-duration: var(--orbito-duration-short);
+      }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &:not([animate="false"]) {
+      transition-duration: 0s;
+    }
+  }
+}
+
+/* The panels under the Top bar's site information, extensions and downloads
+ * buttons (shell/top-bar-panel.mjs); their box is the arrow panels' above.
+ * The design blurs what is under them, but a panel is a window of its own:
+ * CSS backdrop-filter in it sees nothing of the browser window below. The
+ * blur is the platform's popup material, as Firefox's menus take it: the
+ * glass of macOS 26 menus (whose 12px corners are the card's) and the
+ * acrylic of Windows 11 popups (whose corners, border and shadow are the
+ * system's). The card then lets it through; elsewhere (older macOS, whose
+ * menu material has 6px corners, Windows 10, Linux) the card is opaque. */
+#orbito-site-info-panel,
+#orbito-extensions-panel,
+#orbito-downloads-panel {
+  --panel-padding: 6px;
+  --panel-width: 300px;
+
+  @media not (forced-colors) {
+    --panel-background-color: var(--orbito-popover-solid);
+
+    @media (-moz-mac-tahoe-theme) or (-moz-windows-mica-popups) {
+      appearance: auto;
+      -moz-default-appearance: menupopup;
+      --panel-background-color: var(--orbito-popover);
+    }
+
+    @media (-moz-windows-mica-popups) {
+      --panel-border-color: transparent;
+      --panel-box-shadow-margin: 0px;
+      --panel-border-radius: 0px;
+    }
+  }
+}
+
+/* The box macOS draws its traffic lights over. */
+#orbito-window-buttons {
+  appearance: auto;
+  -moz-default-appearance: -moz-window-button-box;
+  margin-inline-start: 12px;
+}
+
+/* Window buttons only where the Shell draws the title bar itself. */
+:root:not([customtitlebar]) #orbito-window-controls,
+:root[inFullscreen] :is(#orbito-window-buttons, #orbito-window-controls) {
+  display: none;
+}
+
+/* Private windows: the same Shell on a frame of their own, a dark violet
+ * whatever the theme and the accent, so they are known at a glance. What
+ * the Shell draws straight on the frame takes light ink and surfaces, to
+ * stay readable on it; the accent, the page and what floats over it keep
+ * the theme. */
+:root[privatebrowsingmode] {
+  --orbito-frame-base: oklch(0.24 0.06 300);
+  --orbito-frame-leading: oklch(0.33 0.12 292);
+  --orbito-frame-trailing: oklch(0.27 0.1 335);
+
+  #orbito-sidebar,
+  #orbito-top-bar,
+  #orbito-assistant,
+  #notifications-toolbar {
+    --orbito-text: oklch(0.96 0.01 300);
+    --orbito-text-muted: oklch(0.96 0.01 300 / 0.62);
+    --orbito-surface: rgb(255 255 255 / 0.14);
+    --orbito-surface-hover: rgb(255 255 255 / 0.07);
+    --orbito-surface-active: rgb(255 255 255 / 0.1);
+    --orbito-hairline: rgb(255 255 255 / 0.1);
+  }
+}
+
+/* Popups opened by sites: no Sidebar, only the Top bar's URL display, on
+ * a shorter bar. */
+:root[popup-window] {
+  --orbito-top-bar-height: 38px;
+
+  #browser {
+    grid-template-columns: 0 auto auto minmax(0, 1fr) auto;
+  }
+
+  #orbito-sidebar,
+  #orbito-sidebar-edge {
+    display: none;
+  }
+
+  #tabbrowser-tabbox {
+    margin-inline-start: var(--orbito-gap);
+  }
+}
+
+/* A narrow window: the Sidebar stays collapsed (orbito-sidebar.mjs), and
+ * the open Assistant panel floats over the page's end as a card under the
+ * Top bar, which then keeps the window controls (shell.mjs). */
+@media (max-width: 760px) {
+  #browser:has(> #orbito-assistant:not([hidden])) {
+    grid-template-areas:
+      "sidebar top top top top"
+      "sidebar firefox-sidebar firefox-sidebar-splitter page page";
+  }
+
+  #orbito-assistant {
+    position: fixed;
+    z-index: 9;
+    inset-block: var(--orbito-top-bar-height) var(--orbito-gap);
+    inset-inline-end: var(--orbito-gap);
+    box-sizing: border-box;
+    width: min(340px, calc(100% - 2 * var(--orbito-gap)));
+    margin: 0;
+    /* No padding below: the input's own margin keeps it 8px off the
+     * sheet's edge, as on the frame. */
+    padding: 0 var(--orbito-gap);
+    border-radius: var(--orbito-radius-card);
+    background: linear-gradient(160deg, var(--orbito-frame-leading), var(--orbito-frame-base) 70%);
+    box-shadow: var(--orbito-shadow-pop);
+  }
+
+  #sidebar-box {
+    width: min(300px, calc(100% - 2 * var(--orbito-gap))) !important;
+  }
+}
+
+/* A page in fullscreen (e.g. a video) takes the whole window. */
+:root[inDOMFullscreen] {
+  #browser {
+    grid-template-columns: 0 0 0 minmax(0, 1fr) 0;
+    grid-template-rows: 0 minmax(0, 1fr);
+  }
+
+  #orbito-sidebar,
+  #orbito-sidebar-edge,
+  #orbito-top-bar,
+  #orbito-assistant,
+  #sidebar-box {
+    display: none;
+  }
+
+  #tabbrowser-tabbox {
+    margin: 0;
+  }
+}

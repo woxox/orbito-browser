@@ -1,0 +1,167 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+:host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--orbito-gap);
+  flex: none;
+  min-width: 0;
+}
+
+/* Where undocked rows shrink away (ListMotion's ghosts), over the Dock. */
+.ghosts {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+:host([empty]:not([dropping])) {
+  display: none;
+}
+
+/* No visible drop helper: with no Dock tab, a dragged tab still finds a
+ * small, invisible strip to drop on, laid over what is around so that the
+ * rows do not move (orbito.css sets the offset). */
+:host([empty][dropping]) {
+  z-index: 1;
+  height: 0;
+  margin-block-end: calc(-1 * var(--orbito-gap));
+
+  & .list {
+    position: absolute;
+    inset-inline: 0;
+    top: var(--orbito-dock-drop-offset, 0px);
+    height: 8px;
+  }
+
+  & .separator {
+    display: none;
+  }
+}
+
+:host([dragging]) {
+  cursor: grabbing;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--orbito-radius-item);
+}
+
+/* The line between the Dock and the tab list. */
+.separator {
+  height: 1px;
+  margin: 2px 10px;
+  background-color: var(--orbito-hairline);
+}
+
+/* Rows as the tab list's: the icon in a 16px column 10px in, the label from
+ * 35px. */
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  height: 32px;
+  padding-inline: 10px 4px;
+  border-radius: var(--orbito-radius-item);
+  color: var(--orbito-text);
+  cursor: default;
+  transition:
+    background-color var(--orbito-duration-short) var(--orbito-ease),
+    box-shadow var(--orbito-duration-short) var(--orbito-ease);
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &[selected] {
+    background-color: var(--orbito-surface);
+    box-shadow: var(--orbito-shadow-item);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+
+  &[dragged] {
+    opacity: 0.4;
+  }
+
+  /* At rest: back at the docked page, not loaded. */
+  &[resting] :is(.icon, .label) {
+    opacity: 0.5;
+  }
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  pointer-events: none;
+}
+
+/* An about: page's icon: the Orbit mark on the accent. */
+.orbito-tile {
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background-color: var(--orbito-accent);
+  color: var(--orbito-accent-ink);
+
+  & svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--orbito-icon-stroke);
+  }
+
+  & .fill {
+    fill: currentColor;
+    stroke: none;
+  }
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shown on the selected tab and the one under the pointer. */
+.close {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: url("chrome://global/skin/icons/close.svg") center / 12px no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--orbito-text-muted);
+  opacity: 0;
+
+  .tab:is(:hover, [selected]) & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background-color: var(--orbito-surface-active);
+    fill: var(--orbito-text);
+  }
+}

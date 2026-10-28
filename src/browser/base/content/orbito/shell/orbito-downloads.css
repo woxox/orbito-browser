@@ -1,0 +1,100 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* On top of top-bar-panel.css. */
+
+.list {
+  max-height: 360px;
+  overflow-y: auto;
+  /* Room for the rows' focus rings (3px out). */
+  margin: -3px;
+  padding: 3px;
+}
+
+/* A download's row, and the button after it. */
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.download {
+  flex: 1;
+  min-width: 0;
+
+  &[aria-disabled="true"] {
+    color: var(--orbito-page-text-muted);
+
+    &:hover {
+      background: none;
+    }
+  }
+}
+
+.icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download .sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action {
+  flex: none;
+  width: 30px;
+  justify-content: center;
+  padding: 0;
+  color: var(--orbito-page-text-muted);
+
+  &:hover {
+    color: var(--orbito-text);
+  }
+}
+
+/* A running download's progress. */
+.bar {
+  display: block;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 2px;
+  background: linear-gradient(var(--orbito-accent), var(--orbito-accent)) no-repeat
+    0 / var(--progress, 0%) 100% var(--orbito-page-line);
+
+  &[undetermined] {
+    background-size: 30% 100%;
+    animation: undetermined 1.2s var(--orbito-ease) infinite alternate;
+  }
+
+  &[paused] {
+    filter: grayscale(1);
+  }
+}
+
+@keyframes undetermined {
+  to {
+    background-position: 100% 0;
+  }
+}
+
+svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--orbito-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

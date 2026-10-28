@@ -1,0 +1,11 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* about:addons (OrbitoPages adds this sheet): Firefox themes are not used,
+ * so there is no Themes category, and no light, dark or system choice of
+ * the theme list's header (Orbito's settings pick those). */
+#category-theme,
+aboutaddons-themes-mode {
+  display: none !important;
+}

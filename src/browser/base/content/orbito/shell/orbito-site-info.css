@@ -1,0 +1,71 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* On top of top-bar-panel.css. */
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--orbito-page-text-muted);
+  font-size: 12px;
+}
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--orbito-page-text-muted);
+
+  &[data-tone="ok"] {
+    background-color: var(--orbito-ok);
+  }
+
+  &[data-tone="warn"] {
+    background-color: var(--orbito-warn);
+  }
+
+  &[data-tone="bad"] {
+    background-color: var(--orbito-danger);
+  }
+}
+
+/* A permission's state: green allowed, red blocked, muted asking. */
+.state {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background-color: var(--orbito-page-sunk);
+  color: var(--orbito-page-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+
+  &[data-kind="allow"] {
+    color: var(--orbito-ok);
+  }
+
+  &[data-kind="block"] {
+    color: var(--orbito-danger);
+  }
+}
+
+/* The tracking protection switch shows its state as a track and knob. */
+.tracking::after {
+  content: "";
+  flex: none;
+  width: 26px;
+  height: 16px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle 6px at 8px 50%, #fff 98%, transparent) no-repeat,
+    color-mix(in oklab, var(--orbito-text) 25%, transparent);
+}
+
+.tracking[aria-checked="true"]::after {
+  background:
+    radial-gradient(circle 6px at 18px 50%, #fff 98%, transparent) no-repeat,
+    var(--orbito-accent);
+}

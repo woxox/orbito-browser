@@ -1,0 +1,2449 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+/* Drawn straight on the frame, as the Sidebar is: the page stays the only
+ * card. Boxes (questions, approvals, the input) sit flush with the panel's
+ * edges; text starts 10px in. */
+:host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  color: var(--orbito-text);
+}
+
+:host([hidden]),
+[hidden] {
+  display: none !important;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:host([resizing]) {
+  cursor: col-resize;
+}
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: default;
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--orbito-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+
+  .fill {
+    fill: currentColor;
+    stroke: none;
+  }
+}
+
+/* Windows and Linux, full height: the window controls own the top row, at
+ * the Top bar's height, where the window is dragged from. */
+.window-bar {
+  display: none;
+  justify-content: flex-end;
+  height: var(--orbito-top-bar-height);
+  flex: none;
+  -moz-window-dragging: drag;
+}
+
+:host([full]) .window-bar {
+  display: flex;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  flex: none;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  padding-inline-start: 10px;
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anchor {
+  position: relative;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+
+  &:hover,
+  &[aria-expanded="true"] {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &:hover:active {
+    background-color: var(--orbito-surface-active);
+  }
+}
+
+/* The Thread list button, first in the header: a dot says another Thread
+ * works (accent) or waits for an approval (amber). */
+.threads-button {
+  position: relative;
+
+  & + .title {
+    padding-inline-start: 2px;
+  }
+
+  .dot {
+    position: absolute;
+    inset-block-start: 4px;
+    inset-inline-end: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--orbito-accent);
+    box-shadow: 0 0 0 2px var(--orbito-frame-base);
+    animation: state-blink 1.2s infinite;
+  }
+
+  &[data-activity="waiting"] .dot {
+    background-color: var(--orbito-warn);
+  }
+}
+
+/* The documents the Thread made: an icon and how many, only once it made
+ * one. */
+.documents-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  padding: 0 7px;
+  color: var(--orbito-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+svg.flip:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+/* The Thread list and the document list take the Thread's place, header
+ * to input. */
+:host(:is([view="threads"], [view="documents"]))
+  :is(.head, .settings, .log, .show, .skill-steps.pinned, .chips, .skill-menu,
+    .input-notice, .composer) {
+  display: none !important;
+}
+
+.threads-view,
+.documents-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.view-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  flex: none;
+}
+
+.view-title {
+  flex: 1;
+  min-width: 0;
+  padding-inline-start: 2px;
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* This Space or All Spaces, a segmented control. */
+.scope {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border-radius: 8px;
+  background-color: var(--orbito-surface-hover);
+  box-shadow: inset 0 0 0 1px var(--orbito-hairline);
+
+  button {
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+
+    &[aria-pressed="true"] {
+      background-color: var(--orbito-surface);
+      box-shadow: var(--orbito-shadow-item);
+    }
+  }
+}
+
+.threads {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0 8px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.thread-row,
+.library {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: var(--orbito-radius-item);
+  text-align: start;
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &[aria-current="true"] {
+    background-color: var(--orbito-surface);
+    box-shadow: var(--orbito-shadow-item);
+  }
+
+  &.new {
+    color: var(--orbito-text-muted);
+  }
+
+  /* Its focus ring inside, clear of the list's edges. */
+  &:focus-visible {
+    outline-offset: -2px;
+  }
+}
+
+.thread-icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  flex: none;
+  color: var(--orbito-text-muted);
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .orbito-tile {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background-color: var(--orbito-accent);
+    color: var(--orbito-accent-ink);
+
+    svg {
+      width: 12px;
+      height: 12px;
+    }
+  }
+}
+
+.thread-row .grow {
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-title,
+.thread-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-title {
+  font-size: 13px;
+}
+
+.thread-sub {
+  font-size: 11.5px;
+  color: var(--orbito-text-muted);
+}
+
+/* A Thread working (accent) or waiting for an approval (amber). */
+.state {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background-color: var(--orbito-accent);
+  animation: state-blink 1.2s infinite;
+
+  [data-state="waiting"] > & {
+    background-color: var(--orbito-warn);
+  }
+}
+
+@keyframes state-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.documents-empty {
+  margin: 0;
+  padding: 28px 12px;
+  color: var(--orbito-text-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.threads-foot {
+  flex: none;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--orbito-hairline);
+
+  .library {
+    min-height: 36px;
+    color: var(--orbito-accent);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+}
+
+/* Menus: picked items show a check on an accent background. They pop in
+ * as they open and fade out, quicker, as they close: hidden, a menu keeps
+ * its box (out of the flow, as it is placed) and goes once faded. Opening,
+ * it shows at once, so that focus can go into it. */
+.menu {
+  position: absolute;
+  z-index: 12;
+  inset-inline-end: 0;
+  top: calc(100% + 4px);
+  box-sizing: border-box;
+  width: min(300px, calc(var(--orbito-assistant-width, 340px) - 16px));
+  padding: 6px;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--orbito-popover);
+  color: var(--orbito-popover-text);
+  box-shadow: var(--orbito-shadow-pop);
+  backdrop-filter: blur(24px);
+  transition:
+    opacity var(--orbito-duration-medium) var(--orbito-ease),
+    transform var(--orbito-duration-medium) var(--orbito-ease);
+
+  /* As it opens, and as it is made open. */
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  /* Over the rule that hides whatever is hidden. */
+  &[hidden] {
+    display: block !important;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+    pointer-events: none;
+    transition:
+      opacity var(--orbito-duration-short) var(--orbito-ease),
+      transform var(--orbito-duration-short) var(--orbito-ease),
+      visibility var(--orbito-duration-short);
+  }
+}
+
+.plus-menu,
+.model-menu,
+.permission-menu {
+  inset-inline: 0 auto;
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+/* Laid out from the bar's start, as the model menu, so that it stays in
+ * the panel. */
+.anchor:has(> .permission) {
+  position: static;
+}
+
+.permission-menu {
+  width: min(280px, calc(var(--orbito-assistant-width, 340px) - 16px));
+}
+
+/* A long list of models (OpenRouter's) scrolls, the rest of the menu
+ * stays. */
+.models {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.model-search {
+  box-sizing: border-box;
+  width: calc(100% - 16px);
+  margin: 2px 8px 4px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--orbito-page-sunk);
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+  color: inherit;
+  font: inherit;
+}
+
+.section {
+  padding: 6px 10px 4px;
+  line-height: 16px;
+  color: var(--orbito-page-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.sep {
+  height: 1px;
+  margin: 6px 4px;
+  background-color: var(--orbito-page-line);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: start;
+
+  &:hover {
+    background-color: var(--orbito-accent-soft);
+  }
+
+  .pick {
+    color: var(--orbito-accent);
+    stroke-width: 2;
+    visibility: hidden;
+  }
+
+  &[aria-checked="true"] {
+    background-color: var(--orbito-accent-soft);
+
+    .pick {
+      visibility: visible;
+    }
+  }
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sub {
+  display: block;
+  color: var(--orbito-page-text-muted);
+  font-size: 11.5px;
+}
+
+.efforts {
+  display: flex;
+  margin: 2px 8px 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background-color: var(--orbito-page-sunk);
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+}
+
+.effort {
+  flex: 1;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+
+  &[aria-checked="true"] {
+    background-color: var(--orbito-page);
+    box-shadow: var(--orbito-shadow-item);
+  }
+}
+
+.note {
+  margin: 2px 10px 6px;
+  color: var(--orbito-page-text-muted);
+  font-size: 11.5px;
+}
+
+/* The backend, key and model, under the header. */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  margin-block-end: 8px;
+  padding: 10px;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+
+  label {
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  input,
+  select {
+    padding: 6px 8px;
+    border: 1px solid var(--orbito-hairline);
+    border-radius: 8px;
+    background: none;
+  }
+
+  .login {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    p {
+      flex: 1;
+      margin: 0;
+    }
+  }
+}
+
+.hint {
+  margin: 2px 0 0;
+  color: var(--orbito-text-muted);
+  font-size: 11px;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+
+  .link {
+    margin-inline-end: auto;
+  }
+}
+
+.primary,
+.secondary,
+.mini {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.primary {
+  background-color: var(--orbito-accent);
+  color: var(--orbito-accent-ink);
+}
+
+.secondary,
+.mini {
+  background-color: var(--orbito-surface-hover);
+  box-shadow: inset 0 0 0 1px var(--orbito-hairline);
+}
+
+.mini {
+  padding: 2px 12px;
+  border-radius: 999px;
+}
+
+.link {
+  color: var(--orbito-accent);
+  font-size: 12px;
+
+  &:hover:not(:disabled) {
+    text-decoration: underline;
+  }
+}
+
+/* The Thread. */
+.log {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+.message {
+  font-size: 13.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  user-select: text;
+
+  > :first-child {
+    margin-top: 0;
+  }
+
+  > :last-child {
+    margin-bottom: 0;
+  }
+
+  p,
+  pre,
+  blockquote,
+  table {
+    margin: 0 0 6px;
+  }
+
+  ul,
+  ol {
+    margin: 6px 0;
+    padding-inline-start: 18px;
+  }
+
+  li + li,
+  li > :is(ul, ol, p, pre) {
+    margin-top: 2px;
+  }
+
+  li > :last-child {
+    margin-bottom: 0;
+  }
+
+  h3,
+  h4,
+  h5 {
+    margin: 10px 0 4px;
+    font-size: 13px;
+  }
+
+  h3 {
+    font-size: 15px;
+  }
+
+  h5,
+  del {
+    color: var(--orbito-text-muted);
+  }
+
+  a {
+    color: var(--orbito-accent);
+    text-decoration: underline;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: var(--orbito-focus-ring);
+      outline-offset: var(--orbito-focus-ring-offset);
+      border-radius: 2px;
+    }
+  }
+
+  blockquote {
+    padding-inline-start: 10px;
+    border-inline-start: 3px solid var(--orbito-hairline);
+    color: var(--orbito-text-muted);
+  }
+
+  hr {
+    margin: 12px 0;
+    border: none;
+    border-top: 1px solid var(--orbito-hairline);
+  }
+
+  table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  th,
+  td {
+    min-width: 3em;
+    padding: 4px 8px;
+    border: 1px solid var(--orbito-hairline);
+    overflow-wrap: break-word;
+    text-align: start;
+    vertical-align: top;
+  }
+
+  th,
+  code,
+  pre {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  th {
+    font-weight: 600;
+  }
+
+  code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+  }
+
+  pre {
+    padding: 8px 10px;
+    border-radius: 8px;
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      background: none;
+    }
+  }
+}
+
+.assistant {
+  padding-inline: 10px;
+}
+
+/* A question: a lifted box at the end side. */
+.user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 10px;
+  border-radius: 14px 14px 4px 14px;
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+  white-space: pre-wrap;
+}
+
+.step,
+.thought,
+.notice {
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+}
+
+.step,
+.thought {
+  margin-bottom: 6px;
+}
+
+/* A thought: how long it took, what it was once opened. */
+details.thought {
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    cursor: pointer;
+    list-style: none;
+
+    &::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-block-end: 1.5px solid currentColor;
+      border-inline-end: 1.5px solid currentColor;
+      transform: translateY(-2px) rotate(45deg);
+    }
+
+    &:focus-visible {
+      outline: var(--orbito-focus-ring);
+      outline-offset: var(--orbito-focus-ring-offset);
+    }
+  }
+
+  &[open] > summary::after {
+    transform: translateY(1px) rotate(-135deg);
+  }
+}
+
+.thought-text {
+  margin-top: 4px;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--orbito-hairline);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.step.running > .step-label::after {
+  content: "…";
+}
+
+.step.failed > .step-label {
+  text-decoration: line-through;
+}
+
+.reason {
+  display: block;
+  color: var(--orbito-danger);
+  font-size: 12px;
+}
+
+/* While the model thinks: the label, a light sweeping across it. */
+.thinking {
+  width: fit-content;
+  background: linear-gradient(
+      90deg,
+      var(--orbito-text-muted) 40%,
+      var(--orbito-text) 50%,
+      var(--orbito-text-muted) 60%
+    )
+    0 0 / 300% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-sweep 2s linear infinite;
+}
+
+@keyframes thinking-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* While the model has yet to answer: three dots, blinking in turn. */
+.dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 6px 0;
+
+  i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--orbito-text-muted);
+    animation: dot-blink 1s infinite;
+
+    &:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+
+    &:nth-child(3) {
+      animation-delay: 0.3s;
+    }
+  }
+}
+
+@keyframes dot-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.notice {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.artifact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 8px 8px 10px;
+  border-radius: var(--orbito-radius-item);
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+
+  > .artifact-title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+  }
+
+  > .reason {
+    flex-basis: 100%;
+  }
+}
+
+/* An approval request, and an Orbit's wrap-up card: a lifted card while
+ * it waits, a soft dot marking it as waiting and the answers as pills (on
+ * the question's row, or on the right under it); folded to one line with
+ * how it ended, after. 14px off the reply's words, the log's gap between
+ * messages: the design's cards are messages of their own. */
+.approval,
+.orbit-card {
+  margin: 14px -10px;
+  padding: 10px 10px 10px 12px;
+  border-radius: 14px;
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+
+  &.settled {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: var(--orbito-radius-card);
+    background-color: var(--orbito-surface-hover);
+    box-shadow: none;
+    color: var(--orbito-text-muted);
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+}
+
+.approval-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  p {
+    flex: 1;
+    min-width: 0;
+    margin: 0 4px 0 0;
+    overflow: hidden;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+}
+
+:is(.approval-row, .approval-actions) {
+  button {
+    flex: none;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .secondary {
+    background: none;
+    box-shadow: none;
+    color: var(--orbito-text-muted);
+
+    &:hover {
+      background-color: var(--orbito-surface-hover);
+      color: var(--orbito-text);
+    }
+  }
+
+  .primary {
+    padding-inline: 14px;
+
+    &:hover {
+      filter: brightness(1.08);
+    }
+  }
+}
+
+.pulse {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 3px 0 1px;
+  border-radius: 50%;
+  background-color: var(--orbito-warn);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--orbito-warn) 20%, transparent);
+  animation: approval-pulse 1.6s ease-in-out infinite;
+}
+
+/* A finished task's: green and still. */
+.pulse.ok {
+  background-color: var(--orbito-ok);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--orbito-ok) 20%, transparent);
+  animation: none;
+}
+
+@keyframes approval-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* The code the step runs, all of it: it scrolls rather than hides any. */
+.approval-code {
+  max-height: 240px;
+  margin: 8px 0 2px 17px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background-color: var(--orbito-surface-hover);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The site the step goes to (or the icons of the tabs the task opened)
+ * and the task's name; on a wrap-up card, what it made and the question. */
+.approval-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  padding-inline-start: 17px;
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+}
+
+.favicons {
+  display: inline-flex;
+  flex: none;
+
+  img {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1.5px var(--orbito-frame-base);
+  }
+
+  img + img {
+    margin-inline-start: -4px;
+  }
+}
+
+.approval-site {
+  flex: none;
+}
+
+.orbit-card .approval-task {
+  white-space: normal;
+}
+
+.approval-sep {
+  flex: none;
+  opacity: 0.5;
+}
+
+.approval-task {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A result on the question's line: its icon and title, as plain text; the
+ * question after it wraps rather than being cut. */
+.approval-meta .result-chip {
+  flex: none;
+  max-width: 45%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  font-size: inherit;
+
+  &:hover {
+    background: none;
+  }
+}
+
+.approval-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background-color: color-mix(in oklab, var(--orbito-ok) 16%, transparent);
+  color: var(--orbito-ok);
+
+  svg {
+    width: 13px;
+    height: 13px;
+    stroke-width: 1.8;
+  }
+
+  .no > & {
+    background-color: var(--orbito-surface-hover);
+    color: var(--orbito-text-muted);
+  }
+}
+
+.approval-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  b {
+    color: var(--orbito-text);
+    font-weight: 600;
+  }
+
+  .done {
+    font-size: inherit;
+  }
+}
+
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.done {
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+}
+
+.error {
+  margin-inline: -10px;
+  padding: 10px;
+  border-radius: var(--orbito-radius-card);
+  background-color: color-mix(in oklab, var(--orbito-danger) 10%, transparent);
+  color: var(--orbito-danger);
+
+  p {
+    margin: 0 0 8px;
+  }
+}
+
+.memory {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--orbito-accent);
+  font-size: 12px;
+
+  > button {
+    padding: 2px 10px;
+    border-radius: 999px;
+  }
+
+  &.undone {
+    padding-inline-end: 10px;
+    box-shadow: none;
+  }
+}
+
+.undone {
+  color: var(--orbito-text-muted);
+  text-decoration: line-through;
+}
+
+.memories {
+  margin-top: 6px;
+  color: var(--orbito-text-muted);
+  font-size: 11px;
+
+  > summary {
+    width: fit-content;
+
+    &:focus-visible {
+      outline: var(--orbito-focus-ring);
+      outline-offset: var(--orbito-focus-ring-offset);
+    }
+  }
+
+  > ul {
+    margin: 4px 0 0;
+    padding-inline-start: 18px;
+  }
+}
+
+/* A skill a question called, before its words, or a reply used. */
+.skill-chip {
+  display: inline-block;
+  margin-inline-end: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--orbito-accent);
+  color: var(--orbito-accent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A tab a reply read or opened (a source), or what an Orbit's task made (a
+ * result): goes to it. */
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.src-chip,
+.result-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 3px 9px 3px 6px;
+  border-radius: 999px;
+  background-color: var(--orbito-surface-hover);
+  color: var(--orbito-text-muted);
+  font-size: 11.5px;
+
+  > img,
+  > svg {
+    flex: none;
+    width: 14px;
+    height: 14px;
+  }
+
+  > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &:hover {
+    color: var(--orbito-text);
+  }
+}
+
+.skills-used {
+  margin-block: 6px;
+}
+
+/* The steps of a skill made from a demo: pinned above the input while the
+   reply runs, one folded line in the reply once it ends. */
+.skill-steps {
+  font-size: 12px;
+
+  ol {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 2px 0;
+    color: var(--orbito-text-muted);
+  }
+
+  li.current {
+    color: var(--orbito-text);
+    font-weight: 600;
+  }
+
+  li.failed {
+    color: var(--orbito-text);
+  }
+}
+
+.skill-steps.pinned {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0 0 8px;
+  padding: 8px 6px 9px 12px;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+
+  ol {
+    position: relative;
+    max-height: 9em;
+    margin: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  > .reason {
+    margin-top: -4px;
+  }
+}
+
+.skill-steps-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+
+  .skill-step-direct {
+    flex: none;
+  }
+}
+
+.skill-steps-current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-steps-count {
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-steps-toggle {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  color: var(--orbito-text-muted);
+
+  svg {
+    width: 14px;
+    height: 14px;
+    transform: rotate(180deg);
+  }
+
+  &[aria-expanded="true"] svg {
+    transform: none;
+  }
+}
+
+/* A segment a step: done and current in the accent, failed in danger. */
+.skill-steps-bar {
+  display: flex;
+  gap: 3px;
+  margin-inline-end: 6px;
+
+  i {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background-color: var(--orbito-hairline);
+  }
+
+  .done {
+    background-color: var(--orbito-accent);
+  }
+
+  .current {
+    background-color: var(--orbito-accent-soft);
+    box-shadow: inset 0 0 0 1px var(--orbito-accent);
+  }
+
+  .failed {
+    background-color: var(--orbito-danger);
+  }
+}
+
+/* In the reply: how it went, the list under it. */
+details.skill-steps {
+  margin-block: 2px 6px;
+
+  > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    max-width: 100%;
+    color: var(--orbito-text-muted);
+    cursor: pointer;
+    list-style: none;
+
+    &::after {
+      content: "";
+      flex: none;
+      width: 6px;
+      height: 6px;
+      margin-inline-start: 2px;
+      border-block-end: 1.5px solid currentColor;
+      border-inline-end: 1.5px solid currentColor;
+      transform: translateY(-2px) rotate(45deg);
+    }
+
+    &:focus-visible {
+      outline: var(--orbito-focus-ring);
+      outline-offset: var(--orbito-focus-ring-offset);
+    }
+
+    > span {
+      flex: none;
+    }
+
+    > .reason {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      color: var(--orbito-text-muted);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+
+      &::before {
+        content: "· ";
+      }
+    }
+
+  }
+
+  &[open] > summary::after {
+    transform: translateY(1px) rotate(-135deg);
+  }
+
+  ol {
+    padding-inline-start: 2px;
+  }
+}
+
+.skill-steps-icon {
+  display: grid;
+
+  svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 1.8;
+  }
+
+  .done & {
+    color: var(--orbito-ok);
+  }
+
+  .failed & {
+    color: var(--orbito-danger);
+  }
+}
+
+.skill-steps-name {
+  color: var(--orbito-text);
+  font-weight: 600;
+}
+
+.skill-step-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  min-width: 1.4em;
+  height: 1.4em;
+  font-variant-numeric: tabular-nums;
+
+  svg {
+    width: 12px;
+    height: 12px;
+    stroke-width: 1.8;
+  }
+
+  .done > & {
+    color: var(--orbito-ok);
+  }
+
+  .current > & {
+    border-radius: 999px;
+    background-color: var(--orbito-accent);
+    color: var(--orbito-accent-ink);
+  }
+
+  .failed > & {
+    color: var(--orbito-danger);
+  }
+}
+
+.skill-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding-top: 1px;
+}
+
+.skill-step-direct {
+  color: var(--orbito-warn);
+  font-size: 11px;
+  font-weight: normal;
+}
+
+.draft {
+  padding-inline: 10px;
+}
+
+.draft-error {
+  margin-top: 4px;
+  color: var(--orbito-warn);
+  font-size: 12px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: auto 0;
+  padding-inline: 10px;
+  color: var(--orbito-text-muted);
+  text-align: center;
+
+  p {
+    margin: 0;
+  }
+}
+
+.empty-mark {
+  color: var(--orbito-accent);
+
+  svg {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.starters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+
+  button {
+    padding: 9px 10px;
+    border-radius: var(--orbito-radius-item);
+    background-color: var(--orbito-surface-hover);
+    color: var(--orbito-text);
+    text-align: start;
+
+    &:hover {
+      background-color: var(--orbito-surface);
+      box-shadow: var(--orbito-shadow-item);
+    }
+  }
+}
+
+/* Above the input: suggested skills, the skill menu, why a question was
+ * not sent. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block-end: 6px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--orbito-accent);
+  font-size: 12px;
+
+  > button {
+    padding: 2px 4px 2px 10px;
+    border-radius: 999px;
+    color: var(--orbito-accent);
+    font-weight: 600;
+  }
+
+  > .chip-dismiss {
+    padding-inline: 4px 8px;
+    color: var(--orbito-text-muted);
+    font-weight: normal;
+  }
+}
+
+/* It comes up as the input takes a "/"; in the flow, it goes at once. */
+.skill-menu {
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  margin-block-end: 6px;
+  padding: 4px;
+  overflow-y: auto;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--orbito-popover);
+  color: var(--orbito-popover-text);
+  box-shadow: var(--orbito-shadow-card);
+  transition:
+    opacity var(--orbito-duration-medium) var(--orbito-ease),
+    transform var(--orbito-duration-medium) var(--orbito-ease);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.skill-option {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px;
+  border-radius: 6px;
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &[aria-selected="true"] {
+    background-color: var(--orbito-accent-soft);
+  }
+}
+
+.skill-name {
+  font-weight: 600;
+}
+
+.skill-description {
+  overflow: hidden;
+  color: var(--orbito-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Show Orbito, in the Thread's place: the goal asked before a demo,
+ * the recording, the demo once stopped and the review of the skill made of
+ * it. */
+.show {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.show-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.show-title {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+/* Red as the Frame state, blinking while it records. */
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background-color: var(--orbito-danger);
+  animation: rec-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes rec-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.show-label {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+:is(.goal, .field) {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--orbito-radius-item);
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+  outline: none;
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 1.5px var(--orbito-accent);
+  }
+}
+
+.show-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.goal-step .show-actions {
+  justify-content: flex-end;
+}
+
+.show-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  &.primary {
+    background-color: var(--orbito-danger);
+    color: white;
+  }
+
+  svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.show-goal {
+  margin: 0;
+  overflow: hidden;
+  color: var(--orbito-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The live summary's steps, numbered. */
+.show-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: show-step;
+
+  &:empty,
+  &[hidden] {
+    display: none;
+  }
+
+  li {
+    display: flex;
+    gap: 8px;
+    line-height: 1.4;
+    counter-increment: show-step;
+
+    &::before {
+      content: counter(show-step) ".";
+      min-width: 1.4em;
+      flex: none;
+      color: var(--orbito-text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}
+
+.show-count {
+  margin: 0;
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+}
+
+.show-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--orbito-text-muted);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.show-error {
+  margin: 0;
+  color: var(--orbito-danger);
+  font-size: 12px;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+/* The review: the skill's name and description, its inputs and steps. */
+.review-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.review-heading {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.review-inputs,
+.review-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--orbito-radius-item);
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+}
+
+.input-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.input-name {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.input-description {
+  overflow: hidden;
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-value {
+  margin: 0;
+  overflow: hidden;
+  color: var(--orbito-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-warning {
+  margin: 0;
+  color: var(--orbito-warn);
+  font-size: 11px;
+
+  &:empty {
+    display: none;
+  }
+}
+
+/* "As input / Fixed value": one radio group, the picked one raised. */
+.segments {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  border-radius: 8px;
+  background-color: var(--orbito-surface-hover);
+  box-shadow: inset 0 0 0 1px var(--orbito-hairline);
+
+  > button {
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+
+    &[aria-checked="true"] {
+      background-color: var(--orbito-surface);
+      box-shadow: var(--orbito-shadow-item);
+      font-weight: 600;
+    }
+
+    &:disabled {
+      opacity: 0.45;
+    }
+  }
+}
+
+.review-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+
+  .step-number {
+    min-width: 1.4em;
+    flex: none;
+    padding-top: 7px;
+    color: var(--orbito-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .step-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .step-direct {
+    color: var(--orbito-warn);
+    font-size: 11px;
+  }
+
+  .step-actions {
+    display: flex;
+    flex: none;
+    padding-top: 3px;
+  }
+
+  .icon {
+    display: inline-flex;
+    padding: 4px;
+    border-radius: 6px;
+    color: var(--orbito-text-muted);
+
+    &:hover:not(:disabled) {
+      background-color: var(--orbito-surface-hover);
+      color: inherit;
+    }
+
+    &:disabled {
+      opacity: 0.35;
+    }
+
+    svg {
+      width: 14px;
+      height: 14px;
+    }
+  }
+}
+
+.review-actions {
+  justify-content: flex-end;
+  margin-top: 4px;
+
+  > .show-cancel {
+    margin-inline-end: auto;
+  }
+}
+
+.input-notice {
+  margin: 0 10px 6px;
+  color: var(--orbito-warn);
+  font-size: 12px;
+}
+
+/* The input: words on top, the model and thinking depth and the send
+ * button on one bar below. */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  margin-block: 8px var(--orbito-gap);
+  padding: 10px 7px 7px 10px;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--orbito-surface);
+  box-shadow: var(--orbito-shadow-item);
+
+  &:focus-within {
+    box-shadow: inset 0 0 0 1.5px var(--orbito-accent);
+  }
+
+  &.bypass {
+    box-shadow:
+      inset 0 0 0 1.5px color-mix(in oklab, var(--orbito-danger) 70%, transparent),
+      var(--orbito-shadow-item);
+  }
+
+  textarea {
+    display: block;
+    min-height: 22px;
+    max-height: 160px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    resize: none;
+    background: none;
+    font-size: 13.5px;
+    line-height: 22px;
+  }
+}
+
+.bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* The ＋ menu's button, at the bar's start: the model follows it. */
+.plus {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-inline: -4px 2px;
+  border-radius: 50%;
+  color: var(--orbito-text-muted);
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:hover:not(:disabled),
+  &[aria-expanded="true"] {
+    background-color: var(--orbito-surface-hover);
+    color: var(--orbito-text);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+  }
+}
+
+.anchor:has(> .plus) + .anchor > .model {
+  margin-inline-start: 0;
+}
+
+/* Show Orbito blocks the window's agent: the input takes no questions. */
+.composer:has(textarea:disabled) textarea {
+  color: var(--orbito-text-muted);
+}
+
+.model {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  height: 24px;
+  margin-inline-start: -6px;
+  padding: 0 4px 0 6px;
+  border-radius: 7px;
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  &:hover,
+  &[aria-expanded="true"] {
+    background-color: var(--orbito-surface-hover);
+    color: var(--orbito-text);
+  }
+
+  svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+/* The window's PermissionMode: a quiet shield; "auto" in the accent,
+ * "bypass" a red disc (with a red ring around the input and on Ask). */
+.permission {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-inline-start: 2px;
+  border-radius: 50%;
+  color: var(--orbito-text-muted);
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  &:hover,
+  &[aria-expanded="true"] {
+    background-color: var(--orbito-surface-hover);
+    color: var(--orbito-text);
+  }
+
+  &[data-mode="auto"] {
+    color: var(--orbito-accent);
+  }
+
+  &[data-mode="bypass"],
+  &[data-mode="bypass"]:hover {
+    background-color: var(--orbito-danger);
+    color: white;
+    animation: permission-pop var(--orbito-duration-medium) var(--orbito-ease);
+  }
+}
+
+@keyframes permission-pop {
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+.mode-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--orbito-page-text-muted);
+
+  svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  &[data-mode="auto"] {
+    color: var(--orbito-accent);
+  }
+
+  &[data-mode="bypass"] {
+    background-color: var(--orbito-danger);
+    color: white;
+  }
+}
+
+.item[data-mode="bypass"] > .grow {
+  color: var(--orbito-danger);
+}
+
+.model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.effort-label {
+  margin-inline-start: 5px;
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid var(--orbito-hairline);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* The context ring: fills with the share of the context window the next
+ * question takes, and warns near the end. */
+.usage {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  margin-inline-end: 6px;
+  border-radius: 50%;
+
+  &:hover,
+  &[aria-expanded="true"] {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  .ring {
+    width: 18px;
+    height: 18px;
+    transform: rotate(-90deg);
+    stroke-width: 2.5;
+  }
+
+  .track {
+    stroke: var(--orbito-hairline);
+  }
+
+  .value {
+    stroke: var(--orbito-accent);
+    transition: stroke-dasharray var(--orbito-duration-long) var(--orbito-ease);
+  }
+
+  &.hot .value {
+    stroke: var(--orbito-warn);
+  }
+}
+
+/* The usage details over the bar, at its end: the subscription's limits
+ * when the backend gives them, then the context by part. */
+.usage-menu {
+  inset-inline: auto 0;
+  top: auto;
+  bottom: calc(100% + 6px);
+  width: min(290px, calc(var(--orbito-assistant-width, 340px) - 16px));
+  outline: none;
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+  }
+
+  b {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The parts get the accent, each lighter than the one before. */
+  .part-0 {
+    --mix: 100%;
+  }
+
+  .part-1 {
+    --mix: 70%;
+  }
+
+  .part-2 {
+    --mix: 45%;
+  }
+
+  .part-3 {
+    --mix: 25%;
+  }
+}
+
+.limits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.limit {
+  padding: 4px 10px 8px;
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.bar-track,
+.stack {
+  display: flex;
+  overflow: hidden;
+  background-color: var(--orbito-page-line);
+}
+
+.bar-track {
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 3px;
+
+  i {
+    background-color: var(--orbito-accent);
+  }
+}
+
+.resets {
+  display: block;
+  margin-top: 4px;
+  color: var(--orbito-page-text-muted);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.stack {
+  height: 6px;
+  margin: 4px 10px 0;
+  border-radius: 3px;
+
+  i {
+    flex: none;
+    background-color: color-mix(in oklab, var(--orbito-accent) var(--mix), transparent);
+  }
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 10px 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  i {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    border-radius: 2px;
+    background-color: color-mix(in oklab, var(--orbito-accent) var(--mix), transparent);
+
+    &.free {
+      background-color: var(--orbito-page-line);
+    }
+  }
+
+  span {
+    flex: 1;
+    min-width: 0;
+  }
+
+  b {
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+/* Send: round; dim until there are words, accent once there are, and the
+ * stop button while a reply streams. */
+.send {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 50%;
+  background-color: color-mix(in oklab, var(--orbito-text) 10%, transparent);
+  color: var(--orbito-text-muted);
+  transition:
+    background-color var(--orbito-duration-short),
+    color var(--orbito-duration-short),
+    transform var(--orbito-duration-short);
+
+  svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
+  }
+
+  &.ready,
+  &.stop {
+    background-color: var(--orbito-accent);
+    color: var(--orbito-accent-ink);
+  }
+
+  &:is(.ready, .stop):hover {
+    filter: brightness(1.08);
+  }
+
+  &:is(.ready, .stop):hover:active {
+    transform: scale(0.92);
+  }
+}
+
+/* The resize handle on the leading edge, as the Sidebar's. */
+.resizer {
+  position: absolute;
+  z-index: 6;
+  inset-block: 0;
+  inset-inline-start: -8px;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 3px;
+    height: 24px;
+    margin: -12px 0 0 -1.5px;
+    border-radius: 2px;
+    background-color: var(--orbito-text-muted);
+    opacity: 0;
+    transition:
+      opacity var(--orbito-duration-short),
+      width var(--orbito-duration-short),
+      height var(--orbito-duration-medium) var(--orbito-ease),
+      margin var(--orbito-duration-medium) var(--orbito-ease),
+      background-color var(--orbito-duration-short);
+  }
+
+  &:hover::after,
+  :host([resizing]) &::after,
+  &:focus-visible::after {
+    opacity: 1;
+    width: 4px;
+    height: 52px;
+    margin: -26px 0 0 -2px;
+    background-color: var(--orbito-accent);
+  }
+
+  &:focus-visible::after {
+    outline: var(--orbito-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Opening and closing (playMotion): the column widens or narrows over the
+ * content held at full width, which slides in from the end or out to it.
+ * In a narrow window the panel moves as a whole. */
+:host([motion]) {
+  --motion-shift: 1;
+  overflow: clip;
+}
+
+:host([motion]:dir(rtl)) {
+  --motion-shift: -1;
+}
+
+@media (min-width: 761px) {
+  :host([motion]) > :not(.resizer) {
+    min-width: var(--orbito-assistant-width, 340px);
+  }
+
+  :host([motion="open"]) > :not(.resizer) {
+    animation: content-in var(--orbito-duration-long) var(--orbito-ease) calc(var(--orbito-duration-short) * 0.4) both;
+  }
+
+  :host([motion="open"]) > .composer {
+    animation-delay: calc(var(--orbito-duration-short) * 0.8);
+  }
+
+  :host([motion="close"]) > :not(.resizer) {
+    animation: content-out var(--orbito-duration-short) var(--orbito-ease-exit) both;
+  }
+}
+
+@keyframes content-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(28px * var(--motion-shift)));
+  }
+}
+
+@keyframes content-out {
+  to {
+    opacity: 0;
+    transform: translateX(calc(18px * var(--motion-shift)));
+  }
+}
+
+/* A narrow window: the panel floats over the page (orbito.css), at its
+ * own width. */
+@media (max-width: 760px) {
+  .resizer {
+    display: none;
+  }
+}

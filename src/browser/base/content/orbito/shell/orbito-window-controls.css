@@ -1,0 +1,63 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+/* Flush with the window's top right corner, full bar height. */
+:host {
+  display: flex;
+  align-self: stretch;
+  margin-inline: 6px calc(-1 * var(--orbito-gap));
+}
+
+button {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--orbito-text);
+  -moz-window-dragging: no-drag;
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+/* Windows 11 shows its snap layouts over a maximize button with this. */
+.minimize {
+  -moz-default-appearance: -moz-window-button-minimize;
+}
+
+.maximize {
+  -moz-default-appearance: -moz-window-button-maximize;
+}
+
+.restore {
+  -moz-default-appearance: -moz-window-button-restore;
+}
+
+.close {
+  -moz-default-appearance: -moz-window-button-close;
+
+  &:hover {
+    background-color: var(--orbito-danger);
+    color: white;
+  }
+}
+
+svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}

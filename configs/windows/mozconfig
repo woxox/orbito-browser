@@ -1,0 +1,19 @@
+ac_add_options --enable-eme=widevine
+
+# Cross-compiling Windows builds from Linux (remote build server) needs nothing
+# extra: --enable-bootstrap fetches MSVC/Windows SDK ("vs") and wine (for midl).
+
+# Use builds produced by the remote server instead of compiling C++/Rust locally.
+# MOZ_ARTIFACT_FILE (or MOZ_ARTIFACT_URL) must point at the server's target.zip.
+if test "$ORBITO_ARTIFACT_BUILD"; then
+  ac_add_options --enable-artifact-builds
+  # Test binaries aren't part of the server's zip.
+  ac_add_options --disable-tests
+  mk_add_options MOZ_OBJDIR=./obj-artifact
+fi
+
+if test "$SURFER_COMPAT" = "aarch64"; then
+  ac_add_options --target=aarch64-pc-windows-msvc
+else
+  ac_add_options --target=x86_64-pc-windows-msvc
+fi

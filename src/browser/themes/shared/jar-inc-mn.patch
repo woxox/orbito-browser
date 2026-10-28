@@ -1,0 +1,14 @@
+diff --git a/browser/themes/shared/jar.inc.mn b/browser/themes/shared/jar.inc.mn
+index af61e24db85f8406a0a4777b774f3fd56d6aa7b8..8f2e2d7f23ce3514bef9a331aba3e2dc851ac000 100644
+--- a/browser/themes/shared/jar.inc.mn
++++ b/browser/themes/shared/jar.inc.mn
+@@ -23,6 +23,9 @@
+   skin/classic/browser/formautofill-notification.css           (../shared/formautofill-notification.css)
+   skin/classic/browser/identity-credential-notification.css    (../shared/identity-credential-notification.css)
+   skin/classic/browser/menupanel.css                           (../shared/menupanel.css)
++  skin/classic/browser/orbito/orbito.css                       (../shared/orbito/orbito.css)
++  skin/classic/browser/orbito/tokens.css                       (../shared/orbito/tokens.css)
++  skin/classic/browser/orbito/sparkle.svg                      (../shared/orbito/sparkle.svg)
+   skin/classic/browser/notification-icons.css                  (../shared/notification-icons.css)
+   skin/classic/browser/pageInfo.css                            (../shared/pageInfo.css)
+   skin/classic/browser/sanitizeDialog_v2.css                   (../shared/sanitizeDialog_v2.css)

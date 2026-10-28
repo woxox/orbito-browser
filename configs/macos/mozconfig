@@ -1,0 +1,29 @@
+ac_add_options --disable-dmd
+ac_add_options --enable-eme=widevine
+
+# Cross-compiling macOS builds from Linux (remote build server).
+# Toolchains are fetched into ~/mac-cross by scripts/remote/setup.sh.
+if test "$ORBITO_CROSS_COMPILING"; then
+  ORBITO_MAC_CROSS="$HOME/mac-cross"
+
+  mk_add_options "export PATH=$ORBITO_MAC_CROSS/cctools/bin:$PATH"
+
+  export MKFSHFS=$ORBITO_MAC_CROSS/hfsplus/newfs_hfs
+  export DMG_TOOL=$ORBITO_MAC_CROSS/dmg/dmg
+  export HFS_TOOL=$ORBITO_MAC_CROSS/dmg/hfsplus
+fi
+
+# Use builds produced by the remote server instead of compiling C++/Rust locally.
+# MOZ_ARTIFACT_FILE (or MOZ_ARTIFACT_URL) must point at the server's target.dmg.
+if test "$ORBITO_ARTIFACT_BUILD"; then
+  ac_add_options --enable-artifact-builds
+  # Test binaries (e.g. updater-xpcshell) aren't part of the server's dmg.
+  ac_add_options --disable-tests
+  mk_add_options MOZ_OBJDIR=./obj-artifact
+fi
+
+if test "$SURFER_COMPAT" = "x86_64"; then
+  ac_add_options --target=x86_64-apple-darwin
+else
+  ac_add_options --target=aarch64-apple-darwin
+fi

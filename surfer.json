@@ -1,0 +1,33 @@
+{
+  "name": "Orbito",
+  "vendor": "Orbito",
+  "appId": "orbito",
+  "binaryName": "orbito",
+  "version": {
+    "product": "firefox",
+    "version": "158.0",
+    "candidate": "158.0",
+    "candidateBuild": 1
+  },
+  "buildOptions": {
+    "generateBranding": true
+  },
+  "addons": {},
+  "brands": {
+    "release": {
+      "backgroundColor": "#1B1D24",
+      "brandShorterName": "Orbito",
+      "brandShortName": "Orbito",
+      "brandFullName": "Orbito Browser",
+      "release": {
+        "displayVersion": "0.1.0"
+      }
+    }
+  },
+  "license": {
+    "ignoredFiles": [
+      ".*\\.json"
+    ],
+    "licenseType": "MPL-2.0"
+  }
+}

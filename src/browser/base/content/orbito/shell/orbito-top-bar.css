@@ -1,0 +1,396 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+/* The bar is where the window is dragged from, as a title bar is; the URL
+ * display too, buttons not. */
+:host {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  color: var(--orbito-text);
+  -moz-window-dragging: drag;
+}
+
+/* The site information button and the URL display, hovered as one. */
+.ident {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  margin-inline: 6px 4px;
+  border-radius: 9px;
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+}
+
+.navigation,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+button {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--orbito-text);
+  font: inherit;
+  -moz-window-dragging: no-drag;
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+.show-sidebar,
+.back,
+.forward,
+.reload,
+.site-info,
+.reader,
+.extensions,
+.downloads {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &:hover:active,
+  &[aria-pressed="true"] {
+    background-color: var(--orbito-surface-active);
+  }
+}
+
+/* A click on Reload turns its icon once. */
+.reload[spin] svg {
+  animation: reload-spin calc(var(--orbito-duration-long) * 2) var(--orbito-ease);
+}
+
+@keyframes reload-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* Back and Forward with no page that way, and Reload on pages that have
+ * nothing to reload (a new tab), stay focusable but look and act off. */
+:is(.back, .forward, .reload)[aria-disabled="true"] {
+  color: var(--orbito-text-muted);
+  opacity: 0.35;
+
+  &:hover {
+    background: none;
+  }
+}
+
+.site-info {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: var(--orbito-text-muted);
+
+  &:hover,
+  &[aria-expanded="true"] {
+    color: var(--orbito-text);
+    background-color: var(--orbito-surface-active);
+  }
+}
+
+/* Orbito's and Firefox's own pages: the Orbito mark, an accent tile. */
+.orbito-mark {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background-color: var(--orbito-accent);
+  color: var(--orbito-accent-ink);
+
+  svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.extensions[aria-expanded="true"],
+.downloads[aria-expanded="true"] {
+  background-color: var(--orbito-surface-active);
+}
+
+/* A request waits in the button's panel. */
+.site-info,
+.extensions {
+  position: relative;
+
+  &[waiting]::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 5px;
+    inset-inline-end: 5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--orbito-accent);
+    box-shadow: 0 0 0 2px var(--orbito-frame-base);
+  }
+}
+
+/* Downloads: the running downloads' progress under the arrow, then a dot
+ * for the finished (accent) or failed and blocked (danger) ones not seen
+ * yet. */
+.downloads {
+  position: relative;
+
+  &[running] {
+    color: var(--orbito-accent);
+  }
+
+  .progress {
+    display: none;
+    position: absolute;
+    inset-inline: 7px;
+    inset-block-end: 4px;
+    height: 2px;
+    border-radius: 1px;
+    background: linear-gradient(currentColor, currentColor) no-repeat 0 /
+      var(--progress) 100% var(--orbito-hairline);
+  }
+
+  &[running] .progress {
+    display: block;
+  }
+
+  &[running] svg {
+    translate: 0 -2px;
+  }
+
+  &[attention]:not([running])::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 5px;
+    inset-inline-end: 5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--orbito-accent);
+    box-shadow: 0 0 0 2px var(--orbito-frame-base);
+  }
+
+  &:is([attention="info"], [attention="warning"], [attention="severe"])::after {
+    background-color: var(--orbito-danger);
+  }
+
+  /* A download started: the arrow drops in; one finished: the button
+   * pulses. */
+  &[notification="start"] svg {
+    animation: download-start calc(var(--orbito-duration-long) * 2.5) var(--orbito-ease);
+  }
+
+  &[notification="finish"] {
+    animation: download-finish calc(var(--orbito-duration-long) * 2) var(--orbito-ease) 2;
+  }
+}
+
+@keyframes download-start {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes download-finish {
+  50% {
+    background-color: var(--orbito-accent-soft);
+    scale: 1.12;
+  }
+}
+
+.url {
+  display: flex;
+  align-items: baseline;
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding-inline: 2px 10px;
+  border-radius: 9px;
+  line-height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: default;
+
+  /* A popup's, on its shorter bar. */
+  .ident[popup] > & {
+    font-size: 12.5px;
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+.host {
+  font-weight: 600;
+}
+
+.rest {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rest,
+.placeholder {
+  color: var(--orbito-text-muted);
+}
+
+/* In private windows, next to the URL display. */
+.private {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 26px;
+  margin-inline-end: 4px;
+  padding-inline: 10px;
+  border-radius: 999px;
+  background-color: var(--orbito-surface);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Ask, the bar's main action: an accent outlined pill while the Assistant
+ * panel is closed, a lifted surface that joins the open panel. */
+.ask {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-inline-start: 6px;
+  padding-inline: 10px 12px;
+  border-radius: 999px;
+  background-color: var(--orbito-accent-soft);
+  color: var(--orbito-accent);
+  font-weight: 650;
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--orbito-accent) 35%, transparent);
+  transition:
+    background-color var(--orbito-duration-short),
+    box-shadow var(--orbito-duration-short),
+    color var(--orbito-duration-short);
+
+  &:hover {
+    background-color: color-mix(in oklab, var(--orbito-accent) 20%, transparent);
+  }
+
+  &:hover:active {
+    transform: scale(0.97);
+  }
+
+  &[aria-pressed="true"] {
+    background-color: var(--orbito-surface);
+    color: var(--orbito-text);
+    box-shadow: var(--orbito-shadow-item);
+
+    svg {
+      color: var(--orbito-accent);
+    }
+  }
+
+  /* The window's PermissionMode is "bypass": tools run without asking. */
+  &[bypass],
+  &[bypass][aria-pressed="true"] {
+    box-shadow: inset 0 0 0 1.5px
+      color-mix(in oklab, var(--orbito-danger) 75%, transparent);
+
+    svg {
+      color: var(--orbito-danger);
+    }
+  }
+
+  /* Ask's dot: the window's agent works (accent, blinking), waits for an
+   * approval (amber, blinking) or for a choice about a finished task's tabs
+   * (accent, still). */
+  .dot {
+    display: none;
+    position: absolute;
+    inset-block-start: -1px;
+    inset-inline-end: -1px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--orbito-accent);
+    box-shadow: 0 0 0 2px var(--orbito-frame-base);
+    animation: ask-dot-blink 1.2s infinite;
+  }
+
+  &[status] .dot {
+    display: block;
+  }
+
+  &[status="confirm"] .dot {
+    background-color: var(--orbito-warn);
+  }
+
+  &[status="decide"] .dot {
+    animation: none;
+  }
+}
+
+@keyframes ask-dot-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--orbito-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+svg .fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* A narrow window: Ask shows only its icon, and the reader view and
+ * downloads buttons make room for the URL display. */
+@media (max-width: 760px) {
+  .ident {
+    margin-inline-start: 2px;
+  }
+
+  .ask {
+    padding-inline: 8px;
+
+    .label {
+      display: none;
+    }
+  }
+
+  .reader,
+  .downloads {
+    display: none;
+  }
+}

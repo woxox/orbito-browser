@@ -1,0 +1,11 @@
+.dotbuild/
+engine/
+firefox-*/
+node_modules/
+.surfer/
+__pycache__/
+dist/
+.DS_Store
+/mozconfig
+configs/branding/*/firefox.icns
+*.pem

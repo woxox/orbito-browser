@@ -1,0 +1,13 @@
+diff --git a/browser/moz.build b/browser/moz.build
+index 5a03cfc6d3f8fe3a677d4d9e9894e69a98d0c01f..2eec92b6b4249a946045b10d9acd656a2027d07e 100644
+--- a/browser/moz.build
++++ b/browser/moz.build
+@@ -21,6 +21,8 @@ DIRS += [
+     "themes",
+     "extensions",
+     "branding",
++    "orbito-agent",
++    "orbito-models",
+ ]
+ 
+ DIRS += [

@@ -1,0 +1,108 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+:host {
+  position: relative;
+  display: block;
+  flex: none;
+  min-width: 0;
+}
+
+/* Where unpinned Pins shrink away (ListMotion's ghosts), over the grid. */
+.ghosts {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* With no Pin the grid keeps its place, and the gap under it, with no
+ * height. */
+:host([empty]) {
+  height: 0;
+}
+
+/* No visible drop helper: with no Pin, a dragged tab still finds an
+ * invisible place to drop on, laid over the Sidebar's top row so that the
+ * rows do not move (orbito.css sets the offset). */
+:host([empty][dropping]) .grid {
+  position: absolute;
+  inset-inline: 0;
+  top: var(--orbito-pins-drop-offset, 0px);
+  height: 40px;
+}
+
+:host([dragging]) {
+  cursor: grabbing;
+}
+
+/* Four Pins to a row, as wide as the Sidebar lets them. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  border-radius: var(--orbito-radius-item);
+}
+
+.pin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 40px;
+  border-radius: var(--orbito-radius-item);
+  background-color: var(--orbito-surface-hover);
+  cursor: default;
+  transition:
+    background-color var(--orbito-duration-short) var(--orbito-ease),
+    box-shadow var(--orbito-duration-short) var(--orbito-ease);
+
+  &:hover {
+    background-color: var(--orbito-surface-active);
+  }
+
+  &[selected] {
+    background-color: var(--orbito-surface);
+    box-shadow: var(--orbito-shadow-item);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+
+  &[dragged] {
+    opacity: 0.4;
+  }
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  pointer-events: none;
+}
+
+/* An about: page's icon: the Orbit mark on the accent. */
+.orbito-tile {
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background-color: var(--orbito-accent);
+  color: var(--orbito-accent-ink);
+
+  & svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--orbito-icon-stroke);
+  }
+
+  & .fill {
+    fill: currentColor;
+    stroke: none;
+  }
+}

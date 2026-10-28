@@ -1,0 +1,568 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+:host([dragging]) {
+  cursor: grabbing;
+}
+
+.scroll {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the rows' shadows and focus rings (3px out). */
+  margin: -3px -3px -1px;
+  padding: 3px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Where closed rows fold away (ListMotion's ghosts), over the list. */
+.ghosts {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tab[ghost] {
+  transform-origin: top;
+}
+
+/* Rows: the icon in a 16px column 10px in, the label from 35px. */
+.tab,
+.new-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  height: 32px;
+  padding-inline: 10px 4px;
+  border-radius: var(--orbito-radius-item);
+  color: var(--orbito-text);
+  cursor: default;
+  transition:
+    background-color var(--orbito-duration-short) var(--orbito-ease),
+    box-shadow var(--orbito-duration-short) var(--orbito-ease);
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+.tab {
+  &[selected] {
+    background-color: var(--orbito-surface);
+    box-shadow: var(--orbito-shadow-item);
+  }
+
+  &[dragged] {
+    opacity: 0.4;
+  }
+
+  /* Not loaded yet (or unloaded): its icon and label are dimmed. */
+  &[unloaded] :is(.icon, .label) {
+    opacity: 0.5;
+  }
+
+  /* A dragged tab held over this one: a bar fills along its bottom, then
+   * it arms, saying what a drop does (groups the two). */
+  &[hold] {
+    box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--orbito-accent) 40%, transparent);
+
+    &::after {
+      content: "";
+      position: absolute;
+      inset-inline: 10px;
+      bottom: 3px;
+      height: 2px;
+      border-radius: 1px;
+      background-color: var(--orbito-accent);
+      transform-origin: left;
+      animation: hold-fill 550ms linear both;
+      pointer-events: none;
+    }
+  }
+
+  &[hold="armed"] {
+    background-color: var(--orbito-accent-soft);
+    box-shadow: inset 0 0 0 1.5px var(--orbito-accent);
+    animation: armed-pop var(--orbito-duration-medium) var(--orbito-ease);
+
+    &::after {
+      content: attr(hold-hint);
+      inset-inline: auto 8px;
+      top: 50%;
+      bottom: auto;
+      height: auto;
+      padding: 2px 7px;
+      border-radius: 999px;
+      color: var(--orbito-accent-ink);
+      font-size: 11px;
+      font-weight: 650;
+      transform: translateY(-50%);
+      animation: none;
+    }
+
+    & .close {
+      visibility: hidden;
+    }
+  }
+}
+
+@keyframes hold-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes armed-pop {
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+.new-tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: start;
+  color: var(--orbito-text-muted);
+  cursor: pointer;
+
+  & .icon {
+    background: url("chrome://global/skin/icons/plus.svg") center / 14px no-repeat;
+    -moz-context-properties: fill;
+    fill: currentColor;
+  }
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+/* An about: page's icon: the Orbit mark on the accent. */
+.orbito-tile {
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background-color: var(--orbito-accent);
+  color: var(--orbito-accent-ink);
+
+  & svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A tab's: shown on the selected tab and the one under the pointer. A
+ * group's: always shown. */
+.close {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: url("chrome://global/skin/icons/close.svg") center / 12px no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--orbito-text-muted);
+  opacity: 0;
+
+  .tab:is(:hover, [selected]) &,
+  .group-head & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background-color: var(--orbito-surface-active);
+    fill: var(--orbito-text);
+  }
+}
+
+/* A Firefox tab group: one box in the group's color holding its header and
+ * its tabs, set 12px in. The hue comes from the group's color. */
+.group {
+  --group-box: light-dark(
+    oklch(0.45 calc(0.09 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.14),
+    oklch(0.1 calc(0.03 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.5)
+  );
+  --group-box-hover: light-dark(
+    oklch(0.45 calc(0.09 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.21),
+    oklch(0.1 calc(0.03 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.57)
+  );
+  --group-edge: light-dark(
+    oklch(0.45 calc(0.09 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.2),
+    oklch(0.1 calc(0.03 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.56)
+  );
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  margin-block: 4px;
+  padding: 3px;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--group-box);
+  box-shadow: inset 0 0 0 1px var(--group-edge);
+  transition: background-color var(--orbito-duration-short) var(--orbito-ease);
+
+  /* The whole box darkens under the pointer on the title, not the title
+   * alone; the close button leaves it be. */
+  &:has(> .group-head > .group-toggle:hover) {
+    background-color: var(--group-box-hover);
+  }
+
+  &[dragged] {
+    opacity: 0.4;
+  }
+
+  /* Just made by holding one tab over another. */
+  &[fresh] {
+    animation: group-pop-in var(--orbito-duration-medium) var(--orbito-ease);
+  }
+}
+
+@keyframes group-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.group-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding-inline-end: 4px;
+}
+
+.group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding-inline: 7px 8px;
+  border-radius: 8px;
+  font-weight: 650;
+  cursor: default;
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+
+  & .label {
+    flex: 0 1 auto;
+  }
+}
+
+.dot {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+  background-color: oklch(0.62 calc(0.14 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue));
+}
+
+.chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  background: url("chrome://global/skin/icons/arrow-down-12.svg") center / 12px no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--orbito-text-muted);
+  transition: transform var(--orbito-duration-short) var(--orbito-ease);
+
+  .group[collapsed] & {
+    transform: rotate(-90deg);
+  }
+}
+
+.group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-inline-start: 9px;
+}
+
+/* An Orbit: the tabs one assistant task opened, in an accent box. Its
+ * header has no text: one row of the icon, a bar that runs while the task
+ * works and the stop button; the edge turns amber (breathing twice) while
+ * it waits for an approval and glows in the accent once it is done. It
+ * pops in when a task opens its first tab. */
+.orbit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  margin-block: 4px;
+  padding: 3px;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--orbito-accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--orbito-accent) 28%, transparent);
+  animation: orbit-pop-in var(--orbito-duration-medium) var(--orbito-ease);
+
+  /* Each state keeps the pop-in first, so a change of state does not play
+   * it again. */
+  &[state="waiting"] {
+    box-shadow: inset 0 0 0 1px var(--orbito-warn);
+    animation:
+      orbit-pop-in var(--orbito-duration-medium) var(--orbito-ease),
+      orbit-nudge 1.4s ease-in-out 2;
+  }
+
+  &[state="done"] {
+    animation:
+      orbit-pop-in var(--orbito-duration-medium) var(--orbito-ease),
+      orbit-glow 2s ease-in-out 2;
+  }
+}
+
+@keyframes orbit-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes orbit-nudge {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--orbito-warn) 45%, transparent),
+      0 0 0 0 color-mix(in oklab, var(--orbito-warn) 40%, transparent);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px var(--orbito-warn),
+      0 0 0 4px color-mix(in oklab, var(--orbito-warn) 18%, transparent);
+  }
+}
+
+@keyframes orbit-glow {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px var(--orbito-accent),
+      0 0 0 4px color-mix(in oklab, var(--orbito-accent) 16%, transparent);
+  }
+}
+
+.orbit-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  /* Keeps the icon on the rows' column. */
+  padding-inline: 4px;
+}
+
+/* The icon is the header's only button: it alone is pressed and lit. */
+.orbit-toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--orbito-accent);
+  cursor: default;
+
+  .orbit[state="waiting"] & {
+    color: var(--orbito-warn);
+  }
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--orbito-icon-stroke);
+
+  .fill {
+    fill: currentColor;
+    stroke: none;
+  }
+}
+
+.stop {
+  appearance: none;
+  margin-inline-start: auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--orbito-text-muted);
+
+  & svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  &:hover {
+    background-color: var(--orbito-surface-active);
+    color: var(--orbito-text);
+  }
+}
+
+/* The task's progress, in the header's row: it has no known end, so a
+ * stretch runs along. */
+.orbit-bar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background-color: color-mix(in oklab, var(--orbito-accent) 18%, transparent);
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    width: 40%;
+    border-radius: inherit;
+    background-color: var(--orbito-accent);
+    animation: orbit-progress 1.6s var(--orbito-ease) infinite;
+  }
+}
+
+@keyframes orbit-progress {
+  from {
+    inset-inline-start: -40%;
+  }
+  to {
+    inset-inline-start: 100%;
+  }
+}
+
+/* Its tabs sit flush with the box's edge. */
+.orbit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A tab the assistant acts on: while a step runs in it, a soft light
+ * sweeps across the row and the step shows after the label; between steps
+ * (the tab touched last) the row keeps a still accent tint. The tint lies
+ * over the row's background and under its content. */
+.tab[touching] {
+  isolation: isolate;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background-color: var(--orbito-accent-soft);
+    pointer-events: none;
+  }
+}
+
+.tab[touching="running"]::before {
+  background-color: transparent;
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    var(--orbito-accent-soft) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  animation: touching-sweep 1.8s linear infinite;
+}
+
+@keyframes touching-sweep {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+.step {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--orbito-accent);
+  font-size: 11px;
+}
+
+/* Still different without motion (motion.css stops it): the bar
+ * stays, the edges keep their colors. */
+@media (prefers-reduced-motion: reduce) {
+  /* The light stays in the middle of the row. */
+  .tab[touching="running"]::before {
+    background-position: 50% 0;
+  }
+
+  .orbit[state="waiting"] {
+    box-shadow: inset 0 0 0 1.5px var(--orbito-warn);
+  }
+
+  .orbit[state="done"] {
+    box-shadow: inset 0 0 0 1.5px var(--orbito-accent);
+  }
+
+  .orbit-bar::after {
+    inset-inline-start: 0;
+  }
+}

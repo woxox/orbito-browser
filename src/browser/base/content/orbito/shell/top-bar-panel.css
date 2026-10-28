@@ -1,0 +1,86 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+/* Rows of the panels under the Top bar's buttons (top-bar-panel.mjs). The
+ * panel's box (background, corners, shadow) is orbito.css's. */
+:host {
+  display: block;
+  width: 100%;
+  color: var(--orbito-popover-text);
+}
+
+.head {
+  padding: 8px 10px 10px;
+}
+
+.title {
+  font-weight: 650;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section {
+  padding: 6px 10px 4px;
+  color: var(--orbito-page-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.sep {
+  height: 1px;
+  margin: 6px 4px;
+  background-color: var(--orbito-page-line);
+}
+
+.item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+
+  &:hover {
+    background-color: var(--orbito-accent-soft);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.sub {
+  display: block;
+  color: var(--orbito-page-text-muted);
+  font-size: 11.5px;
+}
+
+.mini {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background-color: var(--orbito-accent-soft);
+  color: var(--orbito-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+}

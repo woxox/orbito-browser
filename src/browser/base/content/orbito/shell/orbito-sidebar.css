@@ -1,0 +1,176 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+/* Rows line up on one grid: leading icons in a 16px column 10px in, labels
+ * from 35px; blocks 8px apart. */
+:host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--orbito-gap);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--orbito-gap) 6px var(--orbito-gap) var(--orbito-gap);
+  color: var(--orbito-text);
+}
+
+:host([resizing]) {
+  cursor: col-resize;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  flex: none;
+  -moz-window-dragging: drag;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* The top row's buttons: the collapse button, then the bookmarks one. */
+.collapse,
+.bookmarks {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--orbito-text);
+  -moz-window-dragging: no-drag;
+
+  &:hover {
+    background-color: var(--orbito-surface-hover);
+  }
+
+  &:hover:active {
+    background-color: var(--orbito-surface-active);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+.collapse {
+  background: url("chrome://browser/skin/sidebar-expanded.svg") center / 16px no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+.bookmarks svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--orbito-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.space-body {
+  --orbito-slide: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--orbito-gap);
+  flex: 1;
+  min-height: 0;
+}
+
+:host(:dir(rtl)) .space-body {
+  --orbito-slide: -16px;
+}
+
+/* A switch slides the Space's body in from the new Space's side. */
+@media (prefers-reduced-motion: no-preference) {
+  .space-body[slide="next"] {
+    animation: space-in var(--orbito-duration-long) var(--orbito-ease);
+  }
+
+  .space-body[slide="previous"] {
+    animation: space-in-previous var(--orbito-duration-long) var(--orbito-ease);
+  }
+}
+
+@keyframes space-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--orbito-slide));
+  }
+}
+
+@keyframes space-in-previous {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--orbito-slide)));
+  }
+}
+
+orbito-tab-list {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The resize handle: an 8px strip on the edge; a pill grows and takes the
+ * accent under the pointer, while dragging and with focus. None in a narrow
+ * window, where the Sidebar stays collapsed. */
+.resizer {
+  position: absolute;
+  z-index: 6;
+  inset-block: 0;
+  inset-inline-end: -2px;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 3px;
+    height: 24px;
+    margin: -12px 0 0 -1.5px;
+    border-radius: 2px;
+    background-color: var(--orbito-text-muted);
+    opacity: 0;
+    transition:
+      opacity var(--orbito-duration-short),
+      width var(--orbito-duration-short),
+      height var(--orbito-duration-medium) var(--orbito-ease),
+      margin var(--orbito-duration-medium) var(--orbito-ease),
+      background-color var(--orbito-duration-short);
+  }
+
+  &:hover::after,
+  :host([resizing]) &::after,
+  &:focus-visible::after {
+    opacity: 1;
+    width: 4px;
+    height: 52px;
+    margin: -26px 0 0 -2px;
+    background-color: var(--orbito-accent);
+  }
+
+  &:focus-visible::after {
+    outline: var(--orbito-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+:host([narrow]) .resizer {
+  display: none;
+}

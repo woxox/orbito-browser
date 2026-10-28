@@ -1,0 +1,100 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#search {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+#tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-block: 16px;
+  border-bottom: 1px solid var(--border-color, color-mix(in srgb, currentColor 20%, transparent));
+}
+
+#tabs {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+}
+
+/* This Space or All Spaces, a segmented control, as in the Thread list. */
+#scope {
+  display: inline-flex;
+  margin-block-end: 6px;
+  padding: 2px;
+  border-radius: 8px;
+  background-color: var(--background-color-box, color-mix(in srgb, currentColor 6%, transparent));
+
+  button {
+    min-height: 0;
+    margin: 0;
+    padding: 2px 10px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    font-size: 0.9em;
+
+    &[aria-pressed="true"] {
+      background-color: var(--in-content-page-background, Canvas);
+      box-shadow: 0 1px 2px color-mix(in srgb, currentColor 20%, transparent);
+    }
+  }
+}
+
+[role="tab"] {
+  margin: 0;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+
+  &[aria-selected="true"] {
+    border-bottom-color: var(--color-accent-primary, AccentColor);
+    font-weight: 600;
+  }
+}
+
+.count {
+  color: var(--text-color-deemphasized);
+  font-weight: normal;
+}
+
+.item-title {
+  display: block;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  border: none;
+  background: none;
+  font-weight: 600;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+button.item-title {
+  color: var(--link-color, LinkText);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.item-meta {
+  margin-block: 4px 0;
+}
+
+.actions {
+  align-items: center;
+}
+
+/* A document's Space, before its other actions. */
+.document-space {
+  margin-inline-end: auto;
+}

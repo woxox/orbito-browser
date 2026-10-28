@@ -1,0 +1,319 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The Command bar (command-bar.mjs): Firefox's urlbar, taken out of the
+ * hidden nav bar and shown as a floating card over a dim window while
+ * :root[orbito-command-bar] is set. The urlbar keeps its own markup and
+ * styles; only its place, size and colors change here, and the few parts
+ * command-bar.mjs adds show. Its results are a popover anchored to the
+ * input, so they follow it. */
+
+#orbito-command-bar-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--orbito-scrim);
+}
+
+/* The Command bar's own parts in the urlbar (command-bar.mjs) show only
+ * while it is open. */
+.orbito-command-bar-placeholder,
+.orbito-command-bar-mode,
+.orbito-command-bar-footer {
+  display: none;
+}
+
+:root[orbito-command-bar] {
+  #orbito-command-bar-scrim {
+    display: block;
+  }
+
+  /* The urlbar's toolbox goes above the scrim. */
+  #navigator-toolbox {
+    z-index: 21;
+  }
+
+  /* The nav bar is laid out again, so the urlbar in it can show, but takes
+   * no room and shows nothing else. */
+  #nav-bar {
+    display: flex !important;
+    visibility: hidden;
+    height: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+  }
+
+  #urlbar {
+    visibility: visible;
+    position: fixed;
+    inset-block-start: min(14vh, 120px);
+    inset-inline: 0;
+    width: min(640px, 100vw - 32px);
+    margin-inline: auto;
+    --urlbar-height: 48px;
+
+    color: var(--orbito-popover-text);
+    --toolbar-field-text-color: var(--orbito-popover-text);
+    --toolbar-field-text-color-focus: var(--orbito-popover-text);
+    --urlbar-background-color: var(--orbito-popover);
+    --urlbar-background-color-focus: var(--orbito-popover);
+    --urlbar-background-border: none;
+    --urlbar-background-border-open: none;
+    --urlbar-background-border-focused: none;
+    --urlbar-background-border-radius: 14px;
+    /* The open urlbar's background is two halves, the input's and the
+     * results', each running past the seam by the overlap and clipped back
+     * to it, with its shadow clipped the shadow margin out. Both are widened
+     * past the popover shadow's reach (24px down, 60px blur), so it shows
+     * whole and the halves still meet as one surface. */
+    --urlbar-background-box-shadow-open: var(--orbito-shadow-pop);
+    --urlbar-joint-background-overlap: 90px;
+    --urlbar-joint-background-shadow-margin: 100px;
+    --urlbar-input-container-outline-open: none;
+    --urlbar-input-container-outline-open-focused: none;
+    --urlbarview-background-color-hover: color-mix(in srgb, currentColor 6%, transparent);
+    --urlbarview-background-color-selected: var(--orbito-accent-soft);
+    --urlbarview-text-color-selected: var(--orbito-popover-text);
+    --urlbarview-text-color-action: var(--orbito-text-muted);
+
+    /* The results: a 6px padded list of 38px rows. Firefox works these out
+     * from each other at the root, so the ones that follow are set again.
+     * The view pads the list's top (--urlbarView-padding); the list pads
+     * its own bottom, below. */
+    --urlbarView-padding: 6px;
+    --urlbarView-margin-inline: 6px;
+    --urlbarView-joint-background-outset-inline: calc(
+      var(--urlbar-background-overhang-open) + var(--urlbarView-margin-inline)
+    );
+    --urlbarView-row-gutter: 0px;
+    --urlbarview-row-min-height: 38px;
+    --urlbarview-row-padding-block: 4px;
+    --urlbarView-row-padding-inline: 10px;
+    --urlbarView-row-inner-min-height: 30px;
+    /* A group's label: 10px above it, 4px to its first row. */
+    --urlbarView-labeled-row-margin-top: 28px;
+    --urlbarView-labeled-row-label-top: -18px;
+
+    /* The page's site information and actions belong to the Top bar. */
+    [urlbar-slot] {
+      display: none !important;
+    }
+  }
+
+  #urlbar:not([popover-open]) > .urlbar-background {
+    box-shadow: var(--urlbar-background-box-shadow-open);
+  }
+
+  #urlbar > .urlbar-background {
+    backdrop-filter: blur(24px);
+  }
+
+  #urlbar .urlbar-input {
+    font-size: 17px;
+  }
+
+  /* What to type, by mode, over the empty input (command-bar.mjs puts it
+   * there). Firefox's own placeholder (it names the search engine) stays
+   * for search modes, and for screen readers. */
+  #urlbar .urlbar-input-box {
+    position: relative;
+  }
+
+  #urlbar:not([searchmode]) .urlbar-input:placeholder-shown {
+    &::placeholder {
+      color: transparent;
+    }
+
+    & ~ .orbito-command-bar-placeholder {
+      display: flex;
+    }
+  }
+
+  .orbito-command-bar-placeholder {
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+    pointer-events: none;
+    color: var(--orbito-page-text-muted);
+    font-size: 17px;
+  }
+
+  /* Which tab Enter loads in. */
+  .orbito-command-bar-mode {
+    display: block;
+    flex: none;
+    margin-inline: 8px 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--orbito-accent-soft);
+    color: var(--orbito-accent);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* The results, in the design's rows. The urlbar keeps their kinds, order
+   * and keys (ADR 0001); only how they look changes. */
+  #urlbar .urlbarView-results {
+    max-height: min(50vh, 420px);
+    padding-block-end: 6px;
+  }
+
+  #urlbar .urlbarView-row {
+    border-radius: 9px;
+
+    &[dynamicType^="orbito"] {
+      min-height: 38px;
+    }
+
+    /* The group's label (Firefox's, "From memory", and command-bar.mjs's
+     * "Open tabs"). */
+    &[label]::before {
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 14px;
+      letter-spacing: 0.04em;
+      color: var(--orbito-page-text-muted);
+      opacity: 1;
+    }
+
+    /* The hint at the row's end: what Enter does with it, by the result's
+     * kind. command-bar.mjs sets the words; a kind with none gets no hint.
+     * It repeats what the row says, so screen readers skip it. */
+    &:is([type="history"], [type^="history_"], [type$="-history"], [type="bookmark"],
+        [type^="bookmark_"], [type="top_site"], [type="remotetab"], [type="clipboard"]) {
+      --orbito-command-bar-row-hint: var(--orbito-command-bar-hint-open);
+    }
+    &:is([type="url"], [type^="autofill_"], [type="history_autofill_fallback_origin"], [type="keyword"]) {
+      --orbito-command-bar-row-hint: var(--orbito-command-bar-hint-go);
+    }
+    &:is([type="search"], [type="rich-search"], [type^="search_"], [type$="_search"]) {
+      --orbito-command-bar-row-hint: var(--orbito-command-bar-hint-search);
+    }
+    &[type="switchtab"] {
+      --orbito-command-bar-row-hint: var(--orbito-command-bar-hint-switch-tab);
+    }
+    &[dynamicType="orbitoAsk"] {
+      --orbito-command-bar-row-hint: var(--orbito-command-bar-hint-ask);
+    }
+    &[dynamicType="orbitoCommand"] {
+      --orbito-command-bar-row-hint: var(--orbito-command-bar-hint-command);
+    }
+
+    &:not([feedback-acknowledgment])::after {
+      content: var(--orbito-command-bar-row-hint) / "";
+      flex: none;
+      padding-inline-start: 10px;
+      margin-inline-end: 10px;
+      color: var(--orbito-page-text-muted);
+      font-size: 12px;
+    }
+
+    &[selected]::after {
+      color: var(--orbito-accent);
+      font-weight: 600;
+    }
+
+    /* The hint goes before the row's buttons. */
+    > .urlbarView-row-buttons,
+    > .urlbarView-actions-container {
+      order: 1;
+    }
+
+    /* The hint says it, so Firefox's "Switch to tab" chip is for screen
+     * readers only. */
+    &[type="switchtab"] .urlbarView-action.urlbarView-switchToTab {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    /* Ask and the commands: a label, then what it is in small muted type,
+     * as the design's rows have it. */
+    &:is([dynamicType="orbitoAsk"], [dynamicType="orbitoCommand"]) {
+      .urlbarView-title-separator {
+        display: none;
+      }
+
+      .urlbarView-action {
+        margin-inline-start: 10px;
+        color: var(--orbito-page-text-muted);
+        font-size: 12px;
+      }
+    }
+
+    &[dynamicType="orbitoAsk"] {
+      .urlbarView-favicon {
+        fill: var(--orbito-accent);
+        fill-opacity: 1;
+      }
+
+      .urlbarView-title {
+        font-weight: 600;
+      }
+    }
+  }
+
+  /* The footer: the keys, and at its end where Enter opens what is picked. */
+  .orbito-command-bar-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    padding: 8px 14px 2px;
+    border-top: 1px solid var(--orbito-page-line);
+    color: var(--orbito-page-text-muted);
+    font-size: 11.5px;
+    line-height: 16px;
+    pointer-events: none;
+
+    > .orbito-command-bar-spacer {
+      flex: 1;
+    }
+
+    kbd {
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--orbito-surface-hover);
+      box-shadow: inset 0 0 0 1px var(--orbito-hairline);
+      font: 500 11px var(--orbito-font-ui);
+    }
+  }
+}
+
+/* Opening: the scrim fades in and the card pops in. The results are a
+ * popover over the window, outside the urlbar, so they move with it; both
+ * halves only slide, so they keep meeting at the seam. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[orbito-command-bar] {
+    #orbito-command-bar-scrim {
+      animation: orbito-command-bar-fade var(--orbito-duration-short);
+    }
+
+    #urlbar,
+    #urlbar > .urlbarView:popover-open {
+      animation: orbito-command-bar-pop-in var(--orbito-duration-medium) var(--orbito-ease);
+    }
+  }
+}
+
+@keyframes orbito-command-bar-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes orbito-command-bar-pop-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}

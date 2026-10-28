@@ -1,0 +1,45 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The Shell's motion, shared by its components' shadow trees (a shadow tree
+ * takes no rule of the window's, so each Shell component's stylesheet
+ * imports this one) and Orbito's pages (settings.css, which the library and
+ * the timeline take too, and orbito-new-tab.css). */
+
+/* A control changes state in the short motion: under the pointer, pressed,
+ * picked (a menu item, a toggle, a checkbox, a segment). :where() keeps the
+ * rule at no specificity, so that a control's own transition wins. */
+:where(
+    button,
+    a,
+    summary,
+    input,
+    select,
+    textarea,
+    [role="button"],
+    [role="tab"],
+    [role="option"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"],
+    [role^="menuitem"]
+  ) {
+  transition-property: background-color, border-color, color, box-shadow, opacity, filter;
+  transition-duration: var(--orbito-duration-short);
+  transition-timing-function: var(--orbito-ease);
+}
+
+/* With reduced motion nothing in the Shell moves, as in the design. :host
+ * also stills what orbito.css moves the component itself with (the
+ * collapsed Sidebar's slide): an !important declaration in the shadow tree
+ * wins over the window's. */
+@media (prefers-reduced-motion: reduce) {
+  :host,
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

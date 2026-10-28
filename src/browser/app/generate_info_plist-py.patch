@@ -1,0 +1,23 @@
+diff --git a/browser/app/generate_info_plist.py b/browser/app/generate_info_plist.py
+index a2d9083aca5ff9bd7b4ef5720a507afecce79ac3..dabe4990605c481a976a239e54bcdc132df90cae 100644
+--- a/browser/app/generate_info_plist.py
++++ b/browser/app/generate_info_plist.py
+@@ -2,6 +2,7 @@
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
++import os
+ import re
+ 
+ import buildconfig
+@@ -39,7 +40,9 @@ def main(output, input_path, mac_app_name):
+             f"-DMOZ_MACBUNDLE_ID={substs['MOZ_MACBUNDLE_ID']}",
+             f"-DMAC_BUNDLE_VERSION={_mac_bundle_version()}",
+             f"-DMOZ_SMPRIVILEGEDEXECUTABLES_REQUIREMENTS={requirements}",
+-            f"-DMOZ_DEVELOPER_REPO_PATH={buildconfig.topsrcdir}",
++            # Orbito: the project root, since the engine's Orbito files link
++            # to its src/ and unpackaged builds read them from there.
++            f"-DMOZ_DEVELOPER_REPO_PATH={os.path.dirname(buildconfig.topsrcdir)}",
+             f"-DMOZ_DEVELOPER_OBJ_PATH={buildconfig.topobjdir}",
+             input_path,
+         ],

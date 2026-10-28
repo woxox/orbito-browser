@@ -1,0 +1,12 @@
+diff --git a/browser/app/macbuild/Contents/MacOS-files.in b/browser/app/macbuild/Contents/MacOS-files.in
+index 2f420f773610f6406c47ba8636cf476823ec49a3..3ecf731b89f2739132d464f74cf69c790c4034ab 100644
+--- a/browser/app/macbuild/Contents/MacOS-files.in
++++ b/browser/app/macbuild/Contents/MacOS-files.in
+@@ -17,6 +17,7 @@
+ /crashhelper
+ #endif
+ /nmhproxy
++/orbito-agent/***
+ /pingsender
+ /pk12util
+ /ssltunnel

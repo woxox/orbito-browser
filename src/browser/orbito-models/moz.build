@@ -1,0 +1,12 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Browsing recall's embedding model, staged by scripts/recall-model.py,
+# installed as browser/orbito-models/ (resource:///orbito-models/). Builds
+# without a staged model ship nothing here, and recall searches by keywords
+# only.
+
+FINAL_TARGET_FILES["orbito-models"] += [
+    "/../dist/recall-model/**",
+]

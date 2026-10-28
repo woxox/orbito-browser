@@ -1,0 +1,19 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# The Claude Code CLI staged by scripts/agent-runtime.py, installed next to
+# the browser binary. Builds without a staged runtime ship nothing here;
+# ClaudeCLI.sys.mjs then needs orbito.agent.claude.
+
+DIST_SUBDIR = ""
+
+target = {
+    "Darwin": "apple-darwin",
+    "Linux": "unknown-linux-gnu",
+    "WINNT": "pc-windows-msvc",
+}.get(CONFIG["OS_TARGET"])
+if target and CONFIG["TARGET_CPU"] in ("aarch64", "x86_64"):
+    FINAL_TARGET_FILES["orbito-agent"] += [
+        "/../dist/agent-runtime/%s-%s/**" % (CONFIG["TARGET_CPU"], target),
+    ]

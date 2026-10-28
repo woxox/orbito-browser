@@ -1,0 +1,13 @@
+diff --git a/python/mozbuild/mozbuild/artifacts.py b/python/mozbuild/mozbuild/artifacts.py
+index 389d0052c65d775b405fceb31b602713bae55a67..b93991f34163ae443dc473159a71296d0eb99ab4 100644
+--- a/python/mozbuild/mozbuild/artifacts.py
++++ b/python/mozbuild/mozbuild/artifacts.py
+@@ -543,6 +543,8 @@ class ArtifactJob:
+ 
+     @property
+     def product(self):
++        if self.job_configuration is GeckoJobConfiguration:
++            return self._substs.get("MOZ_APP_NAME", self.job_configuration.product)
+         return self.job_configuration.product
+ 
+     @property

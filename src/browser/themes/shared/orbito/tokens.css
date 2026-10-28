@@ -1,0 +1,137 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The Orbito Shell's design tokens (ADR 0001), for the window's chrome
+ * (orbito.css imports them) and Orbito's own pages.
+ *
+ * Only --orbito-* tokens; Firefox's (Nova) tokens are left alone. Light and
+ * dark follow the document's color scheme through light-dark(); every
+ * accent color derives from one hue and chroma. */
+
+:root {
+  --orbito-accent-hue: 277;
+  --orbito-accent-chroma: 0.2;
+
+  --orbito-accent: light-dark(
+    oklch(0.53 var(--orbito-accent-chroma) var(--orbito-accent-hue)),
+    oklch(0.78 calc(var(--orbito-accent-chroma) * 0.6) var(--orbito-accent-hue))
+  );
+  --orbito-accent-soft: light-dark(
+    oklch(0.53 var(--orbito-accent-chroma) var(--orbito-accent-hue) / 0.12),
+    oklch(0.78 calc(var(--orbito-accent-chroma) * 0.6) var(--orbito-accent-hue) / 0.16)
+  );
+  --orbito-accent-ink: light-dark(#fff, oklch(0.2 0.05 var(--orbito-accent-hue)));
+
+  /* The frame: a gradient tinted by the accent, behind everything. */
+  --orbito-frame-base: light-dark(
+    oklch(0.935 0.02 var(--orbito-accent-hue)),
+    oklch(0.2 0.02 var(--orbito-accent-hue))
+  );
+  --orbito-frame-leading: light-dark(
+    oklch(0.875 0.065 var(--orbito-accent-hue)),
+    oklch(0.28 0.075 var(--orbito-accent-hue))
+  );
+  --orbito-frame-trailing: light-dark(
+    oklch(0.905 0.055 calc(var(--orbito-accent-hue) + 70)),
+    oklch(0.27 0.07 calc(var(--orbito-accent-hue) + 70))
+  );
+  --orbito-frame: linear-gradient(
+    150deg,
+    var(--orbito-frame-leading) 0%,
+    var(--orbito-frame-base) 55%,
+    var(--orbito-frame-trailing) 100%
+  );
+
+  --orbito-text: light-dark(
+    oklch(0.24 0.03 var(--orbito-accent-hue)),
+    oklch(0.95 0.01 var(--orbito-accent-hue))
+  );
+  --orbito-text-muted: light-dark(
+    oklch(0.24 0.03 var(--orbito-accent-hue) / 0.62),
+    oklch(0.95 0.01 var(--orbito-accent-hue) / 0.6)
+  );
+  --orbito-surface: light-dark(rgb(255 255 255 / 0.82), rgb(255 255 255 / 0.11));
+  --orbito-surface-hover: light-dark(rgb(255 255 255 / 0.45), rgb(255 255 255 / 0.06));
+  --orbito-surface-active: light-dark(rgb(255 255 255 / 0.62), rgb(255 255 255 / 0.09));
+  --orbito-hairline: light-dark(
+    oklch(0.3 0.06 var(--orbito-accent-hue) / 0.1),
+    rgb(255 255 255 / 0.08)
+  );
+  --orbito-danger: oklch(0.57 0.19 25);
+  --orbito-warn: oklch(0.62 0.15 65);
+  --orbito-ok: oklch(0.56 0.13 150);
+  --orbito-shadow-item: 0 1px 2px light-dark(oklch(0.2 0.08 var(--orbito-accent-hue) / 0.1), rgb(0 0 0 / 0.3)),
+    0 0 0 0.5px var(--orbito-hairline);
+  --orbito-shadow-card: 0 0 0 0.5px var(--orbito-hairline),
+    0 2px 6px light-dark(oklch(0.2 0.08 var(--orbito-accent-hue) / 0.06), rgb(0 0 0 / 0.25)),
+    0 12px 32px light-dark(oklch(0.2 0.08 var(--orbito-accent-hue) / 0.08), rgb(0 0 0 / 0.3));
+  /* Popovers and anything floating over the page (menus, the collapsed
+   * Sidebar, notes). */
+  --orbito-shadow-pop: 0 0 0 0.5px light-dark(oklch(0.3 0.06 var(--orbito-accent-hue) / 0.12), rgb(255 255 255 / 0.1)),
+    0 8px 24px light-dark(oklch(0.2 0.08 var(--orbito-accent-hue) / 0.14), rgb(0 0 0 / 0.35)),
+    0 24px 60px light-dark(oklch(0.2 0.08 var(--orbito-accent-hue) / 0.12), rgb(0 0 0 / 0.35));
+  /* Keyboard focus: drawn 1px outside the element, on every Shell control. */
+  --orbito-focus-ring: 2px solid var(--orbito-accent);
+  --orbito-focus-ring-offset: 1px;
+
+  /* Floating surfaces over the page (the Command bar), and the dim layer
+   * under them. */
+  --orbito-popover: light-dark(
+    rgb(255 255 255 / 0.97),
+    oklch(0.25 0.015 var(--orbito-accent-hue) / 0.98)
+  );
+  /* The same, without the see-through, where nothing blurs behind it. */
+  --orbito-popover-solid: light-dark(#fff, oklch(0.25 0.015 var(--orbito-accent-hue)));
+  --orbito-popover-text: light-dark(
+    oklch(0.22 0.02 var(--orbito-accent-hue)),
+    oklch(0.93 0.01 var(--orbito-accent-hue))
+  );
+  --orbito-scrim: light-dark(
+    oklch(0.2 0.03 var(--orbito-accent-hue) / 0.16),
+    oklch(0.05 0.02 var(--orbito-accent-hue) / 0.4)
+  );
+
+  /* Text: the same UI stack and size on every platform, not the
+   * platform's chrome font (message-box, menu). */
+  --orbito-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR",
+    system-ui, sans-serif;
+  --orbito-font: 13px/1.4 var(--orbito-font-ui);
+  /* Line icons' stroke (the window controls' stay finer). */
+  --orbito-icon-stroke: 1.5;
+
+  --orbito-radius-card: 12px;
+  --orbito-radius-item: 10px;
+  --orbito-gap: 8px;
+  --orbito-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* What leaves speeds up as it goes (a panel closing). */
+  --orbito-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* How long a one-off change takes, so that the Shell moves to one rhythm:
+   * short for feedback (hover, press, a fade), medium for what pops in (a
+   * popover, a row), long for what moves the layout (a panel, a Space).
+   * What loops (a blink, a progress bar) keeps its own period. Without
+   * motion nothing moves (shell/motion.css). */
+  --orbito-duration-short: 150ms;
+  --orbito-duration-medium: 200ms;
+  --orbito-duration-long: 280ms;
+
+  /* Orbito's own pages (the new tab page) and popovers: the page, its
+   * text, rules, and the boxes sunk into it. */
+  --orbito-page: light-dark(#fff, oklch(0.2 0.012 var(--orbito-accent-hue)));
+  --orbito-page-text: light-dark(
+    oklch(0.22 0.02 var(--orbito-accent-hue)),
+    oklch(0.93 0.01 var(--orbito-accent-hue))
+  );
+  --orbito-page-text-muted: light-dark(
+    oklch(0.46 0.02 var(--orbito-accent-hue)),
+    oklch(0.72 0.02 var(--orbito-accent-hue))
+  );
+  --orbito-page-line: light-dark(
+    oklch(0.3 0.03 var(--orbito-accent-hue) / 0.1),
+    rgb(255 255 255 / 0.08)
+  );
+  --orbito-page-sunk: light-dark(
+    oklch(0.97 0.006 var(--orbito-accent-hue)),
+    oklch(0.17 0.01 var(--orbito-accent-hue))
+  );
+}

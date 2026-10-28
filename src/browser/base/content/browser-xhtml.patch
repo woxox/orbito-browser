@@ -1,0 +1,22 @@
+diff --git a/browser/base/content/browser.xhtml b/browser/base/content/browser.xhtml
+index cb8fc3105f09533227363b5d52cec7415f771a24..6e792512ba5050faa5f408857fcb80c5d854e245 100644
+--- a/browser/base/content/browser.xhtml
++++ b/browser/base/content/browser.xhtml
+@@ -57,6 +57,8 @@
+     rel="stylesheet"
+     href="chrome://global/content/resistfingerprinting/letterboxing.css"
+   />
++  <link rel="stylesheet" href="chrome://browser/skin/orbito/orbito.css" />
++  <link rel="stylesheet" href="chrome://browser/content/orbito/shell/command-bar.css" />
+ 
+   <link rel="localization" href="branding/brand.ftl"/>
+   <link rel="localization" href="browser/allTabsMenu.ftl"/>
+@@ -113,6 +115,8 @@
+ 
+   <script src="chrome://browser/content/global-scripts.js"></script>
+   <script src="chrome://browser/content/browser-main.js"></script>
++  <script src="chrome://browser/content/orbito/assistant.js"></script>
++  <script type="module" src="chrome://browser/content/orbito/shell/shell.mjs"></script>
+ </head>
+ <html:body xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+ # All sets except for popupsets (commands, keys, and stringbundles)
