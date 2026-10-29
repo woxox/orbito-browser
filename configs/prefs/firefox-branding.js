@@ -9,10 +9,12 @@ pref("startup.homepage_override_url", "");
 pref("startup.homepage_welcome_url", "");
 pref("startup.homepage_welcome_url.additional", "");
 
+// Release builds check the public repository's latest release (build/moz.build).
+pref("app.update.interval", 21600); // 6 hours
 // Give the user x seconds to react before showing the big UI. default=192 hours
 pref("app.update.promptWaitTime", 691200);
-pref("app.update.url.manual", "");
-pref("app.update.url.details", "");
+pref("app.update.url.manual", "https://github.com/woxox/orbito-browser/releases/latest");
+pref("app.update.url.details", "https://github.com/woxox/orbito-browser/releases");
 pref("app.releaseNotesURL", "");
 pref("app.releaseNotesURL.aboutDialog", "");
 pref("app.releaseNotesURL.prompt", "");

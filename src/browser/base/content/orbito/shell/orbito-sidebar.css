@@ -164,11 +164,6 @@ orbito-tab-list {
     margin: -26px 0 0 -2px;
     background-color: var(--orbito-accent);
   }
-
-  &:focus-visible::after {
-    outline: var(--orbito-focus-ring);
-    outline-offset: 2px;
-  }
 }
 
 :host([narrow]) .resizer {

@@ -46,6 +46,14 @@ export function removeFirefoxFeatures(win) {
   // The ☰ app menu: its button and messages that point at it go through
   // show (toggle calls show).
   win.PanelUI.show = nothing;
+  // Its update prompts would point at the hidden button: the Sidebar's
+  // update note (orbito-update.mjs) takes their place.
+  let showNotificationPanel = win.PanelUI._showNotificationPanel;
+  win.PanelUI._showNotificationPanel = function (notification) {
+    if (!notification.id.startsWith("update-")) {
+      showNotificationPanel.call(this, notification);
+    }
+  };
 
   // Customize mode: the menus, the toolbar context menu and a customize tab
   // restored from a session all end in gCustomizeMode.enter().

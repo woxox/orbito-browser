@@ -122,7 +122,7 @@ const OrbitoTimeline = {
       .parentElement.addEventListener("click", event => {
         if (event.target.closest("#open-settings")) {
           event.preventDefault();
-          OrbitoPages.openSettings(topWindow());
+          OrbitoPages.openSettings(topWindow(), { pane: "recall" });
         }
       });
     new IntersectionObserver(entries => {

@@ -29,6 +29,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   OrbitoAssistantCore:
     "chrome://browser/content/orbito/OrbitoAssistantCore.sys.mjs",
   ClaudeAccount: "chrome://browser/content/orbito/ClaudeCLI.sys.mjs",
+  CLAUDE_CLOUDS: "chrome://browser/content/orbito/ClaudeCLI.sys.mjs",
   OrbitoChatGPT: "chrome://browser/content/orbito/OrbitoChatGPT.sys.mjs",
   OrbitoPage: "chrome://browser/content/orbito/OrbitoPage.sys.mjs",
   OrbitoPages: "chrome://browser/content/orbito/OrbitoPages.sys.mjs",
@@ -101,6 +102,11 @@ const ICONS = {
   document: html`<svg viewBox="0 0 16 16" aria-hidden="true">
     <path d="M4 2.5h5l3 3v8H4z" />
     <path d="M9 2.5v3h3M6 9h4M6 11.5h3" />
+  </svg>`,
+  screen: html`<svg viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="2" y="3" width="12" height="8.5" rx="1.5" />
+    <path d="M5.5 14h5M8 11.5V14" />
+    <circle class="fill" cx="8" cy="7.2" r="1.6" />
   </svg>`,
 };
 
@@ -424,6 +430,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
   #draft = { busy: false, error: "" };
   #hasText = false;
   #notice = "";
+  #noticeTimer = 0;
   #skills = [];
   #skillIndex = 0;
   #skillSeq = 0;
@@ -790,10 +797,24 @@ export class OrbitoAssistantPanel extends MozLitElement {
     }
   }
 
-  /** Says why something did not happen, over the input, until typing. */
+  /**
+   * Says why something did not happen, over the input, for 4 seconds or
+   * until typing.
+   */
   notify(text) {
-    this.#notice = text;
+    this.#setNotice(text);
     this.requestUpdate();
+  }
+
+  #setNotice(text) {
+    clearTimeout(this.#noticeTimer);
+    this.#notice = text;
+    if (text) {
+      this.#noticeTimer = setTimeout(() => {
+        this.#notice = "";
+        this.requestUpdate();
+      }, 4000);
+    }
   }
 
   /**
@@ -1350,7 +1371,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
       });
       if (unknown != null) {
         this.#setInput(prompt);
-        this.#notice = t("orbito-assistant-unknown-skill", { name: unknown });
+        this.#setNotice(t("orbito-assistant-unknown-skill", { name: unknown }));
         this.requestUpdate();
         await this.updateComplete;
         return;
@@ -1359,7 +1380,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         return;
       }
     }
-    this.#notice = "";
+    this.#setNotice("");
     this.#setInput("");
     this.#stick = true;
     core
@@ -1668,7 +1689,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     let hasText = !!this.input.value.trim();
     if (hasText != this.#hasText || this.#notice) {
       this.#hasText = hasText;
-      this.#notice = "";
+      this.#setNotice("");
       this.requestUpdate();
     }
     this.#updateSkillMenu();
@@ -1891,9 +1912,21 @@ export class OrbitoAssistantPanel extends MozLitElement {
   async #loadAuth(auth) {
     let settings = this.#settings;
     settings.auth = auth;
+    // The account's login and the cloud provider are set on the settings
+    // page; the panel has no key to ask for.
     settings.login =
-      !!this.#core.BACKENDS[settings.backend].login || auth == "claudeAccount";
-    if (settings.login) {
+      !!this.#core.BACKENDS[settings.backend].login ||
+      auth == "claudeAccount" ||
+      auth == "cloud";
+    if (auth == "cloud") {
+      let core = this.#core;
+      let { provider } = core.claudeCloud();
+      settings.status = core.claudeCloudReady()
+        ? t("orbito-assistant-claude-cloud-ready", {
+            provider: lazy.CLAUDE_CLOUDS[provider].label,
+          })
+        : t("orbito-assistant-claude-cloud-set-up");
+    } else if (settings.login) {
       let account =
         auth == "claudeAccount" ? lazy.ClaudeAccount : lazy.OrbitoChatGPT;
       let { state, email } = await account.status();
@@ -2005,8 +2038,9 @@ export class OrbitoAssistantPanel extends MozLitElement {
     }
   }
 
-  #openSettingsPage() {
-    lazy.OrbitoPages.openSettings(window);
+  /** @param {string} [pane] The settings page's pane to show. */
+  #openSettingsPage(pane) {
+    lazy.OrbitoPages.openSettings(window, { pane });
   }
 
   /** Opens the library on its "documents" or "threads". */
@@ -2035,7 +2069,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
       this.#showSkills([]);
     }
     // What the notice said was about the state before.
-    this.#notice = "";
+    this.#setNotice("");
     // The Thread, back, shows its end.
     this.#stick = true;
     let hadFocus = this.matches(":focus-within");
@@ -2061,7 +2095,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
   }
 
   #startShow() {
-    this.#notice = "";
+    this.#setNotice("");
     this.#show.start(this.goalInput?.value ?? "");
   }
 
@@ -2325,7 +2359,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         ? html`<button class="primary" @click=${() => this.toggleSettings(true, { backend })}>${t("orbito-assistant-open-settings")}</button>`
         : nothing}
       ${part.needsLogin
-        ? html`<button class="primary" @click=${() => this.#openSettingsPage()}>${t("orbito-assistant-open-settings-page")}</button>`
+        ? html`<button class="primary" @click=${() => this.#openSettingsPage("backends")}>${t("orbito-assistant-open-settings-page")}</button>`
         : nothing}
     </div>`;
   }
@@ -2535,7 +2569,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     }
     let state = this.#ui.get(`memory ${part.id}`);
     return html`<div class="memory">
-      <span>${t("orbito-assistant-memory-remembered", { text: part.text })}</span>
+      <span title=${part.text}>${t("orbito-assistant-memory-remembered", { text: part.text })}</span>
       <button class="secondary" ?disabled=${!!state?.busy} @click=${() => this.#undoMemory(part.id)}>${t("orbito-assistant-memory-undo")}</button>
     </div>`;
   }
@@ -2854,16 +2888,16 @@ export class OrbitoAssistantPanel extends MozLitElement {
       @click=${() => this.#setFixed(input, fixed)}
     >${label}</button>`;
     return html`<li class="review-input" data-name=${input.name}>
-      <div class="input-head" id=${id}>
-        <code class="input-name">{${input.name}}</code>
-        <span class="input-description">${input.description}</span>
+      <div class="input-head">
+        <code class="input-name" id=${id}>${input.name}</code>
+        <span class="input-description" id=${`${id}-description`}>${input.description}</span>
+        <div
+          class="segments"
+          role="radiogroup"
+          aria-labelledby=${`${id} ${id}-description`}
+          @keydown=${event => this.#onModeKey(event, input)}
+        >${radio(false, t("orbito-show-review-as-input"))}${radio(true, t("orbito-show-review-as-fixed"))}</div>
       </div>
-      <div
-        class="segments"
-        role="radiogroup"
-        aria-labelledby=${id}
-        @keydown=${event => this.#onModeKey(event, input)}
-      >${radio(false, t("orbito-show-review-as-input"))}${radio(true, t("orbito-show-review-as-fixed"))}</div>
       ${input.value
         ? html`<p class="input-value">${input.fixed
             ? t("orbito-show-review-fixed-value", { value: input.value })
@@ -2957,7 +2991,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         tabindex="-1"
         @click=${() => this.#runCommand(() => this.#show?.begin())}
       >
-        <span class="grow">${t("orbito-show")}<span class="sub">${t("orbito-show-description")}</span></span>
+        ${ICONS.screen}<span class="grow">${t("orbito-show")}<span class="sub">${t("orbito-show-description")}</span></span>
       </button>
     </div>`;
   }
@@ -3546,6 +3580,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         <option value="" ?hidden=${!!settings.auth}>${t("orbito-assistant-auth-choose")}</option>
         <option value="apiKey">${t("orbito-assistant-auth-api-key")}</option>
         <option value="claudeAccount">${t("orbito-assistant-auth-claude-account")}</option>
+        <option value="cloud">${t("orbito-assistant-auth-cloud")}</option>
       </select>
       <label for="settings-key" ?hidden=${login}>${config.keyLabel ?? ""}</label>
       <input
@@ -3561,7 +3596,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         <button
           type="button"
           class="secondary"
-          @click=${() => this.#openSettingsPage()}
+          @click=${() => this.#openSettingsPage("backends")}
         >${t("orbito-assistant-open-settings-page")}</button>
       </div>
       <label for="settings-model">${t("orbito-assistant-model")}</label>
@@ -3585,7 +3620,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         type="text"
         ?hidden=${settings.backend != "openai"}
       />
-      <p class="hint" ?hidden=${login}>${t("orbito-assistant-settings-key-hint")}</p>
+      <p class="hint" ?hidden=${login || settings.backend == "claude"}>${t("orbito-assistant-settings-key-hint")}</p>
       <p class="hint" ?hidden=${settings.backend != "claude"}>${t("orbito-assistant-settings-claude-hint")}</p>
       <div class="settings-actions">
         <button type="button" class="link" @click=${() => this.#openSettingsPage()}>${t("orbito-assistant-settings-all")}</button>
@@ -3672,6 +3707,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
           </div>`;
         })}
       </div>
+      <div class="input-notice" role="status" ?hidden=${!this.#notice}>${this.#notice}</div>
       <div
         class="skill-menu"
         id="skill-menu"
@@ -3697,7 +3733,6 @@ export class OrbitoAssistantPanel extends MozLitElement {
           </div>`
         )}
       </div>
-      <div class="input-notice" role="status" ?hidden=${!this.#notice}>${this.#notice}</div>
       <div class=${`composer ${permission.id == "bypass" ? "bypass" : ""}`}>
         <textarea
           rows="1"

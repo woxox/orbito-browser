@@ -19,6 +19,7 @@ import "chrome://browser/content/orbito/shell/orbito-spaces.mjs";
 import "chrome://browser/content/orbito/shell/orbito-pins.mjs";
 import "chrome://browser/content/orbito/shell/orbito-dock.mjs";
 import "chrome://browser/content/orbito/shell/orbito-assistant-panel.mjs";
+import "chrome://browser/content/orbito/shell/orbito-update.mjs";
 import { OrbitoSiteInfo } from "chrome://browser/content/orbito/shell/orbito-site-info.mjs";
 import { OrbitoExtensions } from "chrome://browser/content/orbito/shell/orbito-extensions.mjs";
 import { OrbitoDownloads } from "chrome://browser/content/orbito/shell/orbito-downloads.mjs";
@@ -34,6 +35,9 @@ import { removeFirefoxFeatures } from "chrome://browser/content/orbito/shell/rem
 
 const { OrbitoAppearance } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/shell/OrbitoAppearance.sys.mjs"
+);
+const { OrbitoUpdates } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoUpdates.sys.mjs"
 );
 
 // Before the first paint, so the window never shows another look.
@@ -185,18 +189,38 @@ function focusNotification(strip) {
 }
 
 /**
- * Whether ⌘S (Ctrl+S elsewhere) is the key event: the Sidebar's shortcut,
- * in place of Firefox's Save Page.
+ * Whether the key event is ⌘ (Ctrl elsewhere) with a key alone.
  *
  * @param {KeyboardEvent} event
+ * @param {string} code The key's KeyboardEvent.code.
  */
-function isSidebarShortcut(event) {
+function isAccelKey(event, code) {
   let accel =
     AppConstants.platform == "macosx"
       ? event.metaKey && !event.ctrlKey
       : event.ctrlKey && !event.metaKey;
-  return accel && !event.altKey && !event.shiftKey && event.code == "KeyS";
+  return accel && !event.altKey && !event.shiftKey && event.code == code;
 }
+
+/**
+ * The Shell's ⌘ shortcuts in place of Firefox's, in windows with a Sidebar:
+ * ⌘S (Save Page) toggles the Sidebar, ⌘D (Bookmark Page) docks or undocks
+ * the selected tab where the Docks can change (not in a private window).
+ */
+const ACCEL_SHORTCUTS = [
+  {
+    code: "KeyS",
+    firefoxKey: "key_savePage",
+    applies: () => true,
+    run: shell => shell.toggleSidebar(),
+  },
+  {
+    code: "KeyD",
+    firefoxKey: "addBookmarkAsKb",
+    applies: shell => !!shell.docks?.canAdd,
+    run: shell => shell.docks.toggleDock(gBrowser.selectedTab),
+  },
+];
 
 const OrbitoShell = {
   /** Firefox's notification bar strip, over the Shell. */
@@ -240,7 +264,11 @@ const OrbitoShell = {
       let dock = document.createElement("orbito-dock");
       dock.id = "orbito-dock";
       dock.slot = "dock";
-      this.sidebar.append(pins, title, dock, switcher);
+      let update = document.createElement("orbito-update");
+      update.id = "orbito-update";
+      update.slot = "footer";
+      this.sidebar.append(pins, title, dock, update, switcher);
+      OrbitoUpdates.init();
     }
     this.topBar = document.createElement("orbito-top-bar");
     this.topBar.id = "orbito-top-bar";
@@ -311,10 +339,14 @@ const OrbitoShell = {
     anchorWidgetPopups(this.topBar);
     // Firefox's sidebar, shown as an overlay card (none in popups).
     this.sidePanel = OrbitoSidePanelHeader.create();
-    // ⌘S toggles the Sidebar instead of saving the page (popups have no
-    // Sidebar and keep it).
+    // ⌘S and ⌘D are the Shell's (popups have no Sidebar or Dock and keep
+    // Firefox's, as private windows keep Bookmark Page).
     if (window.toolbar.visible) {
-      document.getElementById("key_savePage").setAttribute("disabled", "true");
+      for (let { firefoxKey, applies } of ACCEL_SHORTCUTS) {
+        if (applies(this)) {
+          document.getElementById(firefoxKey).setAttribute("disabled", "true");
+        }
+      }
     }
     window.addEventListener("keydown", this, true);
   },
@@ -337,17 +369,18 @@ const OrbitoShell = {
   },
 
   /**
-   * ⌘S over a page goes to the page first, as Firefox's own shortcuts do:
-   * the page's answer comes back, and the Sidebar toggles only when the
-   * page did not use the key (a web app saving its document).
+   * A ⌘ shortcut over a page goes to the page first, as Firefox's own
+   * shortcuts do: the page's answer comes back, and the shortcut runs only
+   * when the page did not use the key (a web app saving its document).
    *
    * @param {KeyboardEvent} event
+   * @param {() => void} run What the shortcut does.
    */
-  onSidebarShortcut(event) {
+  onAccelShortcut(event, run) {
     if (event.isReplyEventFromRemoteContent) {
       if (!event.defaultPrevented) {
         event.preventDefault();
-        this.toggleSidebar();
+        run();
       }
       return;
     }
@@ -358,18 +391,20 @@ const OrbitoShell = {
     if (!event.defaultPrevented) {
       event.preventDefault();
       event.stopPropagation();
-      this.toggleSidebar();
+      run();
     }
   },
 
   handleEvent(event) {
-    if (
+    let shortcut =
       event.type == "keydown" &&
       window.toolbar.visible &&
       !event.repeat &&
-      isSidebarShortcut(event)
-    ) {
-      this.onSidebarShortcut(event);
+      ACCEL_SHORTCUTS.find(
+        ({ code, applies }) => isAccelKey(event, code) && applies(this)
+      );
+    if (shortcut) {
+      this.onAccelShortcut(event, () => shortcut.run(this));
       return;
     }
     if (

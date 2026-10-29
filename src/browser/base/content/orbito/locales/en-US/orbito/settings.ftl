@@ -7,6 +7,11 @@
 orbito-settings-title = Orbito Settings
 orbito-settings-heading = Orbito settings
 orbito-settings-library-hint = Past documents and Threads are in the <a data-l10n-name="open-library">library</a>.
+orbito-settings-panes =
+    .aria-label = Settings
+orbito-settings-general = General
+# The rail's group of the Assistant's panes.
+orbito-settings-assistant = Assistant
 
 ## Shared
 
@@ -39,11 +44,13 @@ orbito-appearance-accent-graphite = Graphite
 ## Layout
 
 orbito-settings-layout = Layout
+orbito-settings-sidebar-collapsed = Hide the Sidebar
 # $shortcut is the keyboard shortcut, e.g. "⌘S".
-orbito-settings-sidebar-collapsed =
-    Hide the Sidebar: it shows while the pointer is on the window's left
-    edge. { $shortcut } also switches it.
-orbito-settings-assistant-auto-open = Open the Assistant panel with every new window
+orbito-settings-sidebar-collapsed-hint =
+    It shows while the pointer is on the window's left edge. { $shortcut }
+    also switches it.
+orbito-settings-assistant-auto-open = Open the Assistant panel
+orbito-settings-assistant-auto-open-hint = Opens the panel on the right with every new window.
 
 ## Account
 
@@ -82,10 +89,32 @@ orbito-settings-chatgpt-signed-in-as = Signed in as { $email }.
 orbito-settings-chatgpt-signed-in = Signed in.
 orbito-settings-chatgpt-needs-login = Sign in again: the login expired or was revoked.
 orbito-settings-claude-hint =
-    Use Claude with an Anthropic API key, or with your Claude subscription.
+    Orbito runs Claude Code, Anthropic's CLI, with an Anthropic API key, your Claude subscription or a cloud provider.
+    Claude Code is subject to Anthropic's terms, and Anthropic may change how a subscription can be used with it.
     Claude Code signs in for Orbito only, in your browser; your own Claude Code login is not used.
+orbito-settings-claude-auth =
+    .aria-label = How to use Claude
 orbito-settings-claude-api-key = API key
 orbito-settings-claude-account = Claude account
+orbito-settings-claude-cloud = Cloud provider
+orbito-settings-claude-cloud-provider = Provider
+orbito-settings-claude-cloud-region = Region
+orbito-settings-claude-cloud-profile = AWS profile
+orbito-settings-claude-cloud-project = Project ID
+orbito-settings-claude-cloud-resource = Resource name
+orbito-settings-claude-cloud-key = API key (optional)
+orbito-settings-claude-cloud-bedrock-hint =
+    Without an Amazon Bedrock API key, Claude Code uses your AWS credentials on this computer, from ~/.aws
+    (sign in with aws sso login or aws configure in a terminal). The region may be left empty when the profile sets one.
+orbito-settings-claude-cloud-vertex-hint =
+    Claude Code uses your Google Cloud application default credentials on this computer
+    (sign in with gcloud auth application-default login in a terminal). Without a region, it uses us-east5.
+orbito-settings-claude-cloud-foundry-hint =
+    The resource is its name alone, not a URL. Without an API key, Claude Code signs in with the Azure CLI (az login),
+    which it may not find when Orbito is not started from a terminal; the API key works either way.
+orbito-settings-claude-cloud-set-up = Choose a provider, fill in its settings and save.
+# $provider is the cloud provider's name, e.g. "Amazon Bedrock".
+orbito-settings-claude-cloud-ready = Claude is used through { $provider }.
 orbito-settings-claude-uses-key = The key is set in the assistant panel's settings.
 orbito-settings-claude-choose = Choose how to use Claude.
 orbito-settings-claude-login = Sign in with Claude
@@ -114,7 +143,8 @@ orbito-settings-memory = Memory
 orbito-settings-memory-hint =
     Facts you asked the assistant to remember. They go into every new
     Thread; private windows never use them.
-orbito-settings-memory-enabled = Use memories: read them in Threads and save new ones when you ask
+orbito-settings-memory-enabled = Use memories
+orbito-settings-memory-enabled-hint = Read them in Threads and save new ones when you ask
 orbito-settings-memory-space = Space it is kept for
 orbito-settings-memory-all-spaces = All Spaces
 orbito-settings-memory-space-gone = Removed Space
@@ -159,8 +189,7 @@ orbito-settings-skill-tools-hint =
 orbito-settings-output = Output
 orbito-settings-output-chat = Chat
 orbito-settings-output-document = Document
-orbito-settings-skill-body =
-    .placeholder = Instructions
+orbito-settings-skill-instructions = Instructions
 
 ## Scheduled tasks
 
@@ -283,7 +312,8 @@ orbito-settings-mcp-tools =
        *[other] { $count } tools
     }
 orbito-settings-mcp-tool-read-only = (runs without asking)
-orbito-settings-mcp-trust-read-only = Trust read-only hints: run tools the server marks read-only without asking
+orbito-settings-mcp-trust-read-only = Trust read-only hints
+orbito-settings-mcp-trust-read-only-hint = Run tools the server marks read-only without asking
 orbito-settings-mcp-remove = Remove
 orbito-settings-mcp-reconnect = Reconnect
 orbito-settings-mcp-cancel-login = Cancel login
@@ -291,6 +321,30 @@ orbito-settings-mcp-log-in = Log in
 orbito-settings-mcp-log-out = Log out
 orbito-settings-unchanged = Unchanged
 orbito-settings-client-id-registered = Registered by the server
+
+## Updates
+
+orbito-settings-updates = Updates
+# $version: Orbito's version, like 0.1.0
+orbito-settings-update-version = Orbito { $version }
+orbito-settings-update-check = Check for updates
+orbito-settings-update-checking = Checking for updates…
+orbito-settings-update-none = Orbito is up to date.
+# $version: the update's version
+orbito-settings-update-available = Orbito { $version } is out.
+orbito-settings-update-install = Update and restart
+# $percent: how much is downloaded, from 0 to 100
+orbito-settings-update-downloading = Downloading the update, { $percent }%
+orbito-settings-update-staging = Getting the update ready…
+orbito-settings-update-ready = The update is ready. Restart to apply it.
+orbito-settings-update-restart = Restart
+# $version: the update's version
+orbito-settings-update-manual = Orbito { $version } is out. Download it from the release page to install it.
+orbito-settings-update-open-release = Open the release page
+orbito-settings-update-check-failed = Couldn't check for updates.
+orbito-settings-update-download-failed = Couldn't download the update.
+orbito-settings-update-other-instance = Another copy of Orbito is updating.
+orbito-settings-update-unsupported = This build doesn't update itself.
 
 ## Advanced
 

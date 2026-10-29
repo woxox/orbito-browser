@@ -38,7 +38,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 BIN = os.environ.get(
     "ORBITO_BIN",
-    str(ROOT / "engine/obj-artifact/dist/Orbito.app/Contents/MacOS/orbito"),
+    str(ROOT / "engine/obj-artifact/dist/Orbito DEV.app/Contents/MacOS/orbito"),
 )
 
 # Helpers available to every test script. arguments[0] is the mock's URL.
@@ -322,8 +322,7 @@ async function oauthServer(doc, name, url, { clientId, clientSecret } = {}) {
     let field = n => form.elements.namedItem(n);
     field("name").value = name;
     field("url").value = url;
-    field("auth").value = clientId ? "oauth" : "none";
-    field("auth").dispatchEvent(new doc.defaultView.Event("change"));
+    form.querySelector(`[name=auth][value=${clientId ? "oauth" : "none"}]`).click();
     if (clientId) {
       field("clientId").value = clientId;
       field("clientSecret").value = clientSecret || "";
@@ -2619,6 +2618,7 @@ case "$first" in
 *'"initialize"'*)
   # The models offered to the account, as the CLI answers initialize.
   echo $$ > "$dir/fake-models-pid"
+  env > "$dir/fake-models-env"
   echo '{"type":"control_response","response":{"subtype":"success","request_id":"orbito-models","response":{"models":[{"value":"default","resolvedModel":"claude-opus-5-5","displayName":"Default (recommended)","description":"Use the default model (currently Opus 5.5)"},{"value":"opus","resolvedModel":"claude-opus-5-5","displayName":"Opus","description":"Opus 5.5 · Best for everyday, complex tasks · $4/$20 per Mtok"},{"value":"haiku","resolvedModel":"claude-haiku-5-5","displayName":"Haiku","description":"Haiku 5.5 · Fastest for quick answers"}]}}}'
   # Open until killed, in this process: on Windows, one started as the app
   # kills this one can outlive it and keep its output open.
@@ -2627,6 +2627,16 @@ case "$first" in
 esac
 cat > /dev/null
 env > "$dir/fake-env"
+if [ -n "$CLAUDE_CODE_USE_BEDROCK$CLAUDE_CODE_USE_VERTEX$CLAUDE_CODE_USE_FOUNDRY" ]; then
+  if [ -f "$dir/fake-cloud-rejected" ]; then
+    echo '{"type":"assistant","message":{"content":[]},"error":"authentication_failed"}'
+    echo '{"type":"result","subtype":"success","is_error":true,"result":"Could not load the credentials"}'
+  else
+    echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello from the cloud"}}}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"Hello from the cloud","usage":{"input_tokens":3,"output_tokens":2}}'
+  fi
+  exit 0
+fi
 if [ -f "$dir/fake-signed-in" ] && [ ! -f "$dir/fake-revoked" ]; then
   [ -f "$dir/fake-rate-limit" ] && cat "$dir/fake-rate-limit"
   echo '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello from the Claude account"}}}'
@@ -2694,7 +2704,7 @@ def claude_account_js(b, body):
     """ + body + """
     } finally {
       ClaudeAccount.cancelLogin();
-      for (let name of ["signed-in", "login-ok", "login-wait", "revoked", "rate-limit", "model-usage", "models-pid", "stdin", "env"]) {
+      for (let name of ["signed-in", "login-ok", "login-wait", "revoked", "rate-limit", "model-usage", "models-pid", "models-env", "cloud-rejected", "stdin", "env"]) {
         await IOUtils.remove(marker(name));
       }
       Services.prefs.clearUserPref("orbito.agent.claude");
@@ -2714,7 +2724,7 @@ def claude_asks_how_to_sign_in_until_chosen(b):
       await openPage("Claude unchosen");
       let messages = await finished(askPanel("Hi"));
       let [error] = partsOf(messages, "error");
-      check(error?.needsKey && /API key or with your Claude account/.test(error.message), JSON.stringify(error));
+      check(error?.needsKey && /API key, your Claude account or a cloud provider/.test(error.message), JSON.stringify(error));
       (await wait(() => panelButton("Open settings"), "the settings button")).click();
       let panel = win.OrbitoAssistant.panel;
       await wait(() => panel.authInput && !panel.authInput.hidden && panel.backendInput.value == "claude", "the panel's settings");
@@ -2836,6 +2846,74 @@ def a_claude_account_answers_once_signed_in_and_needs_a_login_after_logout(b):
     messages = await finished(askPanel("And now?"));
     [error] = partsOf(messages, "error");
     check(error?.needsLogin && /Sign in with your Claude account/.test(error.message), JSON.stringify(error));
+    """)
+
+
+@test
+def claude_through_a_cloud_provider_gets_its_settings_only(b):
+    claude_account_js(b, """
+    use("claude", "mock");
+    await openPage("Claude cloud");
+    core.setClaudeAuth("cloud");
+    try {
+      // Not set up yet: the settings page is where.
+      let messages = await finished(askPanel("Hi"));
+      let [error] = partsOf(messages, "error");
+      check(error?.needsLogin && !error.needsKey && /Choose a cloud provider/.test(error.message), JSON.stringify(error));
+
+      let doc = await openSettings();
+      let card = claudeCard(doc);
+      let form = doc.getElementById("claude-cloud");
+      let field = name => form.elements.namedItem(name);
+      let shown = name => !form.querySelector(`[data-field=${name}]`).hidden;
+      await wait(() => card.radio("cloud").checked && !form.hidden, "the provider's form");
+      check(/Choose a provider/.test(card.status()), card.status());
+      check(field("provider").value == "bedrock" && shown("region") && shown("profile") && shown("key") && !shown("project") && !shown("resource"), "Bedrock's fields");
+      field("provider").value = "vertex";
+      field("provider").dispatchEvent(new doc.defaultView.Event("change"));
+      await wait(() => shown("project") && shown("region") && !shown("key") && !shown("profile"), "Vertex AI's fields");
+      // Its project is required.
+      form.requestSubmit();
+      await wait(() => core.claudeCloud().provider == "vertex", "the provider to be saved");
+      check(!core.claudeCloudReady() && /Choose a provider/.test(card.status()), card.status());
+      field("project").value = " my-project ";
+      field("region").value = "global";
+      form.requestSubmit();
+      await wait(() => card.status() == "Claude is used through Google Cloud Vertex AI.", card.status());
+      win.gBrowser.removeTab(win.gBrowser.selectedTab);
+
+      messages = await finished(askPanel("Hi"));
+      check(replyText(messages) == "Hello from the cloud", JSON.stringify(messages.at(-1).parts));
+      let env = await IOUtils.readUTF8(marker("env"));
+      check(/^CLAUDE_CODE_USE_VERTEX=1$/m.test(env) && /^ANTHROPIC_VERTEX_PROJECT_ID=my-project$/m.test(env) && /^CLOUD_ML_REGION=global$/m.test(env), env);
+      // Nor an API key or base URL, nor another provider's settings.
+      check(!/^(ANTHROPIC_API_KEY|ANTHROPIC_BASE_URL|ANTHROPIC_FOUNDRY_|CLAUDE_CODE_USE_(BEDROCK|FOUNDRY)|AWS_)/m.test(env), env);
+
+      // Foundry with its key, which the password manager keeps.
+      core.setClaudeCloud({ provider: "foundry", resource: "my-resource" });
+      await core.setCloudKey("foundry", "foundry-key");
+      check(!Services.prefs.getStringPref("orbito.agent.cloud").includes("foundry-key"), "the key is in the prefs");
+      messages = await finished(askPanel("Again"));
+      check(replyText(messages) == "Hello from the cloud", JSON.stringify(messages.at(-1).parts));
+      env = await IOUtils.readUTF8(marker("env"));
+      check(/^CLAUDE_CODE_USE_FOUNDRY=1$/m.test(env) && /^ANTHROPIC_FOUNDRY_RESOURCE=my-resource$/m.test(env) && /^ANTHROPIC_FOUNDRY_API_KEY=foundry-key$/m.test(env), env);
+      check(!/^(CLAUDE_CODE_USE_VERTEX|ANTHROPIC_VERTEX_|CLOUD_ML_REGION)/m.test(env), env);
+
+      // The CLI lists the provider's models.
+      let models = await core.models("claude");
+      check(models?.map(m => m.id).join() == "claude-opus-5-5,claude-haiku-5-5", JSON.stringify(models));
+      check(/^CLAUDE_CODE_USE_FOUNDRY=1$/m.test(await IOUtils.readUTF8(marker("models-env"))), "the models of another provider");
+      check(!(await core.usageLimits("claude")), "usage limits through a cloud provider");
+
+      // Credentials the provider refuses.
+      await setMarker("cloud-rejected");
+      messages = await finished(askPanel("Still there?"));
+      [error] = partsOf(messages, "error");
+      check(error?.needsLogin && !error.needsKey && /cloud provider did not accept/.test(error.message), JSON.stringify(error));
+    } finally {
+      await core.setCloudKey("foundry", "");
+      Services.prefs.clearUserPref("orbito.agent.cloud");
+    }
     """)
 
 
@@ -3989,7 +4067,12 @@ def chatgpt_without_a_login_points_to_the_settings_page(b):
       check(win.OrbitoAssistant.panel.loginStatus.textContent.startsWith("Not signed in"), win.OrbitoAssistant.panel.loginStatus.textContent);
       win.OrbitoAssistant.panel.toggleSettings(false);
       (await wait(() => panelButton("Open settings page"), "the link")).click();
-      await wait(() => win.gBrowser.selectedTab.linkedBrowser.currentURI.spec == "about:orbito-settings", "the settings page");
+      // On the backends' pane, where ChatGPT signs in.
+      await wait(() => {
+        let page = win.gBrowser.selectedBrowser.contentDocument;
+        return page?.documentURI == "about:orbito-settings" && page.getElementById("backends") &&
+          !page.getElementById("backends").hidden;
+      }, "the settings page's backends");
     } finally {
       await signedInChatGPT();
     }
@@ -4097,8 +4180,7 @@ def an_mcp_server_added_in_settings_offers_its_tools(b):
     let field = name => form.elements.namedItem(name);
     field("name").value = "Records";
     field("url").value = `${MOCK}/mcp`;
-    field("auth").value = "header";
-    field("auth").dispatchEvent(new doc.defaultView.Event("change"));
+    form.querySelector("[name=auth][value=header]").click();
     check(!form.querySelector(".header-fields").hidden, "no header fields");
     field("headerValue").value = "Bearer secret-mcp";
     let before = (await mcpLog()).length;
@@ -5167,7 +5249,7 @@ def no_chips_in_private_windows_or_with_the_pref_off(b):
 
 # Documents (create_artifact) and the document page.
 
-DOC_TEXT = 'return {title: document.title, heading: document.getElementById("title").textContent, text: document.getElementById("content").innerText, sources: document.getElementById("sources").innerText, cells: document.querySelectorAll("#content td").length};'
+DOC_TEXT = 'return {title: document.title, heading: document.getElementById("title").textContent, text: document.getElementById("content").innerText, sources: document.getElementById("sources").innerText, sourceLinks: [...document.querySelectorAll("#sources a")].map(a => a.href), cells: document.querySelectorAll("#content td").length};'
 
 
 def creates_a_document(backend):
@@ -5189,7 +5271,9 @@ def creates_a_document(backend):
         assert page["title"] == title and page["heading"] == title, page
         assert "Five papers" in page["text"] and "Beta" in page["text"] and "agreed" in page["text"], page
         assert page["cells"] == 4, page
-        assert "/page/Alpha" in page["sources"] and "javascript" not in page["sources"], page
+        # By host, linking to the whole URL.
+        assert "127.0.0.1:" in page["sources"] and "/page/" not in page["sources"], page
+        assert [link.endswith("/page/Alpha") for link in page["sourceLinks"]] == [True] and "javascript" not in page["sources"], page
         db = b.db()
         try:
             rows = db.execute(
@@ -7242,8 +7326,11 @@ def the_library_and_settings_link_to_the_timeline(b):
     await openTimeline(() => library.getElementById("open-timeline").click());
     win.gBrowser.removeTab(win.gBrowser.selectedTab);
     let settings = await openSettings();
-    await openTimeline(() => settings.getElementById("open-timeline").click());
-    win.gBrowser.removeTab(win.gBrowser.selectedTab);
+    let timeline = await openTimeline(() => settings.getElementById("open-timeline").click());
+    // Its link back opens the settings on Browsing recall.
+    timeline.getElementById("open-settings").click();
+    await wait(() => win.gBrowser.selectedBrowser.contentDocument == settings && !settings.getElementById("recall").hidden, "the recall pane");
+    win.gBrowser.removeTab(win.gBrowser.tabs.find(t => t.linkedBrowser.currentURI.spec == "about:orbito-timeline"));
     """)
 
 

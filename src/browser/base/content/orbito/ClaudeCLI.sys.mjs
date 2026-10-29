@@ -10,9 +10,10 @@
  * so it never reads or writes the user's own ~/.claude. It reaches the
  * browser tools through the query's endpoint of OrbitoMCPServer.sys.mjs.
  *
- * It authenticates with the user's API key, or with the user's Claude
- * account (ClaudeAccount), which the CLI signs in to, keeps and refreshes
- * itself: Orbito never sees the account's tokens.
+ * It authenticates with the user's API key, with the user's Claude account
+ * (ClaudeAccount), which the CLI signs in to, keeps and refreshes itself
+ * (Orbito never sees the account's tokens), or through a cloud provider
+ * (CLAUDE_CLOUDS) with the user's own credentials for it.
  */
 
 const { t } = ChromeUtils.importESModule(
@@ -80,6 +81,52 @@ const PLAN_NAMES = {
   enterprise: "orbito-assistant-claude-plan-enterprise",
 };
 
+/**
+ * The cloud providers the CLI can reach Claude through, by the provider
+ * Orbito keeps in orbito.agent.cloud: its label, the settings it needs
+ * (required) and may take, the password manager realm of its optional key,
+ * and the CLI's environment for a config {region, project, profile,
+ * resource} and that key. The provider's credentials otherwise come from
+ * its own sign-in on this computer (aws, gcloud, az), which the CLI reads
+ * under HOME.
+ */
+export const CLAUDE_CLOUDS = {
+  bedrock: {
+    label: "Amazon Bedrock",
+    fields: ["region", "profile"],
+    required: [],
+    keyRealm: "Amazon Bedrock API Key",
+    environment: (config, key) => ({
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      AWS_REGION: config.region,
+      AWS_PROFILE: config.profile,
+      AWS_BEARER_TOKEN_BEDROCK: key,
+    }),
+  },
+  vertex: {
+    label: "Google Cloud Vertex AI",
+    fields: ["project", "region"],
+    required: ["project"],
+    keyRealm: null,
+    environment: config => ({
+      CLAUDE_CODE_USE_VERTEX: "1",
+      ANTHROPIC_VERTEX_PROJECT_ID: config.project,
+      CLOUD_ML_REGION: config.region,
+    }),
+  },
+  foundry: {
+    label: "Microsoft Foundry",
+    fields: ["resource"],
+    required: ["resource"],
+    keyRealm: "Microsoft Foundry API Key",
+    environment: (config, key) => ({
+      CLAUDE_CODE_USE_FOUNDRY: "1",
+      ANTHROPIC_FOUNDRY_RESOURCE: config.resource,
+      ANTHROPIC_FOUNDRY_API_KEY: key,
+    }),
+  },
+};
+
 const CONTEXT_WINDOWS_PREF = "orbito.agent.contextWindows";
 // How long the CLI may take to list its models, in ms.
 const MODELS_TIMEOUT = 15000;
@@ -98,8 +145,10 @@ export const ClaudeCLI = {
    * @param {object} options
    * @param {string} options.prompt
    * @param {string} options.model
-   * @param {string} [options.apiKey] Anthropic API key; without one, the
-   *   CLI uses the Claude account it is signed in to.
+   * @param {string} [options.apiKey] Anthropic API key.
+   * @param {object} [options.cloud] {provider, key, ...config} of a cloud
+   *   provider in CLAUDE_CLOUDS. Without either, the CLI uses the Claude
+   *   account it is signed in to.
    * @param {string} options.system System prompt.
    * @param {object[]} options.tools Tool definitions from OrbitoTools.list().
    * @param {object} handler
@@ -132,7 +181,7 @@ export const ClaudeCLI = {
     let removeFiles = () =>
       Promise.all([IOUtils.remove(systemFile), IOUtils.remove(mcpFile)]);
 
-    let environment = this._environment(options.apiKey, configDir);
+    let environment = this._environment(options, configDir);
 
     let process;
     try {
@@ -204,7 +253,7 @@ export const ClaudeCLI = {
         handler.onDone(result);
       }
     };
-    this._run(process, options.prompt, !!options.apiKey, {
+    this._run(process, options.prompt, this._auth(options), {
       ...handler,
       onDone,
     }).finally(() => {
@@ -274,17 +323,19 @@ export const ClaudeCLI = {
   },
 
   /**
-   * The models the CLI offers the Claude account, from its answer to an
-   * initialize control request (supportedModels() in the Agent SDK): the
-   * only part of the SDK control protocol Orbito uses, as the account's
-   * credentials are the CLI's alone. The CLI is not asked anything else,
-   * and is killed once it answered. Not the "default" entry, which repeats
-   * another.
+   * The models the CLI offers the Claude account, or the cloud provider,
+   * from its answer to an initialize control request (supportedModels() in
+   * the Agent SDK): the only part of the SDK control protocol Orbito uses,
+   * as the account's credentials are the CLI's alone. The CLI is not asked
+   * anything else, and is killed once it answered. Not the "default" entry,
+   * which repeats another.
    *
+   * @param {object} [cloud] As query()'s options.cloud; without it, the
+   *   Claude account's.
    * @returns {Promise<{id: string, label: ?string, description: ?string}[]>}
    * @throws {Error} When the CLI does not answer.
    */
-  async models() {
+  async models(cloud = null) {
     let { configDir, workDir } = await this._folders();
     let command = await this._binaryPath();
     let process;
@@ -305,7 +356,7 @@ export const ClaudeCLI = {
           "--strict-mcp-config",
           "--no-session-persistence",
         ],
-        environment: this._environment(null, configDir),
+        environment: this._environment({ cloud }, configDir),
         environmentAppend: false,
         stderr: "stdout",
         workdir: workDir,
@@ -380,7 +431,15 @@ export const ClaudeCLI = {
     }
   },
 
-  async _run(process, prompt, withKey, handler) {
+  /** How query() options authenticate: "apiKey", "cloud" or "claudeAccount". */
+  _auth({ apiKey, cloud }) {
+    if (apiKey) {
+      return "apiKey";
+    }
+    return cloud ? "cloud" : "claudeAccount";
+  },
+
+  async _run(process, prompt, auth, handler) {
     let wroteText = false;
     // Why the API refused the last message, e.g. "authentication_failed".
     let apiError;
@@ -470,7 +529,7 @@ export const ClaudeCLI = {
         event.error
       ) {
         apiError = event.error;
-      } else if (event.type == "rate_limit_event" && !withKey) {
+      } else if (event.type == "rate_limit_event" && auth == "claudeAccount") {
         ClaudeAccount._rateLimit(event.rate_limit_info);
       } else if (event.type == "result") {
         result = event;
@@ -498,11 +557,13 @@ export const ClaudeCLI = {
     } else if (result?.is_error && apiError == "authentication_failed") {
       // A key the API refused (401), or none at all ("Not logged in"); a
       // Claude account that is not signed in, or whose login the CLI could
-      // not refresh.
+      // not refresh; credentials the cloud provider refused.
       error = t(
-        withKey
-          ? "orbito-assistant-claude-key-rejected"
-          : "orbito-assistant-claude-login-rejected"
+        {
+          apiKey: "orbito-assistant-claude-key-rejected",
+          cloud: "orbito-assistant-claude-cloud-rejected",
+          claudeAccount: "orbito-assistant-claude-login-rejected",
+        }[auth]
       );
       authFailed = true;
     } else if (
@@ -596,7 +657,12 @@ export const ClaudeCLI = {
     return { home, configDir, workDir };
   },
 
-  _environment(apiKey, configDir) {
+  /**
+   * The CLI's environment: what it needs from the browser's, and the
+   * credentials of auth {apiKey} or {cloud} only (neither: the Claude
+   * account's, which the CLI keeps in configDir).
+   */
+  _environment({ apiKey, cloud } = {}, configDir) {
     let environment = {};
     for (let [name, value] of Object.entries(
       lazy.Subprocess.getEnvironment()
@@ -621,7 +687,16 @@ export const ClaudeCLI = {
     });
     // Nothing else may authenticate: the environment has no other
     // credentials.
-    if (apiKey) {
+    if (cloud) {
+      let { provider, key, ...config } = cloud;
+      for (let [name, value] of Object.entries(
+        CLAUDE_CLOUDS[provider].environment(config, key)
+      )) {
+        if (value) {
+          environment[name] = value;
+        }
+      }
+    } else if (apiKey) {
       environment.ANTHROPIC_API_KEY = apiKey;
       // With a key only: the Claude account's credentials go to Anthropic's
       // own API and nowhere else, whatever orbito.agent.baseURL says.
@@ -950,7 +1025,7 @@ export const ClaudeAccount = {
       let process = await lazy.Subprocess.call({
         command,
         arguments: args,
-        environment: ClaudeCLI._environment(null, configDir),
+        environment: ClaudeCLI._environment({}, configDir),
         environmentAppend: false,
         stderr: "pipe",
         workdir: workDir,

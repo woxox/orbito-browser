@@ -126,6 +126,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ChatGPTBackend: "chrome://browser/content/orbito/backends/ChatGPT.sys.mjs",
   checkDocks: "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs",
   ClaudeAccount: "chrome://browser/content/orbito/ClaudeCLI.sys.mjs",
+  CLAUDE_CLOUDS: "chrome://browser/content/orbito/ClaudeCLI.sys.mjs",
   ClaudeBackend: "chrome://browser/content/orbito/backends/Claude.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   MemoryStore: "chrome://browser/content/orbito/OrbitoAssistantStore.sys.mjs",
@@ -207,10 +208,14 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 // in ms.
 const CATALOG_RETRY_AFTER = 60000;
 
-// How the Claude backend authenticates: "apiKey", "claudeAccount", or
-// empty until the user chooses.
+// How the Claude backend authenticates: "apiKey", "claudeAccount", "cloud",
+// or empty until the user chooses.
 const CLAUDE_AUTH_PREF = "orbito.agent.auth";
-const CLAUDE_AUTHS = ["apiKey", "claudeAccount"];
+const CLAUDE_AUTHS = ["apiKey", "claudeAccount", "cloud"];
+// The cloud provider of the "cloud" one, as JSON {provider, region,
+// project, profile, resource} (see CLAUDE_CLOUDS in ClaudeCLI.sys.mjs).
+const CLAUDE_CLOUD_PREF = "orbito.agent.cloud";
+const CLAUDE_CLOUD_FIELDS = ["region", "project", "profile", "resource"];
 
 // The Shell's store key of the Space list, whose entries keep a Space's
 // default backend and model (see spaceBackend()).
@@ -1114,8 +1119,8 @@ export const OrbitoAssistantCore = {
   },
 
   /**
-   * How the Claude backend authenticates, "apiKey" or "claudeAccount", or
-   * "" until the user chooses. A user with a Claude API key saved from
+   * How the Claude backend authenticates, "apiKey", "claudeAccount" or
+   * "cloud", or "" until the user chooses. A user with a Claude API key saved from
    * before there was a choice uses it.
    */
   async claudeAuth() {
@@ -1135,6 +1140,58 @@ export const OrbitoAssistantCore = {
       throw new Error(`Unknown Claude authentication: ${auth}`);
     }
     Services.prefs.setStringPref(CLAUDE_AUTH_PREF, auth);
+  },
+
+  /**
+   * The cloud provider the Claude backend uses with "cloud":
+   * {provider, region, project, profile, resource}, each a string, provider
+   * "" until one is chosen.
+   */
+  claudeCloud() {
+    let saved;
+    try {
+      saved = JSON.parse(
+        Services.prefs.getStringPref(CLAUDE_CLOUD_PREF, "") || "{}"
+      );
+    } catch {}
+    let cloud = {
+      provider: lazy.CLAUDE_CLOUDS[saved?.provider] ? saved.provider : "",
+    };
+    for (let field of CLAUDE_CLOUD_FIELDS) {
+      cloud[field] = typeof saved?.[field] == "string" ? saved[field] : "";
+    }
+    return cloud;
+  },
+
+  /** Whether a cloud provider is chosen, with the settings it needs. */
+  claudeCloudReady(cloud = this.claudeCloud()) {
+    let provider = lazy.CLAUDE_CLOUDS[cloud.provider];
+    return !!provider && provider.required.every(field => cloud[field]);
+  },
+
+  setClaudeCloud(cloud) {
+    if (cloud.provider && !lazy.CLAUDE_CLOUDS[cloud.provider]) {
+      throw new Error(`Unknown cloud provider: ${cloud.provider}`);
+    }
+    let saved = { provider: cloud.provider || "" };
+    for (let field of CLAUDE_CLOUD_FIELDS) {
+      saved[field] = String(cloud[field] ?? "").trim();
+    }
+    Services.prefs.setStringPref(CLAUDE_CLOUD_PREF, JSON.stringify(saved));
+  },
+
+  /** The optional key of a cloud provider, kept in the password manager. */
+  getCloudKey(provider) {
+    let realm = lazy.CLAUDE_CLOUDS[provider]?.keyRealm;
+    return realm ? lazy.OrbitoSecrets.get(realm) : "";
+  },
+
+  setCloudKey(provider, key) {
+    let realm = lazy.CLAUDE_CLOUDS[provider]?.keyRealm;
+    if (!realm) {
+      throw new Error(`${provider} takes no key`);
+    }
+    return lazy.OrbitoSecrets.set(realm, key);
   },
 
   /** The API key kept in the password manager for a backend. */
@@ -1477,9 +1534,13 @@ export const OrbitoAssistantCore = {
     } catch {
       return null;
     }
-    let key = [backend, settings.auth, settings.baseURL, settings.apiKey].join(
-      "\n"
-    );
+    let key = [
+      backend,
+      settings.auth,
+      settings.baseURL,
+      settings.apiKey,
+      JSON.stringify(settings.cloud),
+    ].join("\n");
     let entry = this._catalogs.get(key);
     if (!entry || (entry.failed && Date.now() - entry.at > CATALOG_RETRY_AFTER)) {
       entry = { at: Date.now(), failed: false };
@@ -1978,6 +2039,16 @@ export const OrbitoAssistantCore = {
           throw error;
         }
         return { auth };
+      }
+      if (auth == "cloud") {
+        let cloud = this.claudeCloud();
+        if (!this.claudeCloudReady(cloud)) {
+          let error = new Error(t("orbito-assistant-claude-cloud-set-up"));
+          error.needsLogin = true;
+          throw error;
+        }
+        cloud.key = await this.getCloudKey(cloud.provider);
+        return { auth, cloud };
       }
     }
     let apiKey = await this.getKey(backend);

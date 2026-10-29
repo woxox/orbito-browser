@@ -107,7 +107,9 @@ const HOLD_EDGE = 8;
  * Clicking a row selects its tab, its close button closes it, and rows and
  * group headers can be dragged to move them in gBrowser; a tab dropped on
  * the Pin grid becomes a Pin, one dropped on the Dock a Dock tab, and one
- * held over another tab for a moment groups the two. The
+ * held over another tab for a moment groups the two. A Pin or Dock row
+ * dropped on the list leaves the grid or the Dock for where it was dropped.
+ * Where a drop in the list would land, a guide bar shows in the gap. The
  * context menu (the menu key or Shift+F10 too) pins or docks a tab. The list is a single tab stop: the arrow keys move
  * between rows and headers, Enter or Space selects a tab or toggles a group,
  * Left and Right collapse and expand.
@@ -124,6 +126,9 @@ export class OrbitoTabList extends MozLitElement {
   // and where it would land.
   #press = null;
   #drag = null;
+  // Where a Pin or Dock row dragged over the list would land:
+  // {item, target, before} (target null in a list with no row).
+  #outsideDrag = null;
   // Groups just made by holding a tab over another, which pop in.
   #fresh = new WeakSet();
   // Thread id -> what its current question's last step (tool call)
@@ -273,6 +278,50 @@ export class OrbitoTabList extends MozLitElement {
   /** Whether a row or group header is being dragged. */
   get dragging() {
     return !!this.#drag;
+  }
+
+  /**
+   * While a Pin or Dock row is dragged: shows where it would land in the
+   * list for a pointer at a height, or nothing for null.
+   *
+   * @returns {{target, before}|null} Where it would land (target null in a
+   *   list with no row), for dropOutside().
+   */
+  landOutside(item, y) {
+    let landing = y == null ? null : { item, ...this.#dropAt(y, item) };
+    if (
+      landing?.target != this.#outsideDrag?.target ||
+      landing?.before != this.#outsideDrag?.before
+    ) {
+      this.#outsideDrag = landing;
+      this.requestUpdate();
+    }
+    return landing;
+  }
+
+  /**
+   * Moves a tab that left the Pin grid or the Dock where landOutside()
+   * said, and stops showing it.
+   */
+  dropOutside(item, { target, before }) {
+    this.landOutside(item, null);
+    if (target) {
+      this.#move({ item, target, before });
+    }
+  }
+
+  // Where the drop of what is dragged would land, as the guide bar shows
+  // it: {item, target, before}; null when it would not move in the list
+  // (onto the Pin grid or the Dock, or into a group by holding).
+  get #landing() {
+    let drag = this.#drag;
+    if (!drag) {
+      return this.#outsideDrag;
+    }
+    if (drag.pin != -1 || drag.dock != -1 || drag.hold?.armed || !drag.target) {
+      return null;
+    }
+    return drag;
   }
 
   /**
@@ -534,15 +583,20 @@ export class OrbitoTabList extends MozLitElement {
     let docked =
       pin == -1 ? (dock?.dropIndexAt(event.clientX, event.clientY) ?? -1) : -1;
     Object.assign(this.#drag, { pin, dock: docked });
+    let tab = this.#drag.item;
     if (grid && grid.tabDrag?.index !== pin) {
-      grid.tabDrag = { index: pin };
+      grid.tabDrag = { index: pin, tab };
     }
     if (dock && dock.tabDrag?.index !== docked) {
-      dock.tabDrag = { index: docked };
+      dock.tabDrag = { index: docked, tab };
     }
     if (pin != -1 || docked != -1) {
       this.#holdOver(null);
-      Object.assign(this.#drag, { target: null, before: false });
+      if (this.#drag.target) {
+        // The guide bar goes.
+        Object.assign(this.#drag, { target: null, before: false });
+        this.requestUpdate();
+      }
       return;
     }
     let scroller = this.renderRoot.querySelector(".scroll");
@@ -552,7 +606,12 @@ export class OrbitoTabList extends MozLitElement {
     } else if (event.clientY > box.bottom - 24) {
       scroller.scrollBy(0, 8);
     }
-    Object.assign(this.#drag, this.#dropAt(event.clientY));
+    let { target, before } = this.#dropAt(event.clientY, this.#drag.item);
+    if (target != this.#drag.target || before != this.#drag.before) {
+      // The guide bar moves.
+      Object.assign(this.#drag, { target, before });
+      this.requestUpdate();
+    }
     this.#holdOver(this.#groupTargetAt(event.clientX, event.clientY));
   }
 
@@ -694,8 +753,7 @@ export class OrbitoTabList extends MozLitElement {
    * A tab lands next to any row, a group header standing for its group; a
    * group lands only next to tabs outside groups and other groups.
    */
-  #dropAt(y) {
-    let item = this.#drag.item;
+  #dropAt(y, item) {
     // An Orbit's rows are its task's: nothing lands among them.
     let selector = gBrowser.isTabGroup(item)
       ? ".list > .tab, .list > .group"
@@ -749,6 +807,7 @@ export class OrbitoTabList extends MozLitElement {
       ? call?.label || t("orbito-tabs-assistant-working")
       : null;
     let hold = this.#drag?.hold?.tab == tab ? this.#drag.hold : null;
+    let landing = this.#landing?.target == tab ? this.#landing : null;
     return html`<div
       class="tab"
       role="tab"
@@ -790,6 +849,7 @@ export class OrbitoTabList extends MozLitElement {
     >
       ${tabIcon(tab)}
       <span class="label">${tab.label}</span>
+      ${landing ? this.#guide(landing.before) : nothing}
       ${step
         ? html`<span class="step" aria-hidden="true" title=${working}
             >${step}</span
@@ -871,8 +931,27 @@ export class OrbitoTabList extends MozLitElement {
     </div>`;
   }
 
+  // The guide bar in the gap before or after a row, a group or a group's
+  // header, where a drop lands.
+  #guide(before) {
+    return html`<span
+      class="guide"
+      aria-hidden="true"
+      ?before=${before}
+      ?after=${!before}
+    ></span>`;
+  }
+
   #groupBox({ group, tabs }, selectedTab, rovingItem, touched) {
     let name = group.label || t("orbito-tabs-unnamed-group");
+    let landing = this.#landing?.target == group ? this.#landing : null;
+    // A tab dropped under an open group's header goes first in the group
+    // (#move): the bar shows under the header.
+    let first =
+      landing &&
+      !landing.before &&
+      gBrowser.isTab(landing.item) &&
+      !group.collapsed;
     let count = group.tabs.length;
     let hue = GROUP_HUES[group.color] ?? GROUP_HUES.gray;
     return html`<div
@@ -924,7 +1003,9 @@ export class OrbitoTabList extends MozLitElement {
           @mousedown=${event => event.preventDefault()}
           @click=${() => gBrowser.removeTabGroup(group)}
         ></button>
+        ${first ? this.#guide(false) : nothing}
       </div>
+      ${landing && !first ? this.#guide(landing.before) : nothing}
       ${tabs.length
         ? html`<div class="group-body">
             ${repeat(
@@ -983,6 +1064,9 @@ export class OrbitoTabList extends MozLitElement {
                       touched
                     )
           )}
+          ${this.#landing && !this.#landing.target
+            ? html`<span class="guide" end aria-hidden="true"></span>`
+            : nothing}
         </div>
         <div class="ghosts" aria-hidden="true"></div>
       </div>

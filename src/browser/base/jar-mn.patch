@@ -1,8 +1,8 @@
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040bfa4b0a6923b49669238191fcee1c4..1a33fb6f08712483857b87cf7b2005bc4d284e3c 100644
+index b2b5db6040bfa4b0a6923b49669238191fcee1c4..da5f2a34936327146661285e63e289227f663890 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -5,6 +5,162 @@ browser.jar:
+@@ -5,6 +5,165 @@ browser.jar:
  %  content browser %content/browser/ contentaccessible=yes
  
          content/browser/aboutDialog-appUpdater.js     (content/aboutDialog-appUpdater.js)
@@ -38,6 +38,7 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..1a33fb6f08712483857b87cf7b2005bc
 +        content/browser/orbito/tools/run_script.sys.mjs (content/orbito/tools/run_script.sys.mjs)
 +        content/browser/orbito/OrbitoRouter.sys.mjs (content/orbito/OrbitoRouter.sys.mjs)
 +        content/browser/orbito/OrbitoUrlbarProvider.sys.mjs (content/orbito/OrbitoUrlbarProvider.sys.mjs)
++        content/browser/orbito/OrbitoUpdates.sys.mjs (content/orbito/OrbitoUpdates.sys.mjs)
 +        content/browser/orbito/OrbitoSecrets.sys.mjs (content/orbito/OrbitoSecrets.sys.mjs)
 +        content/browser/orbito/OrbitoMCPProtocol.sys.mjs (content/orbito/OrbitoMCPProtocol.sys.mjs)
 +        content/browser/orbito/OrbitoMCP.sys.mjs (content/orbito/OrbitoMCP.sys.mjs)
@@ -139,6 +140,8 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..1a33fb6f08712483857b87cf7b2005bc
 +        content/browser/orbito/shell/pins.mjs (content/orbito/shell/pins.mjs)
 +        content/browser/orbito/shell/orbito-pins.mjs (content/orbito/shell/orbito-pins.mjs)
 +        content/browser/orbito/shell/orbito-pins.css (content/orbito/shell/orbito-pins.css)
++        content/browser/orbito/shell/orbito-update.mjs (content/orbito/shell/orbito-update.mjs)
++        content/browser/orbito/shell/orbito-update.css (content/orbito/shell/orbito-update.css)
 +        content/browser/orbito/shell/orbito-logo.mjs (content/orbito/shell/orbito-logo.mjs)
 +        content/browser/orbito/shell/OrbitoDocks.sys.mjs (content/orbito/shell/OrbitoDocks.sys.mjs)
 +        content/browser/orbito/shell/docks.mjs (content/orbito/shell/docks.mjs)

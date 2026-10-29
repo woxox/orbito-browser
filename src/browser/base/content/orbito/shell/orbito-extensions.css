@@ -38,6 +38,10 @@
 
 .empty-title {
   font-weight: 600;
+
+  & + .sub {
+    margin-top: 2px;
+  }
 }
 
 /* An extension's row, and its panel button after it. */

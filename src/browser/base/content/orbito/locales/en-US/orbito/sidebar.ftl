@@ -114,3 +114,15 @@ orbito-window-minimize = Minimize
 orbito-window-maximize = Maximize
 orbito-window-restore = Restore
 orbito-window-close = Close window
+
+## Update note, at the foot of the Sidebar
+
+orbito-update-ready = Update ready
+orbito-update-ready-detail = Restart to apply it
+# $version: the update's version, like 0.2.0
+orbito-update-available = Orbito { $version } is out
+orbito-update-available-detail = Update and restart
+orbito-update-manual-detail = Download it from the release page
+orbito-update-downloading = Updating…
+# $percent: how much is downloaded, from 0 to 100
+orbito-update-downloading-detail = Downloading, { $percent }%

@@ -50,18 +50,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+
+  &[failed] {
+    color: var(--orbito-danger);
+  }
 }
 
 .action {
   flex: none;
   width: 30px;
+  min-height: 30px;
+  height: 30px;
   justify-content: center;
   padding: 0;
   color: var(--orbito-page-text-muted);
 
   &:hover {
-    color: var(--orbito-text);
+    background-color: var(--orbito-page-sunk);
+    color: var(--orbito-popover-text);
   }
+}
+
+/* A failed or canceled download's: tries again. */
+.retry {
+  flex: none;
+  width: auto;
+  padding-inline: 4px;
 }
 
 /* A running download's progress. */

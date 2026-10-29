@@ -26,30 +26,178 @@ body {
 }
 
 body {
+  container-type: inline-size;
+  margin: 0;
   color: var(--orbito-page-text);
-  /* The Shell's stack (tokens.css), at Firefox's in-content sizes. */
-  font-family: var(--orbito-font-ui);
+  /* The Shell's stack (tokens.css). */
+  font: 14px/1.5 var(--orbito-font-ui);
+}
+
+/* Rows and lists set display, which would show what is hidden. */
+[hidden] {
+  display: none !important;
+}
+
+/* A rail of panes and the one pane shown. */
+.page {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 32px 32px 64px;
+}
+
+.rail {
+  position: sticky;
+  top: 32px;
+}
+
+.rail h1 {
+  margin: 0 0 16px 12px;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+#panes {
   display: flex;
-  justify-content: center;
-  padding: 40px 16px;
+  flex-direction: column;
+  gap: 2px;
 }
 
+#panes > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--orbito-page-text);
+  font: 13.5px/1.3 var(--orbito-font-ui);
+  text-align: start;
+  cursor: pointer;
+}
+
+#panes > button:hover {
+  background: var(--orbito-page-sunk);
+}
+
+#panes > button:hover:active {
+  background: var(--orbito-page-line);
+}
+
+#panes > button[aria-current="page"] {
+  background: var(--orbito-accent-soft);
+  color: var(--orbito-accent);
+  font-weight: 600;
+}
+
+#panes > button:focus-visible {
+  outline: var(--orbito-focus-ring);
+  outline-offset: -2px;
+}
+
+.rail-group {
+  margin: 16px 12px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--orbito-page-text-muted);
+}
+
+.rail-gap {
+  display: block;
+  height: 12px;
+}
+
+.rail-note {
+  margin: 24px 12px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--orbito-page-text-muted);
+}
+
+/* A pane: its head, a lead, then groups of lists. */
 main {
-  width: min(720px, 100%);
+  min-width: 0;
 }
 
-section {
-  margin-block-end: 40px;
+.pane > h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.pane h3 {
+  margin: 28px 0 8px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--orbito-page-text-muted);
+}
+
+.pane > h2 + section > h3 {
+  margin-top: 16px;
+}
+
+.pane > h2 + :is(.list, .lists) {
+  margin-top: 16px;
+}
+
+.lead {
+  margin: 0 0 20px;
+  max-width: 64ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--orbito-page-text-muted);
+}
+
+.after {
+  margin: 8px 4px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--orbito-page-text-muted);
 }
 
 .hint {
-  color: var(--text-color-deemphasized);
-  margin-block: 4px 12px;
+  margin: 2px 0 0;
+  max-width: 64ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--orbito-page-text-muted);
 }
 
 .error {
-  color: var(--text-color-error, #d70022);
-  margin-block: 4px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--orbito-danger);
+  overflow-wrap: anywhere;
+}
+
+.status {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.status:empty {
+  display: none;
+}
+
+.row-main > .status {
+  margin-top: 6px;
+}
+
+a,
+button.link {
+  color: var(--orbito-accent);
 }
 
 button.link {
@@ -58,316 +206,654 @@ button.link {
   min-height: 0;
   border: none;
   background: none;
-  color: var(--link-color, LinkText);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
 }
 
-.cards {
+/* A list: a bordered group of rows, one line between each. Its lines are
+ * each row's own, above it, so that the first one's falls outside. */
+ul.list,
+.list > .rows {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.card {
-  border: 1px solid var(--border-color, color-mix(in srgb, currentColor 20%, transparent));
-  border-radius: 8px;
+.list {
+  overflow: clip;
+  border: 1px solid var(--orbito-page-line);
+  border-radius: 12px;
+  background: var(--orbito-page);
+}
+
+.list + .list,
+.lists > .list + .list {
+  margin-top: 12px;
+}
+
+.list > :is(.row, .list-form, .list-foot),
+.list > .rows > .row {
+  box-shadow: 0 -1px 0 var(--orbito-page-line);
+}
+
+/* A row: its title and hint, one control at the end; a sub block runs the
+ * full width under them. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin: 0;
+  padding: 16px;
+}
+
+.row.tight {
+  padding: 4px 8px 4px 16px;
+}
+
+.row.head {
+  align-items: flex-start;
+}
+
+.row.empty {
+  display: block;
+  font-size: 13px;
+  color: var(--orbito-page-text-muted);
+}
+
+.row-main {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.row-title.plain,
+.row-title .plain {
+  font-weight: 400;
+}
+
+.row-title.fact {
+  font-weight: 500;
+}
+
+.row-title label {
+  margin: 0;
+}
+
+.row-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.row-sub {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* An item's footer: what it applies to first, its quiet actions at the end. */
+.foot {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 32px;
+}
+
+.acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+/* The list's own actions, under its rows. */
+.list-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 8px;
+}
+
+.list-foot:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+.list-foot.add {
+  gap: 8px;
   padding: 12px 16px;
-  margin-block-end: 12px;
 }
 
-.card h3 {
-  margin-block: 0 8px;
+.list-foot.add input {
+  flex: 1 1 200px;
 }
 
-:is(form, .space) label {
-  display: grid;
-  grid-template-columns: 9em 1fr;
+.list-foot.add .error {
+  flex-basis: 100%;
+}
+
+/* Asking before something is deleted: the question, then its buttons. */
+:is(.list-foot, .foot):has(> [id$="-question"]:not([hidden])),
+.confirm {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-block: 6px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 8px;
+  background: var(--orbito-danger-soft);
+  font-size: 13px;
 }
 
-.actions {
+.list-foot:has(> [id$="-question"]:not([hidden])) {
+  margin: 8px;
+}
+
+:is(.list-foot, .foot) > [id$="-question"],
+.confirm > p {
+  flex: 1 1 200px;
+  margin: 0;
+}
+
+.confirm label {
   display: flex;
+  align-items: center;
   gap: 8px;
-  justify-content: flex-end;
-  margin-block-start: 8px;
-}
-
-.server-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.server-name {
+  font-size: 13px;
   font-weight: 600;
 }
 
-.server-url {
-  color: var(--text-color-deemphasized);
-  overflow: hidden;
-  text-overflow: ellipsis;
+.notice {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 8px;
+  background: var(--orbito-accent-soft);
+  font-size: 13px;
+}
+
+.notice > p {
+  margin: 0;
+}
+
+/* A status or kind. */
+.kind {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--orbito-page-sunk);
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--orbito-page-text-muted);
   white-space: nowrap;
-  flex: 1;
 }
 
-.status {
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 0.9em;
+.kind.ok {
+  color: var(--orbito-ok);
 }
 
-.status[data-status="connected"] {
-  background: color-mix(in srgb, #2ac3a2 25%, transparent);
+.kind.bad {
+  color: var(--orbito-danger);
 }
 
-.status[data-status="error"],
-.status[data-status="needs_login"] {
-  background: color-mix(in srgb, #ff4f5e 25%, transparent);
+/* Facts under a row's title: a label, then its value. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-.tools li {
-  margin-block: 2px;
+.facts > div {
+  display: contents;
 }
 
-.tool-name {
-  font-family: monospace;
+.facts dt {
+  color: var(--orbito-page-text-muted);
 }
 
-.options {
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.facts.ruled {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--orbito-page-line);
+  gap: 4px 16px;
+}
+
+/* A row inside a row: an item's own switch. */
+.nested {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding-top: 12px;
+  border-top: 1px solid var(--orbito-page-line);
+}
+
+.nested .row-title {
+  font-size: 13.5px;
+}
+
+/* Controls: one height (32px), one radius (8px), three weights: primary
+ * (accent fill), secondary (raised paper), quiet (text). Firefox's buttons
+ * and menus draw from these variables. */
+main :is(button:not(.segments > *, .swatch, .link), select) {
+  min-width: 0;
+  margin: 0;
+  --button-min-height: 32px;
+  --button-padding: 0 12px;
+  --button-border-radius: 8px;
+  --button-font-weight: 600;
+  --button-opacity-disabled: 1;
+  --button-border: 1px solid var(--button-border-color);
+  --button-border-color: var(--orbito-page-line-strong);
+  --button-border-color-hover: var(--orbito-page-line-strong);
+  --button-border-color-active: var(--orbito-page-line-strong);
+  --button-border-color-disabled: var(--orbito-page-line);
+  --button-background-color: var(--orbito-page);
+  --button-background-color-hover: var(--orbito-page-sunk);
+  --button-background-color-active: var(--orbito-page-line);
+  --button-background-color-disabled: var(--orbito-page-sunk);
+  --button-text-color: var(--orbito-page-text);
+  --button-text-color-hover: var(--orbito-page-text);
+  --button-text-color-active: var(--orbito-page-text);
+  --button-text-color-disabled: var(--orbito-page-faint);
+  /* A submit button is secondary too, unless it is primary. */
+  --button-background-color-primary: var(--button-background-color);
+  --button-background-color-primary-hover: var(--button-background-color-hover);
+  --button-background-color-primary-active: var(--button-background-color-active);
+  --button-background-color-primary-disabled: var(--button-background-color-disabled);
+  --button-border-color-primary: var(--button-border-color);
+  --button-border-color-primary-hover: var(--button-border-color-hover);
+  --button-border-color-primary-active: var(--button-border-color-active);
+  --button-border-color-primary-disabled: var(--button-border-color-disabled);
+  --button-text-color-primary: var(--button-text-color);
+  --button-text-color-primary-hover: var(--button-text-color-hover);
+  --button-text-color-primary-active: var(--button-text-color-active);
+  --button-text-color-primary-disabled: var(--button-text-color-disabled);
+  font-size: 13px;
+}
+
+main button:not(.segments > *, .swatch, .link) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 1px 1px var(--orbito-page-line);
+}
+
+main button:not(.segments > *, .swatch, .link):disabled {
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+main button.primary {
+  --button-border-color: transparent;
+  --button-border-color-hover: transparent;
+  --button-border-color-active: transparent;
+  --button-background-color: var(--orbito-accent);
+  --button-background-color-hover: color-mix(in oklab, var(--orbito-accent) 88%, var(--orbito-page-text));
+  --button-background-color-active: color-mix(in oklab, var(--orbito-accent) 78%, var(--orbito-page-text));
+  --button-text-color: var(--orbito-accent-ink);
+  --button-text-color-hover: var(--orbito-accent-ink);
+  --button-text-color-active: var(--orbito-accent-ink);
+  box-shadow: none;
+}
+
+main button.danger {
+  --button-text-color: var(--orbito-danger);
+  --button-text-color-hover: var(--orbito-danger);
+  --button-text-color-active: var(--orbito-danger);
+  --button-background-color-hover: var(--orbito-danger-soft);
+}
+
+main button.primary.danger {
+  --button-background-color: var(--orbito-danger);
+  --button-background-color-hover: color-mix(in oklab, var(--orbito-danger) 88%, var(--orbito-page-text));
+  --button-background-color-active: color-mix(in oklab, var(--orbito-danger) 78%, var(--orbito-page-text));
+  --button-text-color: oklch(0.99 0 0);
+  --button-text-color-hover: oklch(0.99 0 0);
+  --button-text-color-active: oklch(0.99 0 0);
+}
+
+/* Quiet: a text action, in an item's footer or under a list. */
+main button.quiet {
+  --button-padding: 0 8px;
+  --button-font-weight: 500;
+  --button-border-color: transparent;
+  --button-border-color-hover: transparent;
+  --button-border-color-active: transparent;
+  --button-border-color-disabled: transparent;
+  --button-background-color: transparent;
+  --button-background-color-disabled: transparent;
+  --button-text-color: var(--orbito-page-text-muted);
+  box-shadow: none;
+}
+
+main button.quiet.accent {
+  --button-font-weight: 600;
+  --button-text-color: var(--orbito-accent);
+  --button-text-color-hover: var(--orbito-accent);
+  --button-text-color-active: var(--orbito-accent);
+  --button-background-color-hover: var(--orbito-accent-soft);
+}
+
+main button.quiet.danger {
+  --button-text-color: var(--orbito-page-text-muted);
+  --button-text-color-hover: var(--orbito-danger);
+  --button-text-color-active: var(--orbito-danger);
+}
+
+main button.quiet.danger.strong {
+  --button-text-color: var(--orbito-danger);
+}
+
+main button.add::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: url("chrome://global/skin/icons/plus.svg") center / 16px no-repeat;
+}
+
+main select:not([size], [multiple]) {
+  --end-padding: 12px;
+  padding-inline: 12px 36px;
+  max-width: 100%;
+  font-weight: normal;
+  box-shadow: none;
+}
+
+/* Fields: a label over each, on a sunk panel. */
+main :is(input:not([type="checkbox"], [type="radio"]), textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--orbito-page-line-strong);
+  border-radius: 8px;
+  background: var(--orbito-page);
+  color: var(--orbito-page-text);
+  font: 400 13px var(--orbito-font-ui);
+}
+
+main textarea {
+  padding: 8px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+main :is(input, textarea)::placeholder {
+  color: var(--orbito-page-text-muted);
+}
+
+main :is(input:not([type="checkbox"], [type="radio"]), textarea):disabled {
+  background: var(--orbito-page-sunk);
+  border-color: var(--orbito-page-line);
+  cursor: not-allowed;
+}
+
+main :is(input:not([type="checkbox"], [type="radio"]), textarea, select):focus-visible {
+  outline: none;
+  border-color: var(--orbito-accent);
+  box-shadow: 0 0 0 3px var(--orbito-accent-soft);
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.list-form {
+  padding: 16px;
+  background: var(--orbito-page-sunk);
+}
+
+.row-sub > form.form {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--orbito-page-sunk);
+}
+
+.form h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--orbito-page-text);
+}
+
+.form :is(label:not(.checkbox, .segments > *), .field) {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-block: 8px;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--orbito-page-text-muted);
 }
 
-.options label.checkbox {
+.form .field > .segments {
+  align-self: flex-start;
+}
+
+.form :is(.hint, .warning) {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: normal;
+}
+
+.form .warning {
+  color: var(--orbito-warn);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.form :is(.header-fields, .oauth-fields) {
+  display: grid;
+  gap: 12px;
+}
+
+.form-actions {
   display: flex;
-  gap: 6px;
-  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-:is(#memory, #layout) > label.checkbox {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-block-end: 12px;
+.form fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
 }
 
-.memory-text {
-  margin-block: 0 4px;
-  overflow-wrap: anywhere;
+.form legend {
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--orbito-page-text-muted);
 }
 
-.memory .hint {
-  margin-block: 2px;
-}
-
-.memory-source a {
-  overflow-wrap: anywhere;
-}
-
-.memory textarea {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-#memories-clear {
-  align-items: center;
-}
-
-#claude > label.checkbox {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+/* A form in place of an item's text, as a memory being edited. */
+.row-main > .form {
+  padding: 0;
+  background: none;
 }
 
 #claude-command {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--orbito-page-sunk);
+  font-size: 12.5px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: all;
 }
 
-#recall > label.checkbox {
-  display: flex;
-  gap: 6px;
+/* What a Space keeps for itself. */
+.space .facts.ruled .none {
+  color: var(--orbito-page-text-muted);
+}
+
+.kept ul {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kept li {
+  display: inline;
+}
+
+.kept li + li::before {
+  content: ", ";
+}
+
+/* An MCP server's tools and a task's runs: a summary that opens. */
+.tools,
+.runs {
+  font-size: 13px;
+}
+
+:is(.tools, .runs) > summary {
+  display: inline-flex;
   align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  list-style: none;
+  font-weight: 600;
+  color: var(--orbito-page-text-muted);
+  cursor: pointer;
 }
 
-#recall > h3 {
-  margin-block: 16px 0;
-  font-size: 1em;
+:is(.tools, .runs) > summary::-webkit-details-marker {
+  display: none;
 }
 
-.domain {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-block: 6px;
-  margin-block-end: 6px;
-  overflow-wrap: anywhere;
+:is(.tools, .runs) > summary::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background-color: currentColor;
+  mask: url("chrome://global/skin/icons/arrow-down-12.svg") center / 12px no-repeat;
+  transform: rotate(-90deg);
+  transition: transform var(--orbito-duration-short) var(--orbito-ease);
 }
 
-#recall-domain-form {
+:is(.tools, .runs)[open] > summary::before {
+  transform: none;
+}
+
+:is(.tools, .runs) > summary:hover {
+  color: var(--orbito-page-text);
+}
+
+:is(.tools, .runs) > summary:focus-visible {
+  outline: var(--orbito-focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.tools ul,
+.runs ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+.tools li {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-}
-
-#recall-domain-form input {
-  flex: 1 1 200px;
-}
-
-#recall-domain-form .error {
-  flex-basis: 100%;
-}
-
-#delete-data {
-  align-items: center;
-  margin: 0;
-}
-
-.skill-head {
-  display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 12px;
+  padding: 4px 0;
+  line-height: 1.5;
 }
 
-.skill-name {
-  font-weight: 600;
+.tool-name {
+  font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.skill-kind {
-  color: var(--text-color-deemphasized);
-  font-size: 0.9em;
+.tool-about {
+  color: var(--orbito-page-text-muted);
 }
 
-.skill-description {
-  margin-block: 4px;
-}
-
-.skill .actions {
-  align-items: center;
-}
-
-.skill label.checkbox {
+.runs .run {
   display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.skill-space,
-.memory-space {
-  margin-inline-end: auto;
-}
-
-/* What a Space keeps for itself only, under its settings. */
-.space h4 {
-  margin-block: 12px 4px;
-  font-size: inherit;
-}
-
-.space :is(ul.space-memories, ul.space-skills) {
-  margin: 0;
-  padding-inline-start: 1.2em;
-}
-
-.space p:is(.space-memories, .space-skills) {
-  margin: 0;
-}
-
-.space-remove-form p {
-  margin-block: 12px 0;
-  font-weight: 600;
-}
-
-#skill-form textarea {
-  width: 100%;
-  box-sizing: border-box;
-  margin-block-start: 6px;
-}
-
-.task-head {
-  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--orbito-page-line);
+  font-variant-numeric: tabular-nums;
 }
 
-.task-name {
-  font-weight: 600;
+.runs .run .open-result {
+  margin-inline-start: auto;
 }
 
-.task-schedule {
-  color: var(--text-color-deemphasized);
-}
-
-.task .hint {
-  margin-block: 4px;
-}
-
-.task .actions {
-  align-items: center;
-}
-
-.task label.checkbox {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-inline-end: auto;
-}
-
-.task-runs li {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin-block: 4px;
-}
-
-.task-runs .run-status[data-status="ok"] {
-  color: var(--text-color-success, #058b00);
-}
-
-.task-runs .run-status[data-status="failed"] {
-  color: var(--text-color-error, #d70022);
-}
-
-.run-tokens {
-  color: var(--text-color-deemphasized);
+.run-tokens,
+.runs .hint {
+  margin: 0;
 }
 
 .run-error {
   overflow-wrap: anywhere;
 }
 
-#task-form textarea {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.allowed-tools,
-.skill-inputs {
-  border: none;
-  padding: 0;
-  margin: 0;
-}
-
 .skill-inputs .input-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-#task-form .warning {
-  margin-block: 4px;
-  color: var(--text-color-warning, #a35b00);
-}
-
-#task-form :is(.warning, fieldset)[hidden] {
-  display: none;
+  display: grid;
+  gap: 8px;
 }
 
 .allowed-tools .tool-list {
@@ -380,81 +866,115 @@ button.link {
   display: flex;
   gap: 6px;
   align-items: center;
+  font-size: 12.5px;
+  font-weight: normal;
+  color: var(--orbito-page-text);
 }
 
-#task-form label[hidden] {
-  display: none;
-}
-
-/* Appearance, Account and Advanced: one setting a row, its name and hint
- * first, its control at the end. */
-.setting {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 24px;
-  padding-block: 12px;
-}
-
-.setting > div:first-child {
-  flex: 1 1 260px;
-  min-width: 0;
-}
-
-.setting h3 {
-  margin: 0;
-  font-size: 1em;
-}
-
-.setting .hint {
-  margin-block: 2px 0;
-}
-
-#sync-status {
-  margin-block: 6px 0;
-  overflow-wrap: anywhere;
-}
-
-#sync-status:empty {
-  display: none;
-}
-
-#sync-actions {
-  margin: 0;
-}
-
+/* A segmented control: radios, the picked one raised. */
 .segments {
   display: inline-flex;
+  gap: 2px;
+  height: 32px;
+  box-sizing: border-box;
   padding: 2px;
   border-radius: 8px;
   background: var(--orbito-page-sunk);
-  box-shadow: inset 0 0 0 1px var(--orbito-hairline);
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
 }
 
-.segments > button {
+.segments > :is(button, label) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
   min-height: 0;
+  height: 28px;
   margin: 0;
-  padding: 3px 9px;
+  padding: 0 12px;
   border: none;
   border-radius: 6px;
   background: none;
+  color: var(--orbito-page-text-muted);
+  font: 500 13px/1 var(--orbito-font-ui);
+  cursor: pointer;
+  --button-background-color: transparent;
+  --button-background-color-hover: transparent;
+  --button-background-color-active: transparent;
+  --button-text-color-hover: var(--orbito-page-text);
+  --button-text-color-active: var(--orbito-page-text);
+}
+
+.segments > label:hover {
   color: var(--orbito-page-text);
-  font-weight: normal;
 }
 
-.segments > button:hover {
-  background: var(--orbito-surface-hover);
-}
-
-.segments > button[aria-checked="true"] {
+.segments > :is(button[aria-checked="true"], label:has(> input:checked)) {
+  --button-background-color: var(--orbito-page);
+  --button-background-color-hover: var(--orbito-page);
+  --button-background-color-active: var(--orbito-page);
   background: var(--orbito-page);
   box-shadow: var(--orbito-shadow-item);
+  color: var(--orbito-page-text);
+  font-weight: 600;
+}
+
+/* A segment that is a label picks its radio, which only shows its focus. */
+.segments > label {
+  position: relative;
+}
+
+.segments > label > input {
+  position: absolute;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segments > label:has(> input:focus-visible) {
+  outline: var(--orbito-focus-ring);
+  outline-offset: 2px;
+}
+
+/* An on/off switch: a track with its knob at the start, or at the end in
+ * the accent when on. */
+input.toggle {
+  appearance: none;
+  flex: none;
+  width: 36px;
+  height: 22px;
+  margin: 0;
+  border: none;
+  border-radius: 999px;
+  background: radial-gradient(circle 9px at 11px 50%, var(--orbito-page) 92%, transparent) no-repeat, var(--orbito-page-line);
+  cursor: pointer;
+}
+
+input.toggle:checked {
+  background: radial-gradient(circle 9px at 25px 50%, var(--orbito-page) 92%, transparent) no-repeat, var(--orbito-accent);
+}
+
+input.toggle:dir(rtl) {
+  background: radial-gradient(circle 9px at 25px 50%, var(--orbito-page) 92%, transparent) no-repeat, var(--orbito-page-line);
+}
+
+input.toggle:checked:dir(rtl) {
+  background: radial-gradient(circle 9px at 11px 50%, var(--orbito-page) 92%, transparent) no-repeat, var(--orbito-accent);
+}
+
+input.toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input.toggle:focus-visible {
+  outline: var(--orbito-focus-ring);
+  outline-offset: 2px;
 }
 
 .swatches {
   display: inline-flex;
-  gap: 6px;
+  gap: 8px;
   padding: 4px;
 }
 
@@ -481,4 +1001,47 @@ button.link {
 
 .swatches > .swatch:focus-visible {
   outline-offset: 5px;
+}
+
+main button:not(.segments > *, .swatch):focus-visible,
+a:focus-visible {
+  outline: var(--orbito-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Narrow: the rail runs across the top. */
+@container (max-width: 640px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 24px 16px 48px;
+  }
+
+  .rail {
+    position: static;
+  }
+
+  .rail h1 {
+    margin-inline-start: 0;
+  }
+
+  #panes {
+    flex-direction: row;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -4px;
+    padding: 2px 4px;
+  }
+
+  #panes > button {
+    width: auto;
+    flex: none;
+  }
+
+  .rail-group,
+  .rail-gap,
+  .rail-note {
+    display: none;
+  }
 }

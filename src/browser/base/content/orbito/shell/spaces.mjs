@@ -86,6 +86,43 @@ const WINDOW_EVENTS = [
 
 const newId = () => crypto.randomUUID();
 
+/** How long a window's restore may stay busy before it is given up, in ms. */
+const RESTORE_GIVE_UP = 5000;
+
+/**
+ * Whether Session Restore is filling a window, from its SSWindowStateBusy
+ * and SSWindowStateReady events. Only a window's own restore stays busy
+ * past the task it began in (each tab's restore is one call); if Session
+ * Restore fails partway, its busy count stays up and Ready never comes, so
+ * after a while the restore is taken as over, as if Ready had come.
+ */
+export class RestoreWatch {
+  /** Whether Session Restore is filling the window. */
+  restoring = false;
+  #timer = 0;
+  #onReady;
+
+  /** @param {() => void} onReady Runs once the restore is over. */
+  constructor(onReady) {
+    this.#onReady = onReady;
+  }
+
+  busy() {
+    this.restoring = true;
+    clearTimeout(this.#timer);
+    this.#timer = setTimeout(() => {
+      console.warn("Session Restore left the window busy; going on without it");
+      this.ready();
+    }, RESTORE_GIVE_UP);
+  }
+
+  ready() {
+    clearTimeout(this.#timer);
+    this.restoring = false;
+    this.#onReady();
+  }
+}
+
 export class Spaces {
   /** The profile's Spaces shown, in order: [{id, name}]. */
   list = [];
@@ -94,7 +131,7 @@ export class Spaces {
   /** The id of the Space this window shows. */
   current = null;
   /** While Session Restore fills the window, tabs come in any order. */
-  #restoring = false;
+  #restore = new RestoreWatch(() => this.#restored());
   /**
    * The Space just made, or removed here, while it can be taken back:
    * {space, back, removed, timer}, back the Space to show again.
@@ -680,7 +717,7 @@ export class Spaces {
         let other = tab.group?.tabs.find(
           member => member != tab && !member.closing
         );
-        if (!this.#restoring && other && !other.pinned) {
+        if (!this.#restore.restoring && other && !other.pinned) {
           let id = this.spaceOf(other);
           if (this.spaceOf(tab) != id) {
             this.#moveTabs([tab], id);
@@ -703,21 +740,20 @@ export class Spaces {
         queueMicrotask(() => (this.#lastSelect = null));
       // Falls through.
       case "SSTabRestoring":
-        if (!this.#restoring) {
+        if (!this.#restore.restoring) {
           this.#follow(event.target);
         }
         break;
       case "TabClose":
-        if (!this.#restoring && !event.detail?.adoptedBy) {
+        if (!this.#restore.restoring && !event.detail?.adoptedBy) {
           this.#closing(event.target);
         }
         break;
       case "SSWindowStateBusy":
-        this.#restoring = true;
+        this.#restore.busy();
         break;
       case "SSWindowStateReady":
-        this.#restoring = false;
-        this.#restored();
+        this.#restore.ready();
         break;
     }
   }

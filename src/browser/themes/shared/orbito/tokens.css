@@ -134,4 +134,16 @@
     oklch(0.97 0.006 var(--orbito-accent-hue)),
     oklch(0.17 0.01 var(--orbito-accent-hue))
   );
+  --orbito-page-line-strong: light-dark(
+    oklch(0.3 0.03 var(--orbito-accent-hue) / 0.17),
+    rgb(255 255 255 / 0.14)
+  );
+  --orbito-page-faint: light-dark(
+    oklch(0.3 0.03 var(--orbito-accent-hue) / 0.36),
+    rgb(255 255 255 / 0.3)
+  );
+  --orbito-danger-soft: light-dark(
+    oklch(0.57 0.19 25 / 0.08),
+    oklch(0.57 0.19 25 / 0.16)
+  );
 }

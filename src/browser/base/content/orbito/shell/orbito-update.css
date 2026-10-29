@@ -1,0 +1,88 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/orbito/shell/motion.css");
+
+:host {
+  display: block;
+  min-width: 0;
+  color: var(--orbito-text);
+}
+
+:host([hidden]) {
+  display: none;
+}
+
+/* On the Sidebar's grid: the icon in the 16px column 10px in, the text from
+ * 35px. */
+.update {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--orbito-radius-item);
+  background-color: var(--orbito-accent-soft);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  animation: update-in var(--orbito-duration-medium) var(--orbito-ease);
+
+  &:not(:disabled):hover {
+    background-color: color-mix(in srgb, var(--orbito-accent-soft), var(--orbito-accent) 12%);
+  }
+
+  &:not(:disabled):hover:active {
+    background-color: color-mix(in srgb, var(--orbito-accent-soft), var(--orbito-accent) 20%);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--orbito-accent);
+  stroke-width: var(--orbito-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.label,
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.label {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.detail {
+  font-size: 11.5px;
+  color: var(--orbito-text-muted);
+}
+
+@keyframes update-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}

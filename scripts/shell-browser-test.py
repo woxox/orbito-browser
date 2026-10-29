@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ACCEL = Keys.META if sys.platform == "darwin" else Keys.CONTROL
 BIN = os.environ.get(
     "ORBITO_BIN",
-    str(ROOT / "engine/obj-artifact/dist/Orbito.app/Contents/MacOS/orbito"),
+    str(ROOT / "engine/obj-artifact/dist/Orbito DEV.app/Contents/MacOS/orbito"),
 )
 
 # Helpers available to every test script. arguments[0] is the pages' URL.
@@ -4544,7 +4544,7 @@ def show_orbito_review_follows_the_keyboard_rules(b):
         check(await named(assistant.reviewSteps.children[1].querySelector(".step-delete")) == "Delete step 2", "Delete's name");
         check(await named(reviewSteps()[0]) == "Step 1", accessibleName(reviewSteps()[0]));
         let group = assistant.reviewInputs.querySelector('[role="radiogroup"]');
-        check(plain(await named(group)).includes("{query}"), accessibleName(group));
+        check(plain(await named(group)).startsWith("query "), accessibleName(group));
         let controls = [...assistant.reviewView.querySelectorAll("button, input, [tabindex]")].filter(shown);
         check(controls.every(el => accessibleName(el)), "a control without a name");
         win.gBrowser.selectedBrowser.focus();
@@ -4995,13 +4995,13 @@ def doorhangers_show_under_top_bar_buttons_or_the_url_display(b):
 
 def site_info_status(b, url):
     """Opens url, then the site information panel, and returns what it says
-    about the connection: [mode, text]."""
+    about the connection: [mode, text, whether it offers its details]."""
     return b.js(f"""
     await closeSiteInfo();
     await openURL({json.dumps(url)});
     await openSiteInfo();
     let status = siteInfo.status;
-    let result = [status.dataset.security, status.textContent.trim()];
+    let result = [status.dataset.security, status.textContent.trim(), !!siteInfo.renderRoot.querySelector(".details")];
     await closeSiteInfo();
     return result;
     """)
@@ -5020,15 +5020,17 @@ def the_site_info_panel_shows_the_connection_security(b):
     """)
     port = b.pages.rsplit(":", 1)[1]
     try:
+        # The connection's details for a web page, secure or not.
         cases = [
-            (TLS["secure"] + "/page/Secure", "secure", "Connection is secure"),
-            (f"http://insecure.orbito.test:{port}/page/Plain", "not-secure", "Connection is not secure"),
-            (TLS["untrusted"] + "/page/Untrusted", "cert-error-page", "Certificate is not trusted"),
-            ("about:robots", "chrome", "Orbito page"),
+            (TLS["secure"] + "/page/Secure", "secure", "Connection is secure", True),
+            (f"http://insecure.orbito.test:{port}/page/Plain", "not-secure", "Connection is not secure", True),
+            (TLS["untrusted"] + "/page/Untrusted", "cert-error-page", "Certificate is not trusted", False),
+            (b.pages + "/page/Local", "local", "Connected to this computer", False),
+            ("about:robots", "chrome", "Orbito page", False),
         ]
-        for url, mode, text in cases:
+        for url, mode, text, details in cases:
             shown = site_info_status(b, url)
-            assert shown == [mode, text], f"{url}: {shown}"
+            assert shown == [mode, text, details], f"{url}: {shown}"
         # The button's icon follows: a lock, a crossed lock, the info icon.
         b.js(f"""
         await openURL({json.dumps(TLS["secure"] + "/page/Lock")});
@@ -5656,6 +5658,8 @@ def the_downloads_panel_opens_shows_cancels_and_retries_downloads(b):
       check(downloads.panel.state == "open", "canceling closed the panel");
       row = await downloadRow(running);
       await wait(() => /Retry/.test(accessibleName(row)), `Retry in ${accessibleName(row)}`, 5000);
+      let retry = row.parentNode.querySelector(".retry");
+      check(retry && await named(retry) == "Retry: running.bin", `the retry button: ${retry && accessibleName(retry)}`);
       row.click();
       await wait(() => !running.stopped || running.succeeded, "the download to start again");
       await wait(async () => (await downloadRow(running))?.querySelector(".bar"), "the progress again");
@@ -6813,8 +6817,8 @@ def deleting_a_space_from_the_sidebar_moves_its_data_and_can_be_undone(b):
     let dialog = await wait(() => shown(switcher().removeDialog) && switcher().removeDialog, "the dialog");
     check(dialog.getAttribute("role") == "dialog", "not a dialog");
     check(await named(dialog) == `Delete “${spaces().currentSpace.name}”?`, `the dialog's name: ${accessibleName(dialog)}`);
-    // The new Space's first tab and the one opened since.
-    check(dialog.textContent.includes("Its 2 tabs close."), `the dialog: ${dialog.textContent.trim()}`);
+    // The tab opened in the new Space; not its first tab, a new tab page.
+    check(dialog.textContent.includes("Its 1 tab closes."), `the dialog: ${dialog.textContent.trim()}`);
     let choice = dialog.querySelector("select");
     await wait(() => deepActive() == choice, "focus on the choice");
     check([...choice.options].map(o => o.value).join() == `${first},`, [...choice.options].map(o => o.value).join());
@@ -9006,6 +9010,9 @@ def dragging_tabs_onto_the_dock_docks_them_and_rows_move_and_undock_by_drag(b):
     await listMatchesGBrowser();
     check(c.isConnected && rowFor(c), "the undocked tab is not in the list");
     check(!tabList().hasAttribute("undock-drop"), "the list still shows a drop");
+    // Where it was dropped: on B's lower half, after it.
+    let tabs = win.gBrowser.tabs;
+    check(tabs[tabs.indexOf(byLabel("Drag dock B")) + 1] == c, `C is not after B: ${tabs.map(t => t.label)}`);
     return middle(dockRowFor(byLabel("Drag dock A")));
     """)
     # A short press on a row selects it; it does not move it.
@@ -9013,6 +9020,137 @@ def dragging_tabs_onto_the_dock_docks_them_and_rows_move_and_undock_by_drag(b):
     b.js("""
     await wait(() => win.gBrowser.selectedTab == byLabel("Drag dock A"), "the click to select the Dock tab");
     check(storedDock().length == 1, "a click moved the row");
+    await resetDocks();
+    """)
+
+
+@test
+def a_drag_shows_where_it_lands_and_pin_rows_fill_the_width(b):
+    start = b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    for (let title of ["Land A", "Land B", "Land C", "Land P1", "Land P2", "Land P3", "Land D"]) {
+      await openPage(title);
+    }
+    for (let title of ["Land P1", "Land P2", "Land P3"]) {
+      shell.pins.pinTab(byLabel(title));
+    }
+    shell.docks.dockTab(byLabel("Land D"));
+    await pinsMatch();
+    await docksMatch();
+    await rows();
+    // Three Pins split the row in three.
+    let grid = pinGrid().grid.getBoundingClientRect();
+    let widths = (await pinButtons()).map(b => b.getBoundingClientRect().width);
+    check(widths.every(w => Math.abs(w - (grid.width - 12) / 3) < 1), `the Pins are ${widths} wide in ${grid.width}`);
+    return middle(rowFor(byLabel("Land A")));
+    """)
+    x, y = start
+    hold = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+    hold.pointer_move(round(x), round(y)).pointer_down()
+    hold.pointer_move(round(x), round(y + 10), duration=50).pointer_move(round(x), round(y + 20), duration=50)
+    hold.perform()
+
+    def move_to(point):
+        seq = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+        seq.pointer_move(round(point[0]), round(point[1] + 2), duration=50).pointer_move(round(point[0]), round(point[1]), duration=50)
+        seq.perform()
+
+    def release():
+        seq = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+        seq.pointer_up()
+        seq.perform()
+
+    try:
+        # Onto the lower half of C's row: the guide bar shows in the gap
+        # under it, and only there.
+        move_to(b.js("""
+        let r = rowFor(byLabel("Land C")).getBoundingClientRect();
+        return [r.left + 40, r.bottom - 4];
+        """))
+        point = b.js("""
+        let c = rowFor(byLabel("Land C"));
+        await wait(() => c.querySelector(".guide[after]"), "the guide bar under C");
+        check(tabList().renderRoot.querySelectorAll(".guide").length == 1, "more than one guide bar");
+        let bar = c.querySelector(".guide").getBoundingClientRect();
+        let row = c.getBoundingClientRect();
+        check(Math.abs((bar.top + bar.bottom) / 2 - (row.bottom + 1)) < 1.5, `the bar (${bar.top}-${bar.bottom}) is not in the gap under the row (${row.bottom})`);
+        // Over the first Pin's start: a see-through copy takes the slot
+        // before it, four Pins to the row.
+        let first = pinButtonFor(byLabel("Land P1")).getBoundingClientRect();
+        return [first.left + 4, first.top + first.height / 2];
+        """)
+        move_to(point)
+        point = b.js("""
+        let grid = pinGrid();
+        await wait(() => grid.renderRoot.querySelector(".pin[preview]"), "the copy in the grid");
+        let items = [...grid.grid.children];
+        check(items[0].hasAttribute("preview") && items.length == 4, `the copy is not first: ${items.map(el => el.title)}`);
+        let widths = items.map(el => el.getBoundingClientRect().width);
+        let box = grid.grid.getBoundingClientRect();
+        check(widths.every(w => Math.abs(w - (box.width - 18) / 4) < 1), `four to a row are ${widths} wide`);
+        check(win.getComputedStyle(items[0]).opacity < 1, "the copy is not see-through");
+        check(!tabList().renderRoot.querySelector(".guide"), "the guide bar stays over the grid");
+        // Over the Dock row's lower half: a copy of the row after it.
+        let r = dockRowFor(byLabel("Land D")).getBoundingClientRect();
+        return [r.left + 40, r.bottom - 4];
+        """)
+        move_to(point)
+        b.js("""
+        await wait(() => dock().renderRoot.querySelector(".tab[preview]"), "the copy in the Dock");
+        await wait(() => !pinGrid().renderRoot.querySelector("[preview]"), "the grid's copy to go");
+        let items = [...dock().list.children];
+        check(items.length == 2 && items[1].hasAttribute("preview") && items[1].textContent.includes("Land A"), `the Dock shows ${items.map(el => el.textContent.trim())}`);
+        """)
+        release()
+    finally:
+        b.m.actions.release()
+    start = b.js("""
+    let a = byLabel("Land A");
+    await wait(() => storedDock().map(e => e.title).join() == "Land D,Land A", "A to be docked after D");
+    await docksMatch();
+    check(!dock().renderRoot.querySelector("[preview]") && !pinGrid().renderRoot.querySelector("[preview]"), "a copy stays");
+    // A fifth Pin gets the next row to itself.
+    shell.pins.pinTab(byLabel("Land C"));
+    shell.pins.pinTab(byLabel("Land A"));
+    await pinsMatch();
+    let buttons = await pinButtons();
+    let box = pinGrid().grid.getBoundingClientRect();
+    let last = buttons.at(-1).getBoundingClientRect();
+    check(buttons.length == 5 && Math.abs(last.width - box.width) < 1 && last.top > buttons[0].getBoundingClientRect().bottom,
+      `the fifth Pin is ${last.width} wide in ${box.width}`);
+    return middle(pinButtonFor(byLabel("Land P3")));
+    """)
+    # A Pin over the tab list: the guide bar shows where it goes, and it is
+    # unpinned there.
+    x, y = start
+    hold = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+    hold.pointer_move(round(x), round(y)).pointer_down()
+    hold.pointer_move(round(x), round(y + 10), duration=50)
+    hold.perform()
+    try:
+        move_to(b.js("""
+        let r = rowFor(byLabel("Land B")).getBoundingClientRect();
+        return [r.left + 40, r.top + 4];
+        """))
+        b.js("""
+        await wait(() => rowFor(byLabel("Land B")).querySelector(".guide[before]"), "the guide bar over B");
+        check(tabList().renderRoot.querySelectorAll(".guide").length == 1, "more than one guide bar");
+        """)
+        release()
+    finally:
+        b.m.actions.release()
+    b.js("""
+    let p3 = byLabel("Land P3");
+    await wait(() => !p3.pinned && storedPins().length == 4, "P3 to be unpinned");
+    await pinsMatch();
+    await listMatchesGBrowser();
+    let tabs = win.gBrowser.tabs;
+    check(tabs[tabs.indexOf(p3) + 1] == byLabel("Land B"), `P3 is not before B: ${tabs.map(t => t.label)}`);
+    check(!tabList().renderRoot.querySelector(".guide"), "the guide bar stays");
+    await resetPins();
     await resetDocks();
     """)
 
@@ -9045,7 +9183,7 @@ def closing_a_dock_tab_keeps_its_place_unloaded_at_the_docked_url(b):
       check(!again.linkedPanel && !again.selected, "the Dock's new tab is loaded");
       check(again.linkedBrowser.currentURI.spec == pageURL("Docked home"), again.linkedBrowser.currentURI.spec);
       check(win.gBrowser.selectedTab != again && !win.gBrowser.selectedTab.closing, "the resting tab was selected");
-      check(dockRowFor(again).hasAttribute("resting") && !dockRowFor(again).querySelector(".close"),
+      check(dockRowFor(again).hasAttribute("resting") && dockRowFor(again).querySelector(".close").hasAttribute("remove"),
         "the row does not show the tab at rest");
       // Selected again, it opens the docked page.
       dockRowFor(again).click();
@@ -9083,6 +9221,112 @@ def closing_a_dock_tab_keeps_its_place_unloaded_at_the_docked_url(b):
       await resetDocks();
     }
     """)
+
+
+@test
+def a_dock_rows_button_closes_its_tab_or_at_rest_takes_it_out_of_the_dock(b):
+    close = b.js("""
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let a = await openPage("Dock button");
+    await openPage("Dock button other");
+    shell.docks.dockTab(a);
+    await docksMatch();
+    win.gBrowser.selectedTab = a;
+    await dock().updateComplete;
+    let button = dockRowFor(a).querySelector(".close");
+    check(!button.hasAttribute("remove") && await named(button) == "Close tab", accessibleName(button));
+    return middle(button);
+    """)
+    try:
+        # Open: × closes the tab, and its place stays, at rest.
+        b.pointer(close, "down", "up")
+        remove = b.js("""
+        await wait(() => shell.docks.tabsIn().length == 1 && shell.docks.isResting(shell.docks.tabsIn()[0]),
+          "the Dock tab at rest in the closed one's place");
+        await docksMatch();
+        check(storedDock().length == 1 && dockLabels() == "Dock button", dockLabels());
+        let row = dockRowFor(shell.docks.tabsIn()[0]);
+        check(row.hasAttribute("resting"), "the row is not at rest");
+        let button = row.querySelector(".close");
+        check(button.hasAttribute("remove") && await named(button) == "Remove from Dock", accessibleName(button));
+        return middle(button);
+        """)
+        # At rest: − takes it out of the Dock, and the tab with it.
+        b.pointer(remove, "down", "up")
+        b.js("""
+        await wait(() => !storedDock().length && !shell.docks.tabsIn().length, "the entry to go");
+        await dock().updateComplete;
+        check(!win.gBrowser.tabs.some(t => t.label == "Dock button"), "the tab at rest stayed open");
+        check(dock().hasAttribute("empty"), "the Dock is not empty");
+        """)
+    finally:
+        b.js("await resetDocks();")
+
+
+@test
+def a_dock_tab_closed_while_session_restore_stays_busy_keeps_its_place(b):
+    # Session Restore can fail partway and leave the window busy, its Ready
+    # never coming: the Dock gives up waiting on it.
+    close = b.js("""
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let a = await openPage("Busy dock");
+    await openPage("Busy dock other");
+    shell.docks.dockTab(a);
+    await docksMatch();
+    win.gBrowser.selectedTab = a;
+    await dock().updateComplete;
+    win.dispatchEvent(new Event("SSWindowStateBusy", { bubbles: true }));
+    return middle(dockRowFor(a).querySelector(".close"));
+    """)
+    try:
+        b.pointer(close, "down", "up")
+        b.js("""
+        await wait(() => shell.docks.tabsIn().length == 1 && shell.docks.isResting(shell.docks.tabsIn()[0]),
+          "the Dock tab at rest in the closed one's place");
+        await docksMatch();
+        check(storedDock().length == 1 && dockLabels() == "Busy dock", dockLabels());
+        """)
+    finally:
+        b.js("""
+        win.dispatchEvent(new Event("SSWindowStateReady", { bubbles: true }));
+        await resetDocks();
+        """)
+
+
+@test
+def accel_d_docks_and_undocks_the_selected_tab(b):
+    b.js("""
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    await openPage("Accel D");
+    win.gBrowser.selectedBrowser.focus();
+    """)
+    try:
+        b.keys((ACCEL, "d"))
+        b.js("""
+        let tab = win.gBrowser.selectedTab;
+        await wait(() => storedDock().length == 1, "⌘D to dock the tab");
+        await docksMatch();
+        check(shell.docks.dockOf(tab) && dockLabels() == "Accel D", dockLabels());
+        check(!(await rows()).some(r => r.tab == tab), "the tab list shows the Dock tab");
+        check(doc.getElementById("editBookmarkPanel")?.state != "open", "⌘D bookmarked the page");
+        win.gBrowser.selectedBrowser.focus();
+        """)
+        b.keys((ACCEL, "d"))
+        b.js("""
+        let tab = win.gBrowser.selectedTab;
+        await wait(() => !storedDock().length, "⌘D to undock the tab");
+        await docksMatch();
+        check(!shell.docks.dockOf(tab) && tab.label == "Accel D" && tab.isConnected, "the tab did not stay open");
+        check((await rows()).some(r => r.tab == tab), "the tab list does not show the tab");
+        """)
+    finally:
+        b.js("await resetDocks();")
 
 
 @test
@@ -10009,6 +10253,7 @@ def the_advanced_link_opens_firefox_settings_without_the_shells_sections(b):
     b.js("""
     await onlyBlankTab();
     let settings = await openOrbitoSettings();
+    settings.querySelector('#panes [data-pane="advanced"]').click();
     let button = settings.getElementById("open-firefox-settings");
     check(await named(button) == "Open Firefox settings", "the link has no name");
     button.click();
@@ -10118,6 +10363,66 @@ def the_account_section_signs_in_turns_on_and_manages_sync(b):
 
 
 @test
+def the_orbito_settings_show_one_pane_at_a_time_from_the_rail(b):
+    b.js("""
+    await onlyBlankTab();
+    let { OrbitoPages } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoPages.sys.mjs");
+    let page = await openOrbitoSettings();
+    let open = () => [...page.querySelectorAll("main > .pane")].filter(p => !p.hidden).map(p => p.id).join();
+    let current = () => [...page.querySelectorAll("#panes [aria-current=page]")].map(b => b.dataset.pane).join();
+    // General first, the rest behind the rail.
+    check(open() == "general" && current() == "general", `${open()} / ${current()}`);
+    check(shown(page.getElementById("theme")) && !shown(page.getElementById("mcp-add-start")), "the general pane");
+    check(await named(page.getElementById("panes")) == "Settings", accessibleName(page.getElementById("panes")));
+    let rail = [...page.querySelectorAll("#panes > button")].map(b => b.textContent).join();
+    check(rail == "General,Backends,Spaces,Memory,Browsing recall,Skills,Scheduled tasks,MCP servers,Advanced", rail);
+    // A click shows its pane from the top.
+    page.querySelector('#panes [data-pane="mcp"]').click();
+    check(open() == "mcp" && current() == "mcp", `${open()} / ${current()}`);
+    check(shown(page.getElementById("mcp-add-start")), "the MCP pane");
+    // A question left open goes with its pane.
+    page.querySelector('#panes [data-pane="advanced"]').click();
+    page.getElementById("delete-data-start").click();
+    check(shown(page.getElementById("delete-data-question")), "no question");
+    page.querySelector('#panes [data-pane="mcp"]').click();
+    page.querySelector('#panes [data-pane="advanced"]').click();
+    check(page.getElementById("delete-data-question").hidden && shown(page.getElementById("delete-data-start")), "the question stayed");
+    page.querySelector('#panes [data-pane="mcp"]').click();
+    // Asked for from elsewhere: the page that is open shows it.
+    OrbitoPages.openSettings(win, { pane: "recall" });
+    await wait(() => open() == "recall" && current() == "recall", "the recall pane");
+    // A Space's settings, a skill draft and a task's runs show their panes.
+    OrbitoPages.openSpaceSettings(win, spaces().current);
+    await wait(() => open() == "spaces", "the spaces pane");
+    await wait(() => page.activeElement == page.querySelector(`.space[data-space="${spaces().current}"] input.space-name`), "focus on the Space's name");
+    OrbitoPages.openSkillDraft(win, { name: "drafted", description: "", tools: [], output: "chat", body: "Do it." });
+    await wait(() => open() == "skills" && !page.getElementById("skill-form").hidden, "the skill form");
+    await wait(() => page.activeElement == page.getElementById("skill-form").elements.namedItem("name"), "focus on the skill's name");
+    page.getElementById("skill-cancel").click();
+    // Opened without a pane, it keeps the one it shows.
+    OrbitoPages.openSettings(win);
+    await new Promise(r => setTimeout(r, 100));
+    check(open() == "skills", open());
+    """)
+    # A page that unloads ends the script, so it closes in one of its own.
+    b.js("await onlyBlankTab();")
+    try:
+        b.js("""
+        // A new page shows the pane asked for.
+        let { OrbitoPages } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoPages.sys.mjs");
+        OrbitoPages.openSettings(win, { pane: "advanced" });
+        let page = await wait(() => {
+          let d = win.gBrowser.selectedBrowser.contentDocument;
+          return d?.documentURI == "about:orbito-settings" && d.querySelector("#panes [aria-current=page]") && d;
+        }, "a new settings page");
+        let open = [...page.querySelectorAll("main > .pane")].filter(p => !p.hidden).map(p => p.id).join();
+        check(open == "advanced" && page.querySelector("#panes [aria-current=page]").dataset.pane == "advanced", open);
+        """)
+    finally:
+        b.js("await onlyBlankTab();")
+
+
+@test
 def the_orbito_settings_follow_the_keyboard_rules(b):
     b.js("""
     await onlyBlankTab();
@@ -10141,15 +10446,17 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
         let els = [page.getElementById("theme"), ...page.querySelectorAll("#theme [role=radio]"),
           page.getElementById("accent"), ...page.querySelectorAll("#accent [role=radio]"),
           page.getElementById("language"), ...page.querySelectorAll("#language [role=radio]"),
-          page.querySelector("#sync-actions button"), page.getElementById("open-firefox-settings")];
+          page.querySelector("#sync-actions button"), page.querySelector('#panes [data-pane="advanced"]')];
         return Promise.all(els.map(named));
         """)
         assert names == ["Theme", "System", "Light", "Dark", "Accent color", "Violet", "Blue", "Green", "Coral",
-                         "Graphite", "Language", "English", "한국어", "Sign in", "Open Firefox settings"], names
+                         "Graphite", "Language", "English", "한국어", "Sign in", "Advanced"], names
 
-        # The library link, then each radio group is one tab stop on its
-        # picked radio; the arrows, Home and End pick another.
-        steps = [
+        # The rail's panes, the library link, then each radio group is one
+        # tab stop on its picked radio; the arrows, Home and End pick another.
+        rail = ["General", "Backends", "Spaces", "Memory", "Browsing recall", "Skills", "Scheduled tasks",
+                "MCP servers", "Advanced"]
+        steps = [(Keys.TAB, pane) for pane in rail] + [
             (Keys.TAB, "library"),
             (Keys.TAB, "theme system"),
             (Keys.ARROW_RIGHT, "theme light"),
@@ -10164,9 +10471,9 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
             ((Keys.SHIFT, Keys.TAB), "theme light"),
             (Keys.TAB, "accent coral"),
             (Keys.TAB, "language en-US"),
+            (Keys.TAB, "Sign in"),
             (Keys.TAB, "sidebar-collapsed"),
             (Keys.TAB, "assistant-auto-open"),
-            (Keys.TAB, "Sign in"),
         ]
         for key, expected in steps:
             b.keys(key)
@@ -10175,7 +10482,7 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
         picked = b.js("return [Services.prefs.getStringPref(THEME_PREF), Services.prefs.getStringPref(ACCENT_PREF)];")
         assert picked == ["light", "coral"], picked
 
-        # Back over the Layout checkboxes and the language to the accent.
+        # Back over the Layout switches, the account and the language to the accent.
         for _ in range(4):
             b.keys((Keys.SHIFT, Keys.TAB))
         assert b.js(state + "return focusedOn;") == "accent coral"

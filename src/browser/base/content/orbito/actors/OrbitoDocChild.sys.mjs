@@ -134,7 +134,10 @@ export class OrbitoDocChild extends JSWindowActorChild {
     error.hidden = !result?.error;
   }
 
-  /** "Sources:" and a link for each http(s) URL the document was based on. */
+  /**
+   * "Sources:" and a link for each http(s) URL the document was based on,
+   * by its host (the whole URL in its tooltip).
+   */
   _sources(urls) {
     let doc = this.document;
     let links = urls
@@ -144,7 +147,8 @@ export class OrbitoDocChild extends JSWindowActorChild {
         a.href = url;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
-        a.textContent = url;
+        a.textContent = new URL(url).host;
+        a.title = url;
         return a;
       });
     let sources = doc.getElementById("sources");

@@ -90,11 +90,41 @@ button.item-title {
   margin-block: 4px 0;
 }
 
-.actions {
-  align-items: center;
+/* A row's actions show over its end while it is hovered or focused, or
+ * while it asks before deleting, so that they never squeeze its title.
+ * The fade matches the hovered row. */
+[role="tabpanel"] .card {
+  position: relative;
+
+  &:hover {
+    background: var(--orbito-page-sunk);
+  }
+
+  > .actions {
+    position: absolute;
+    inset-inline-end: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    padding-block: 4px;
+    padding-inline: 28px 6px;
+    border-start-end-radius: 12px;
+    border-end-end-radius: 12px;
+    background: linear-gradient(to right, transparent, var(--orbito-page-sunk) 24px);
+    opacity: 0;
+    transition: opacity var(--orbito-duration-short) var(--orbito-ease);
+
+    &:dir(rtl) {
+      background: linear-gradient(to left, transparent, var(--orbito-page-sunk) 24px);
+    }
+  }
+
+  &:hover > .actions,
+  > .actions:is(:focus-within, :has(.question:not([hidden]))) {
+    opacity: 1;
+  }
 }
 
-/* A document's Space, before its other actions. */
-.document-space {
-  margin-inline-end: auto;
+.question {
+  font-size: 12.5px;
 }

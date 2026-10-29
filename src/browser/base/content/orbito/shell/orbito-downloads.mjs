@@ -209,11 +209,14 @@ export class OrbitoDownloads extends OrbitoTopBarPanel {
         break;
       case DownloadsCommon.DOWNLOAD_FAILED:
         row.status = t("orbito-downloads-failed");
+        row.failed = true;
         row.main = "downloadsCmd_retry";
+        row.action = "downloadsCmd_retry";
         break;
       case DownloadsCommon.DOWNLOAD_CANCELED:
         row.status = t("orbito-downloads-canceled");
         row.main = "downloadsCmd_retry";
+        row.action = "downloadsCmd_retry";
         break;
       case DownloadsCommon.DOWNLOAD_DIRTY:
         row.status = t("orbito-downloads-dirty");
@@ -239,6 +242,7 @@ export class OrbitoDownloads extends OrbitoTopBarPanel {
     row.actionLabel = {
       downloadsCmd_show: t("orbito-downloads-show"),
       downloadsCmd_cancel: t("orbito-downloads-cancel"),
+      downloadsCmd_retry: t("orbito-downloads-retry"),
     }[row.action];
     return row;
   }
@@ -313,10 +317,24 @@ export class OrbitoDownloads extends OrbitoTopBarPanel {
         <img class="icon" src=${this.#icon(download)} alt="" />
         <span class="grow"
           ><span class="name">${name}</span
-          ><span class="sub">${row.status}</span>${progress}</span
+          ><span class="sub" ?failed=${row.failed}>${row.status}</span
+          >${progress}</span
         >
       </button>
-      ${row.action
+      ${row.action == "downloadsCmd_retry"
+        ? html`<button
+            class="item retry"
+            data-item
+            data-command=${row.action}
+            aria-label=${t("orbito-downloads-action-label", {
+              action: row.actionLabel,
+              name,
+            })}
+            @click=${() => this.#run(download, row.action)}
+          >
+            <span class="mini">${row.actionLabel}</span>
+          </button>`
+        : row.action
         ? html`<button
             class="item action"
             data-item

@@ -114,6 +114,10 @@ export class OrbitoSpaceTitle extends SpacesView {
   }
 
   #onKeyDown(event) {
+    // Enter or Escape that ends a composition (Korean, say) is the IME's.
+    if (event.isComposing) {
+      return;
+    }
     if (event.key == "Enter") {
       event.preventDefault();
       this.#finish(true);
@@ -370,9 +374,19 @@ export class OrbitoSpaceSwitcher extends SpacesView {
     if (!space) {
       return nothing;
     }
+    // The tabs that close: not the Dock's, which go with the Dock, nor new
+    // tab pages (a tab not loaded yet shows about:blank: it counts).
     let tabs = 0;
     for (let win of Services.wm.getEnumerator("navigator:browser")) {
-      tabs += win.OrbitoShell?.spaces?.tabsIn(id).length ?? 0;
+      tabs +=
+        win.OrbitoShell?.spaces
+          ?.tabsIn(id)
+          .filter(
+            tab =>
+              !win.OrbitoShell.docks?.dockOf(tab) &&
+              (tab.hasAttribute("pending") ||
+                !win.isBlankPageURL(tab.linkedBrowser.currentURI.spec))
+          ).length ?? 0;
     }
     // Moved to the first other Space by default: the first option, as
     // they are all put in together.

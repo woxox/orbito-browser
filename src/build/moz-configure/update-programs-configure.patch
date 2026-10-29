@@ -1,0 +1,19 @@
+diff --git a/build/moz.configure/update-programs.configure b/build/moz.configure/update-programs.configure
+index c017c7fb5eec536b736a9dae8dcdb5a80f7bbade..5d84ea9714bf11f32da4921ca00fe86d26ef2f66 100644
+--- a/build/moz.configure/update-programs.configure
++++ b/build/moz.configure/update-programs.configure
+@@ -84,11 +84,13 @@ option(
+ 
+ 
+ def mac_prod_requirements_string(identifier):
++    # Orbito: its own Developer ID team (scripts/release/sign-macos.sh), not
++    # Mozilla's 43AQ936H96, or SMJobBless refuses the elevated updater.
+     return (
+         f'identifier "{identifier}" and anchor apple generic and '
+         "certificate 1[field.1.2.840.113635.100.6.2.6] and "
+         "certificate leaf[field.1.2.840.113635.100.6.1.13] and "
+-        'certificate leaf[subject.OU] = "43AQ936H96"'
++        'certificate leaf[subject.OU] = "NBWY638MMV"'
+     )
+ 
+ 

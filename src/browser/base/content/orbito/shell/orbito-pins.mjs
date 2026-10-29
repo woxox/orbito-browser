@@ -30,6 +30,9 @@ export const PIN_COLUMNS = 4;
 // How far a press moves before it becomes a drag.
 const DRAG_THRESHOLD = 4;
 
+// Stands in the grid's items for the copy of a dragged tab.
+const PREVIEW = Symbol("preview");
+
 /**
  * A tab's icon in the Sidebar, as the class "icon": its favicon, or for an
  * about: page the Orbito tile, Orbito's mark on the accent (the
@@ -66,8 +69,9 @@ export function isMenuKey(event) {
  * per pinned tab of the window (OrbitoShell.pins), four to a row, in
  * gBrowser's order. A click selects the tab, which loads its page the first
  * time. Dragging a Pin moves it; dropping it on the tab list unpins it, and
- * a tab dragged from the tab list onto the grid becomes a Pin. The context
- * menu (the menu key or Shift+F10 too) unpins.
+ * a tab dragged from the tab list onto the grid becomes a Pin. Where a drop
+ * would land, a see-through copy of the dragged tab takes the slot. The
+ * context menu (the menu key or Shift+F10 too) unpins.
  *
  * The grid is one tab stop: the arrow keys move between Pins (Up and Down by
  * a row), Home and End to the first and last, Enter or Space select.
@@ -78,14 +82,14 @@ export function isMenuKey(event) {
 export class OrbitoPins extends MozLitElement {
   static properties = {
     /**
-     * While a tab is dragged from the tab list: {index}, where it would
-     * land in the grid, -1 when the pointer is not over it. Else null.
+     * While a tab is dragged from the tab list: {index, tab}, where the tab
+     * would land in the grid, -1 when the pointer is not over it. Else null.
      */
     tabDrag: { type: Object },
   };
 
   static queries = {
-    buttons: { all: ".grid .pin" },
+    buttons: { all: ".grid .pin:not([preview])" },
     grid: ".grid",
   };
 
@@ -95,6 +99,11 @@ export class OrbitoPins extends MozLitElement {
   // where it would land (before or after a Pin's tab, or the tab list).
   #press = null;
   #drag = null;
+  // Where the Pins were as the grid last showed without the copy of a
+  // dragged tab: {box, pins: [{tab, rect}]}. Drops are placed by
+  // these, so that the copy, moving the Pins, does not move where a drop
+  // lands under the pointer.
+  #slots = null;
   #motion = new ListMotion({
     items: () => [...this.buttons].map(button => [button.tab, button]),
     root: () => this.grid,
@@ -200,21 +209,41 @@ export class OrbitoPins extends MozLitElement {
     if (!grid) {
       return -1;
     }
-    let box = grid.getBoundingClientRect();
-    if (x < box.left || x > box.right || y < box.top || y > box.bottom) {
+    this.#slots ??= {
+      box: grid.getBoundingClientRect(),
+      pins: [...this.buttons].map(button => ({
+        tab: button.tab,
+        rect: button.getBoundingClientRect(),
+      })),
+    };
+    // The grid as it was, and as the copy makes it: one row more, or with
+    // no Pin, in its place under the Sidebar's top row.
+    let was = this.#slots.box;
+    let now = grid.getBoundingClientRect();
+    if (
+      x < Math.min(was.left, now.left) ||
+      x > Math.max(was.right, now.right) ||
+      y < Math.min(was.top, now.top) ||
+      y > Math.max(was.bottom, now.bottom)
+    ) {
       return -1;
     }
     let rtl = document.dir == "rtl";
-    let buttons = [...this.buttons].filter(button => button.tab != skip);
-    for (let [index, button] of buttons.entries()) {
-      let rect = button.getBoundingClientRect();
+    let pins = this.#slots.pins.filter(pin => pin.tab != skip);
+    for (let [index, { rect }] of pins.entries()) {
       let middle = rect.left + rect.width / 2;
       let before = rtl ? x > middle : x < middle;
       if (y < rect.top || (y <= rect.bottom && before)) {
         return index;
       }
     }
-    return buttons.length;
+    return pins.length;
+  }
+
+  /** Where the dragged tab would land: {tab, index} (as dropIndexAt), or null. */
+  get #landing() {
+    let drag = this.#drag ?? this.tabDrag;
+    return drag?.tab && drag.index != -1 ? drag : null;
   }
 
   #onKeyDown(event) {
@@ -305,6 +334,11 @@ export class OrbitoPins extends MozLitElement {
       this.#tabList.toggleAttribute("unpin-drop", unpin);
       this.requestUpdate();
     }
+    // Over the tab list, its guide bar shows where the tab would go.
+    this.#drag.landing = this.#tabList.landOutside(
+      this.#drag.tab,
+      unpin ? y : null
+    );
   }
 
   #onPointerUp(event) {
@@ -324,6 +358,9 @@ export class OrbitoPins extends MozLitElement {
     }
     if (unpin) {
       this.pins.unpinTab(tab);
+      if (drag.landing) {
+        this.#tabList.dropOutside(tab, drag.landing);
+      }
       return;
     }
     let others = this.tabs.filter(t => t != tab);
@@ -342,6 +379,7 @@ export class OrbitoPins extends MozLitElement {
     this.#drag = null;
     this.removeAttribute("dragging");
     this.#tabList?.removeAttribute("unpin-drop");
+    this.#tabList?.landOutside(null, null);
     window.removeEventListener("pointermove", this, true);
     window.removeEventListener("pointerup", this, true);
     window.removeEventListener("pointercancel", this, true);
@@ -379,6 +417,13 @@ export class OrbitoPins extends MozLitElement {
     </div>`;
   }
 
+  // The see-through copy of a dragged tab, in the slot it would take.
+  #preview(tab) {
+    return html`<div class="pin" preview aria-hidden="true">
+      ${tabIcon(tab)}
+    </div>`;
+  }
+
   willUpdate() {
     this.#motion.capture();
   }
@@ -386,9 +431,15 @@ export class OrbitoPins extends MozLitElement {
   updated() {
     // With no Pin, the grid keeps its place with no height; while a tab is
     // dragged it keeps an invisible place to drop on over the Sidebar's top
-    // row (orbito-pins.css), the rows staying where they are.
+    // row (orbito-pins.css), the rows staying where they are, until the
+    // copy of the tab shows where it would land.
     this.toggleAttribute("empty", !this.tabs.length);
     this.toggleAttribute("dropping", !!this.tabDrag);
+    this.toggleAttribute("landing", !!this.#landing);
+    if (!this.#landing) {
+      // Measured again as they show now.
+      this.#slots = null;
+    }
     this.#motion.play();
   }
 
@@ -396,6 +447,13 @@ export class OrbitoPins extends MozLitElement {
     let tabs = this.tabs;
     let selectedTab = gBrowser.selectedTab;
     let rovingTab = this.#rovingTab;
+    let landing = this.#landing;
+    let items = [...tabs];
+    if (landing) {
+      let others = tabs.filter(tab => tab != landing.tab);
+      let at = others[landing.index];
+      items.splice(at ? items.indexOf(at) : items.length, 0, PREVIEW);
+    }
     return html`
       <link
         rel="stylesheet"
@@ -410,9 +468,12 @@ export class OrbitoPins extends MozLitElement {
         @keydown=${this.#onKeyDown}
       >
         ${repeat(
-          tabs,
-          tab => tab,
-          tab => this.#button(tab, tab == selectedTab, tab == rovingTab)
+          items,
+          item => item,
+          item =>
+            item == PREVIEW
+              ? this.#preview(landing.tab)
+              : this.#button(item, item == selectedTab, item == rovingTab)
         )}
       </div>
       <div class="ghosts" aria-hidden="true"></div>

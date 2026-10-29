@@ -26,8 +26,9 @@
 
 /* No visible drop helper: with no Dock tab, a dragged tab still finds a
  * small, invisible strip to drop on, laid over what is around so that the
- * rows do not move (orbito.css sets the offset). */
-:host([empty][dropping]) {
+ * rows do not move (orbito.css sets the offset), until the tab's copy shows
+ * where it would land. */
+:host([empty][dropping]:not([landing])) {
   z-index: 1;
   height: 0;
   margin-block-end: calc(-1 * var(--orbito-gap));
@@ -97,9 +98,27 @@
     opacity: 0.4;
   }
 
+  /* Where a dragged tab would land: a see-through copy of its row. */
+  &[preview] {
+    background-color: var(--orbito-surface);
+    box-shadow:
+      var(--orbito-shadow-item),
+      inset 0 0 0 1.5px color-mix(in oklab, var(--orbito-accent) 60%, transparent);
+    opacity: 0.45;
+    pointer-events: none;
+    animation: preview-in 140ms var(--orbito-ease);
+  }
+
   /* At rest: back at the docked page, not loaded. */
   &[resting] :is(.icon, .label) {
     opacity: 0.5;
+  }
+}
+
+@keyframes preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
   }
 }
 
@@ -163,5 +182,10 @@
   &:hover {
     background-color: var(--orbito-surface-active);
     fill: var(--orbito-text);
+  }
+
+  /* At rest: takes the row out of the Dock. */
+  &[remove] {
+    background-image: url("chrome://global/skin/icons/minus.svg");
   }
 }

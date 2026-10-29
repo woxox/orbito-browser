@@ -90,6 +90,8 @@ const TASK_RUNS_TOPIC = "orbito-task-runs";
 const LIBRARY_LIST_TOPIC = "orbito-library-list";
 // Tells open settings pages to show a Space's settings.
 const SPACE_SETTINGS_TOPIC = "orbito-space-settings";
+// Tells open settings pages which pane to show.
+const SETTINGS_PANE_TOPIC = "orbito-settings-pane";
 
 class AboutPage {
   QueryInterface = ChromeUtils.generateQI(["nsIAboutModule"]);
@@ -147,6 +149,7 @@ export const OrbitoPages = {
   TASK_RUNS_TOPIC,
   LIBRARY_LIST_TOPIC,
   SPACE_SETTINGS_TOPIC,
+  SETTINGS_PANE_TOPIC,
   _registered: false,
   // A skill draft for the settings page's editor, until the page takes it.
   _skillDraft: null,
@@ -154,6 +157,8 @@ export const OrbitoPages = {
   _taskRuns: null,
   // The list the library page is to show, until it takes it.
   _libraryList: null,
+  // The pane the settings page is to show, until it takes it.
+  _settingsPane: null,
 
   /**
    * Registers the about pages; does nothing the second time. In the parent
@@ -227,9 +232,24 @@ export const OrbitoPages = {
    * Selects the settings tab, opening it if needed.
    *
    * @param {Window} win The window asking.
+   * @param {object} [options]
+   * @param {string} [options.pane] The pane to show, as "backends" or
+   *   "recall"; by default the one it shows.
    */
-  openSettings(win) {
+  openSettings(win, { pane = null } = {}) {
+    if (pane) {
+      this._settingsPane = pane;
+      // A settings page that is open shows it now, a new one once it loads.
+      Services.obs.notifyObservers(null, SETTINGS_PANE_TOPIC);
+    }
     this._open(win, SETTINGS_URL);
+  },
+
+  /** The pane the settings page is to show, once, or null. */
+  takeSettingsPane() {
+    let pane = this._settingsPane;
+    this._settingsPane = null;
+    return pane;
   },
 
   /**

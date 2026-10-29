@@ -7,6 +7,11 @@
 orbito-settings-title = Orbito 설정
 orbito-settings-heading = Orbito 설정
 orbito-settings-library-hint = 지난 문서와 Thread는 <a data-l10n-name="open-library">라이브러리</a>에 있어요.
+orbito-settings-panes =
+    .aria-label = 설정 항목
+orbito-settings-general = 일반
+# The rail's group of the Assistant's panes.
+orbito-settings-assistant = Assistant
 
 ## Shared
 
@@ -40,10 +45,11 @@ orbito-appearance-accent-graphite = 흑연
 
 orbito-settings-layout = 레이아웃
 # $shortcut is the keyboard shortcut, e.g. "⌘S".
-orbito-settings-sidebar-collapsed =
-    Sidebar 자동 숨김: 창 왼쪽 끝에 포인터를 대면 나타납니다.
-    { $shortcut }로도 바꿉니다.
+orbito-settings-sidebar-collapsed = Sidebar 자동 숨김
+orbito-settings-sidebar-collapsed-hint =
+    창 왼쪽 끝에 포인터를 대면 나타납니다. { $shortcut }로도 바꿉니다.
 orbito-settings-assistant-auto-open = Assistant panel 자동 열기
+orbito-settings-assistant-auto-open-hint = 새 창을 열 때 오른쪽 패널을 함께 엽니다.
 
 ## Account
 
@@ -80,10 +86,32 @@ orbito-settings-chatgpt-signed-in-as = { $email } 계정으로 로그인했어�
 orbito-settings-chatgpt-signed-in = 로그인했어요.
 orbito-settings-chatgpt-needs-login = 다시 로그인하세요. 로그인이 만료됐거나 취소됐어요.
 orbito-settings-claude-hint =
-    Claude를 Anthropic API 키나 Claude 구독으로 씁니다.
+    Orbito는 Anthropic의 CLI인 Claude Code를 Anthropic API 키, Claude 구독, 클라우드 제공업체 중 하나로 실행합니다.
+    Claude Code에는 Anthropic의 약관이 적용되며, 구독으로 쓸 수 있는 범위는 Anthropic이 바꿀 수 있습니다.
     Claude Code가 브라우저에서 Orbito 전용으로 로그인하며, 이 컴퓨터의 Claude Code 로그인은 쓰지 않습니다.
+orbito-settings-claude-auth =
+    .aria-label = 인증 방식
 orbito-settings-claude-api-key = API 키
 orbito-settings-claude-account = Claude 계정
+orbito-settings-claude-cloud = 클라우드 제공업체
+orbito-settings-claude-cloud-provider = 제공업체
+orbito-settings-claude-cloud-region = 리전
+orbito-settings-claude-cloud-profile = AWS 프로필
+orbito-settings-claude-cloud-project = 프로젝트 ID
+orbito-settings-claude-cloud-resource = 리소스 이름
+orbito-settings-claude-cloud-key = API 키 (선택)
+orbito-settings-claude-cloud-bedrock-hint =
+    Amazon Bedrock API 키가 없으면 Claude Code는 이 컴퓨터의 ~/.aws에 있는 AWS 자격증명을 씁니다
+    (터미널에서 aws sso login이나 aws configure로 로그인). 프로필에 리전이 있으면 리전은 비워 둬도 됩니다.
+orbito-settings-claude-cloud-vertex-hint =
+    Claude Code는 이 컴퓨터의 Google Cloud 애플리케이션 기본 자격증명을 씁니다
+    (터미널에서 gcloud auth application-default login으로 로그인). 리전을 비우면 us-east5를 씁니다.
+orbito-settings-claude-cloud-foundry-hint =
+    리소스는 URL이 아니라 이름만 넣습니다. API 키가 없으면 Claude Code가 Azure CLI(az login)로 로그인하는데,
+    Orbito를 터미널에서 띄우지 않았다면 az를 찾지 못할 수 있습니다. API 키는 어느 쪽이든 됩니다.
+orbito-settings-claude-cloud-set-up = 제공업체를 고르고 설정을 채운 뒤 저장하세요.
+# $provider is the cloud provider's name, e.g. "Amazon Bedrock".
+orbito-settings-claude-cloud-ready = Claude를 { $provider }로 씁니다.
 orbito-settings-claude-uses-key = 키는 Assistant panel의 설정에서 넣습니다.
 orbito-settings-claude-choose = Claude를 어떻게 쓸지 고르세요.
 orbito-settings-claude-login = Claude로 로그인
@@ -110,7 +138,8 @@ orbito-settings-memory = 메모리
 orbito-settings-memory-hint =
     Assistant에게 기억하라고 한 사실이에요. 새 Thread마다 들어가고,
     사생활 보호 창에서는 쓰지 않아요.
-orbito-settings-memory-enabled = 메모리 사용: Thread에서 메모리를 읽고, 요청하면 새로 저장
+orbito-settings-memory-enabled = 메모리 사용
+orbito-settings-memory-enabled-hint = Thread에서 메모리를 읽고, 요청하면 새로 저장
 orbito-settings-memory-space = 쓰는 Space
 orbito-settings-memory-all-spaces = 모든 Space
 orbito-settings-memory-space-gone = 지운 Space
@@ -155,8 +184,7 @@ orbito-settings-skill-tools-hint =
 orbito-settings-output = 출력
 orbito-settings-output-chat = 채팅
 orbito-settings-output-document = 문서
-orbito-settings-skill-body =
-    .placeholder = 지침
+orbito-settings-skill-instructions = 지침
 
 ## Scheduled tasks
 
@@ -274,7 +302,8 @@ orbito-settings-mcp-status =
     }
 orbito-settings-mcp-tools = 도구 { $count }개
 orbito-settings-mcp-tool-read-only = (묻지 않고 실행)
-orbito-settings-mcp-trust-read-only = 읽기 전용 표시 신뢰: 서버가 읽기 전용으로 표시한 도구는 묻지 않고 실행
+orbito-settings-mcp-trust-read-only = 읽기 전용 표시 신뢰
+orbito-settings-mcp-trust-read-only-hint = 서버가 읽기 전용으로 표시한 도구는 묻지 않고 실행
 orbito-settings-mcp-remove = 제거
 orbito-settings-mcp-reconnect = 다시 연결
 orbito-settings-mcp-cancel-login = 로그인 취소
@@ -282,6 +311,26 @@ orbito-settings-mcp-log-in = 로그인
 orbito-settings-mcp-log-out = 로그아웃
 orbito-settings-unchanged = 변경 안 함
 orbito-settings-client-id-registered = 서버가 등록했어요
+
+## Updates
+
+orbito-settings-updates = 업데이트
+orbito-settings-update-version = Orbito { $version }
+orbito-settings-update-check = 업데이트 확인
+orbito-settings-update-checking = 업데이트를 확인하는 중…
+orbito-settings-update-none = 최신 버전이에요.
+orbito-settings-update-available = 새 버전 { $version }이 나왔어요.
+orbito-settings-update-install = 업데이트하고 다시 시작
+orbito-settings-update-downloading = 업데이트를 내려받는 중 { $percent }%
+orbito-settings-update-staging = 업데이트를 준비하는 중…
+orbito-settings-update-ready = 업데이트가 준비됐어요. 다시 시작하면 적용돼요.
+orbito-settings-update-restart = 다시 시작
+orbito-settings-update-manual = 새 버전 { $version }이 나왔어요. 릴리즈 페이지에서 내려받아 설치해 주세요.
+orbito-settings-update-open-release = 릴리즈 페이지 열기
+orbito-settings-update-check-failed = 업데이트를 확인하지 못했어요.
+orbito-settings-update-download-failed = 업데이트를 내려받지 못했어요.
+orbito-settings-update-other-instance = 다른 Orbito가 업데이트하는 중이에요.
+orbito-settings-update-unsupported = 이 빌드는 자동으로 업데이트하지 않아요.
 
 ## Advanced
 

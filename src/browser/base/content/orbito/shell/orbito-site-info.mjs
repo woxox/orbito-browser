@@ -307,6 +307,9 @@ export class OrbitoSiteInfo extends OrbitoTopBarPanel {
     }
     let secureConnection =
       gIdentityHandler._isSecureConnection || gIdentityHandler._isBrokenConnection;
+    // The connection's details (Page Info) for a web page, secure or not;
+    // not for this computer.
+    let details = secureConnection || mode == "not-secure";
     return html`
       <link
         rel="stylesheet"
@@ -386,7 +389,7 @@ export class OrbitoSiteInfo extends OrbitoTopBarPanel {
           : nothing}
         ${web || secureConnection
           ? html`<div class="sep"></div>
-              ${secureConnection
+              ${details
                 ? html`<button
                     class="item details"
                     data-item

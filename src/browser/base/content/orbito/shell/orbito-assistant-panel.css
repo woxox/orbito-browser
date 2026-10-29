@@ -784,18 +784,24 @@ details.thought {
   > summary {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     width: fit-content;
     cursor: pointer;
     list-style: none;
 
+    /* Points to the end while closed, down once open. */
     &::after {
       content: "";
       width: 6px;
       height: 6px;
       border-block-end: 1.5px solid currentColor;
       border-inline-end: 1.5px solid currentColor;
-      transform: translateY(-2px) rotate(45deg);
+      transform: rotate(-45deg);
+      transition: transform var(--orbito-duration-short) var(--orbito-ease);
+    }
+
+    &:dir(rtl)::after {
+      transform: rotate(45deg);
     }
 
     &:focus-visible {
@@ -805,7 +811,7 @@ details.thought {
   }
 
   &[open] > summary::after {
-    transform: translateY(1px) rotate(-135deg);
+    transform: translateY(-2px) rotate(45deg);
   }
 }
 
@@ -1152,26 +1158,41 @@ details.thought {
   }
 }
 
+/* What was remembered in a ringed pill, cut short if long, and Undo in a
+ * pill of its own beside it. */
 .memory {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: fit-content;
+  gap: 6px;
   max-width: 100%;
-  margin-top: 6px;
-  padding: 4px 4px 4px 10px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--orbito-accent);
+  margin-top: 8px;
   font-size: 12px;
 
+  > span {
+    min-width: 0;
+    padding: 2px 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--orbito-accent) 55%, transparent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   > button {
+    flex: none;
     padding: 2px 10px;
     border-radius: 999px;
+    box-shadow: none;
+    color: var(--orbito-text);
+    font-weight: normal;
   }
 
   &.undone {
-    padding-inline-end: 10px;
-    box-shadow: none;
+    display: block;
+    padding-block: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -1342,10 +1363,16 @@ details.thought {
   height: 24px;
   color: var(--orbito-text-muted);
 
+  /* Points to the end while closed, down once open. */
   svg {
     width: 14px;
     height: 14px;
-    transform: rotate(180deg);
+    transform: rotate(-90deg);
+    transition: transform var(--orbito-duration-short) var(--orbito-ease);
+  }
+
+  &:dir(rtl) svg {
+    transform: rotate(90deg);
   }
 
   &[aria-expanded="true"] svg {
@@ -1459,6 +1486,10 @@ details.skill-steps {
 .skill-steps-name {
   color: var(--orbito-text);
   font-weight: 600;
+}
+
+.skill-steps-status::before {
+  content: "· ";
 }
 
 .skill-step-mark {
@@ -1614,11 +1645,11 @@ details.skill-steps {
 .skill-option {
   display: flex;
   flex-direction: column;
-  padding: 4px 8px;
+  padding: 5px 8px;
   border-radius: 6px;
 
   &:hover {
-    background-color: var(--orbito-surface-hover);
+    background-color: var(--orbito-page-sunk);
   }
 
   &[aria-selected="true"] {
@@ -1627,6 +1658,7 @@ details.skill-steps {
 }
 
 .skill-name {
+  font-size: 12.5px;
   font-weight: 600;
 }
 
@@ -1684,6 +1716,12 @@ details.skill-steps {
   font-weight: 600;
 }
 
+.show .hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 :is(.goal, .field) {
   box-sizing: border-box;
   width: 100%;
@@ -1700,24 +1738,57 @@ details.skill-steps {
   }
 }
 
-.show-actions {
-  display: flex;
-  gap: 6px;
+/* Its buttons and the in-panel backend form's: at the end, 28px pills,
+ * plain but the main one. */
+:is(.show-actions, .settings-actions) > :is(.primary, .secondary),
+.settings .login > .secondary {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: none;
+  box-shadow: none;
+  color: var(--orbito-text-muted);
+  font-size: 12.5px;
+
+  &:hover:not(:disabled) {
+    background-color: var(--orbito-surface-hover);
+    color: var(--orbito-text);
+  }
+
+  &.primary {
+    padding: 0 14px;
+    background-color: var(--orbito-accent);
+    color: var(--orbito-accent-ink);
+
+    &:hover:not(:disabled) {
+      background-color: var(--orbito-accent);
+      color: var(--orbito-accent-ink);
+      filter: brightness(1.08);
+    }
+  }
+
+  /* Stop, red as the Frame while it records. */
+  &.show-stop,
+  &.show-stop:hover:not(:disabled) {
+    background-color: var(--orbito-danger);
+    color: white;
+  }
 }
 
-.goal-step .show-actions {
+.settings .login > .secondary {
+  padding: 0;
+}
+
+.show-actions {
+  display: flex;
   justify-content: flex-end;
+  gap: 6px;
 }
 
 .show-stop {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-
-  &.primary {
-    background-color: var(--orbito-danger);
-    color: white;
-  }
 
   svg {
     width: 12px;
@@ -1737,7 +1808,7 @@ details.skill-steps {
 .show-steps {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1753,6 +1824,7 @@ details.skill-steps {
     gap: 8px;
     line-height: 1.4;
     counter-increment: show-step;
+    animation: show-step-in var(--orbito-duration-medium) var(--orbito-ease);
 
     &::before {
       content: counter(show-step) ".";
@@ -1761,6 +1833,13 @@ details.skill-steps {
       color: var(--orbito-text-muted);
       font-variant-numeric: tabular-nums;
     }
+  }
+}
+
+@keyframes show-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
   }
 }
 
@@ -1801,8 +1880,10 @@ details.skill-steps {
 }
 
 .review-heading {
-  font-size: 12.5px;
-  font-weight: 600;
+  color: var(--orbito-text-muted);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
 
 .review-inputs,
@@ -1821,21 +1902,21 @@ details.skill-steps {
   gap: 6px;
   padding: 8px 10px;
   border-radius: var(--orbito-radius-item);
-  background-color: var(--orbito-surface);
-  box-shadow: var(--orbito-shadow-item);
+  background-color: var(--orbito-surface-hover);
+  box-shadow: inset 0 0 0 1px var(--orbito-hairline);
 }
 
+/* Name, what it is, and the switch at the row's end. */
 .input-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
 .input-name {
   flex: none;
-  font-size: 12px;
-  font-weight: 600;
+  font: 500 12px ui-monospace, monospace;
 }
 
 .input-description {
@@ -1868,16 +1949,17 @@ details.skill-steps {
 /* "As input / Fixed value": one radio group, the picked one raised. */
 .segments {
   display: inline-flex;
-  align-self: flex-start;
+  flex: none;
+  margin-inline-start: auto;
   padding: 2px;
   border-radius: 8px;
   background-color: var(--orbito-surface-hover);
   box-shadow: inset 0 0 0 1px var(--orbito-hairline);
 
   > button {
-    padding: 3px 10px;
+    padding: 2px 8px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 11.5px;
 
     &[aria-checked="true"] {
       background-color: var(--orbito-surface);
@@ -1946,17 +2028,13 @@ details.skill-steps {
 }
 
 .review-actions {
-  justify-content: flex-end;
   margin-top: 4px;
-
-  > .show-cancel {
-    margin-inline-end: auto;
-  }
 }
 
 .input-notice {
-  margin: 0 10px 6px;
-  color: var(--orbito-warn);
+  margin: 0 0 6px;
+  padding: 0 2px;
+  color: var(--orbito-text-muted);
   font-size: 12px;
 }
 
@@ -2014,7 +2092,7 @@ details.skill-steps {
   place-items: center;
   width: 24px;
   height: 24px;
-  margin-inline: -4px 2px;
+  margin-inline: -2px 4px;
   border-radius: 50%;
   color: var(--orbito-text-muted);
 

@@ -21,9 +21,10 @@
   gap: 2px;
   min-height: 0;
   overflow-y: auto;
-  /* Room for the rows' shadows and focus rings (3px out). */
-  margin: -3px -3px -1px;
-  padding: 3px;
+  /* Room for the rows' shadows and focus rings (3px out), and under the
+   * last row for its guide bar (4px). */
+  margin: -3px -3px -2px;
+  padding: 3px 3px 4px;
 }
 
 .list {
@@ -127,6 +128,47 @@
     & .close {
       visibility: hidden;
     }
+  }
+}
+
+/* Where a drop lands: a guide bar, an accent line with a dot at its start,
+ * in the gap before or after a row, a group or a group's header (the 2px
+ * between rows, the 6px around a group), or at the end of a list with no
+ * row. */
+.guide {
+  position: absolute;
+  inset-inline: 4px 6px;
+  z-index: 3;
+  height: 6px;
+  background:
+    radial-gradient(circle at 3px 50%, var(--orbito-accent) 2.5px, transparent 3px),
+    linear-gradient(var(--orbito-accent), var(--orbito-accent)) 5px 50% / calc(100% - 5px) 2px no-repeat;
+  pointer-events: none;
+
+  &:dir(rtl) {
+    transform: scaleX(-1);
+  }
+
+  &[before] {
+    top: -4px;
+  }
+
+  &[after] {
+    bottom: -4px;
+  }
+
+  .group > &[before] {
+    top: -6px;
+  }
+
+  .group > &[after] {
+    bottom: -6px;
+  }
+
+  &[end] {
+    position: static;
+    flex: none;
+    margin-inline: 4px 6px;
   }
 }
 

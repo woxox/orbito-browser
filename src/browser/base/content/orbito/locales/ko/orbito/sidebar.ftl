@@ -85,3 +85,13 @@ orbito-window-minimize = 최소화
 orbito-window-maximize = 최대화
 orbito-window-restore = 복원
 orbito-window-close = 창 닫기
+
+## Update note, at the foot of the Sidebar
+
+orbito-update-ready = 업데이트 준비됨
+orbito-update-ready-detail = 다시 시작해서 적용
+orbito-update-available = 새 버전 { $version }
+orbito-update-available-detail = 업데이트하고 다시 시작
+orbito-update-manual-detail = 릴리즈 페이지에서 내려받기
+orbito-update-downloading = 업데이트하는 중…
+orbito-update-downloading-detail = 내려받는 중 { $percent }%

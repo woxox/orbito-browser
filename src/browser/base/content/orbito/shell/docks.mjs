@@ -12,16 +12,18 @@
  * tabs it lacks unloaded (lazy browsers), so a Dock tab's page loads only
  * once the tab is first selected.
  *
- * Docking a tab (dropping it on the Dock, or its menu) adds it to its Space's
- * Dock, with the page it shows as the entry's URL; undocking it (dropping it
- * on the tab list, its menu) removes the entry, the tab staying open as a
- * plain tab; moving a Dock tab among its Space's Dock tabs reorders the
- * Dock. Pinning a Dock tab, or putting it in a tab group, undocks it. Every
- * window hears of the change and follows: a new entry gets an unloaded tab,
- * a removed entry's tab stays as a plain tab if it was ever loaded, else
- * closes. Closing a Dock tab keeps its place: an unloaded tab of the entry's
- * URL takes it (Arc's way), so the page goes back to where it was docked
- * and takes no memory until it is selected again.
+ * Docking a tab (dropping it on the Dock, its menu, or ⌘D on the selected
+ * tab) adds it to its Space's Dock, with the page it shows as the entry's
+ * URL; undocking it (dropping it on the tab list, its menu, ⌘D again)
+ * removes the entry, the tab staying open as a plain tab; a Dock tab at rest
+ * taken out of the Dock (its row's − button) closes with it; moving a Dock
+ * tab among its Space's Dock tabs reorders the Dock. Pinning a Dock tab, or
+ * putting it in a tab group, undocks it. Every window hears of the change
+ * and follows: a new entry gets an unloaded tab, a removed entry's tab stays
+ * as a plain tab if it was ever loaded, else closes. Closing a Dock tab
+ * keeps its place: an unloaded tab of the entry's URL takes it (Arc's way),
+ * so the page goes back to where it was docked and takes no memory until it
+ * is selected again.
  *
  * Private windows show and open the Docks but change none: an entry made
  * there would write a private page's address to the profile.
@@ -39,6 +41,7 @@ import {
   removeDock,
   withDockList,
 } from "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs";
+import { RestoreWatch } from "chrome://browser/content/orbito/shell/spaces.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -80,7 +83,7 @@ export class Docks {
   /** Every Space's Dock: {[spaceId]: [{id, url, title, icon}]}. */
   lists = {};
   /** While Session Restore fills the window, tabs come in any order. */
-  #restoring = false;
+  #restore = new RestoreWatch(() => this.sync());
   /** While the window changes its own tabs to follow the lists. */
   #quiet = false;
   /** Whether the window's tabs have been made yet (not before load). */
@@ -150,7 +153,8 @@ export class Docks {
       id: "orbito-tab-menu-undock",
       label: t("orbito-dock-remove"),
       shows: tab => this.canAdd && !!this.dockOf(tab),
-      run: tab => this.undockTab(tab),
+      run: tab =>
+        this.isResting(tab) ? this.removeResting(tab) : this.undockTab(tab),
     });
   }
 
@@ -241,11 +245,37 @@ export class Docks {
   }
 
   /**
+   * Takes a Dock tab at rest out of the Dock, in every window: its entry
+   * goes, and the tab with it, as it has no page to keep (sync).
+   */
+  removeResting(tab) {
+    let entry = this.dockOf(tab);
+    if (!entry || !this.canAdd || !this.isResting(tab)) {
+      return;
+    }
+    this.#save(removeDock(this.lists, entry.id));
+  }
+
+  /** Docks a tab, or undocks it if it is a Dock tab (⌘D). */
+  toggleDock(tab) {
+    if (this.dockOf(tab)) {
+      this.undockTab(tab);
+    } else {
+      this.dockTab(tab);
+    }
+  }
+
+  /**
    * Brings the window's tabs in line with the lists: a tab for each entry,
    * in its Space, in order, after the pinned tabs.
    */
   sync() {
-    if (!this.#ready || this.#restoring || this.#quiet || window.closed) {
+    if (
+      !this.#ready ||
+      this.#restore.restoring ||
+      this.#quiet ||
+      window.closed
+    ) {
       return;
     }
     this.#quietly(() => {
@@ -376,7 +406,7 @@ export class Docks {
 
   handleEvent(event) {
     let tab = event.target;
-    let busy = this.#quiet || this.#restoring || !this.#ready;
+    let busy = this.#quiet || this.#restore.restoring || !this.#ready;
     switch (event.type) {
       case "TabSelect":
         // A Dock tab at rest wakes once selected. But Firefox selects one
@@ -443,15 +473,13 @@ export class Docks {
       // sync after it keeps one of the two.
       case "SSWindowStateBusy":
         if (!this.#quiet) {
-          this.#restoring = true;
+          this.#restore.busy();
         }
         break;
       case "SSWindowStateReady":
-        if (this.#quiet) {
-          break;
+        if (!this.#quiet) {
+          this.#restore.ready();
         }
-        this.#restoring = false;
-        this.sync();
         break;
     }
   }

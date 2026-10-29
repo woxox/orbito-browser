@@ -1,0 +1,16 @@
+diff --git a/toolkit/mozapps/update/updater/moz.build b/toolkit/mozapps/update/updater/moz.build
+index 1f997ef0cad1e477c591257c0a41c4a873c2e708..2965518192463bc791e24d3302e4002daccdf4a5 100644
+--- a/toolkit/mozapps/update/updater/moz.build
++++ b/toolkit/mozapps/update/updater/moz.build
+@@ -124,8 +124,9 @@ elif CONFIG["MOZ_UPDATE_CHANNEL"] in (
+     primary_cert.inputs += ["nightly_aurora_level3_primary.der"]
+     secondary_cert.inputs += ["nightly_aurora_level3_secondary.der"]
+ else:
+-    primary_cert.inputs += ["dep1.der"]
+-    secondary_cert.inputs += ["dep2.der"]
++    # Orbito signs its own MARs (scripts/release/make-update.sh).
++    primary_cert.inputs += ["orbito_primary.der"]
++    secondary_cert.inputs += ["orbito_secondary.der"]
+ 
+ dep1_cert.inputs += ["dep1.der"]
+ dep2_cert.inputs += ["dep2.der"]

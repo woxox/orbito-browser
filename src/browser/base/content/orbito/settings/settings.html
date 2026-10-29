@@ -19,305 +19,433 @@
     <link rel="localization" href="orbito/common.ftl" />
   </head>
   <body>
-    <main>
-      <h1 data-l10n-id="orbito-settings-heading"></h1>
-      <p class="hint" data-l10n-id="orbito-settings-library-hint">
-        <a id="open-library" class="link" href="#" role="button" data-l10n-name="open-library"></a>
-      </p>
+    <div class="page">
+      <!-- The rail: one pane at a time, the Assistant's in a group. -->
+      <aside class="rail">
+        <h1 data-l10n-id="orbito-settings-heading"></h1>
+        <nav id="panes" data-l10n-id="orbito-settings-panes">
+          <button type="button" data-pane="general" data-l10n-id="orbito-settings-general"></button>
+          <p class="rail-group" data-l10n-id="orbito-settings-assistant"></p>
+          <button type="button" data-pane="backends" data-l10n-id="orbito-settings-backends"></button>
+          <button type="button" data-pane="spaces" data-l10n-id="orbito-settings-spaces"></button>
+          <button type="button" data-pane="memory" data-l10n-id="orbito-settings-memory"></button>
+          <button type="button" data-pane="recall" data-l10n-id="orbito-settings-recall"></button>
+          <button type="button" data-pane="skills" data-l10n-id="orbito-settings-skills"></button>
+          <button type="button" data-pane="tasks" data-l10n-id="orbito-settings-tasks"></button>
+          <button type="button" data-pane="mcp" data-l10n-id="orbito-settings-mcp"></button>
+          <span class="rail-gap"></span>
+          <button type="button" data-pane="advanced" data-l10n-id="orbito-settings-advanced"></button>
+        </nav>
+        <p class="rail-note" data-l10n-id="orbito-settings-library-hint">
+          <a id="open-library" class="link" href="#" role="button" data-l10n-name="open-library"></a>
+        </p>
+      </aside>
 
-      <section id="appearance">
-        <h2 data-l10n-id="orbito-settings-appearance"></h2>
-        <div class="setting">
-          <div>
-            <h3 id="theme-label" data-l10n-id="orbito-settings-theme"></h3>
-            <p class="hint" data-l10n-id="orbito-settings-theme-hint"></p>
-          </div>
-          <div id="theme" class="segments" role="radiogroup" aria-labelledby="theme-label"></div>
-        </div>
-        <div class="setting">
-          <div>
-            <h3 id="accent-label" data-l10n-id="orbito-settings-accent"></h3>
-            <p class="hint" data-l10n-id="orbito-settings-accent-hint"></p>
-          </div>
-          <div id="accent" class="swatches" role="radiogroup" aria-labelledby="accent-label"></div>
-        </div>
-        <div class="setting">
-          <div>
-            <h3 id="language-label" data-l10n-id="orbito-language-title"></h3>
-            <p class="hint" data-l10n-id="orbito-language-hint"></p>
-          </div>
-          <div id="language" class="segments" role="radiogroup" aria-labelledby="language-label"></div>
-        </div>
-        <div id="language-restart" class="setting" hidden>
-          <p class="hint" role="status"></p>
-          <button class="primary" data-l10n-id="orbito-language-restart"></button>
-        </div>
-        <p id="no-firefox-themes" class="hint" data-l10n-id="orbito-settings-no-firefox-themes"></p>
-      </section>
+      <main>
+        <section id="general" class="pane">
+          <h2 data-l10n-id="orbito-settings-general"></h2>
 
-      <section id="layout">
-        <h2 data-l10n-id="orbito-settings-layout"></h2>
-        <label class="checkbox">
-          <input id="sidebar-collapsed" type="checkbox" />
-          <span id="sidebar-collapsed-label"></span>
-        </label>
-        <label class="checkbox">
-          <input id="assistant-auto-open" type="checkbox" />
-          <span data-l10n-id="orbito-settings-assistant-auto-open"></span>
-        </label>
-      </section>
+          <section id="appearance">
+            <h3 data-l10n-id="orbito-settings-appearance"></h3>
+            <ul class="list">
+              <li class="row">
+                <div class="row-main">
+                  <div id="theme-label" class="row-title" data-l10n-id="orbito-settings-theme"></div>
+                  <p class="hint" data-l10n-id="orbito-settings-theme-hint"></p>
+                </div>
+                <div id="theme" class="segments" role="radiogroup" aria-labelledby="theme-label"></div>
+              </li>
+              <li class="row">
+                <div class="row-main">
+                  <div id="accent-label" class="row-title" data-l10n-id="orbito-settings-accent"></div>
+                  <p class="hint" data-l10n-id="orbito-settings-accent-hint"></p>
+                </div>
+                <div id="accent" class="swatches" role="radiogroup" aria-labelledby="accent-label"></div>
+              </li>
+              <li class="row">
+                <div class="row-main">
+                  <div id="language-label" class="row-title" data-l10n-id="orbito-language-title"></div>
+                  <p class="hint" data-l10n-id="orbito-language-hint"></p>
+                </div>
+                <div id="language" class="segments" role="radiogroup" aria-labelledby="language-label"></div>
+                <div id="language-restart" class="row-sub notice" hidden>
+                  <p role="status"></p>
+                  <button class="primary" data-l10n-id="orbito-language-restart"></button>
+                </div>
+              </li>
+            </ul>
+            <p id="no-firefox-themes" class="after" data-l10n-id="orbito-settings-no-firefox-themes"></p>
+          </section>
 
-      <section id="account">
-        <h2 data-l10n-id="orbito-settings-account"></h2>
-        <div class="setting">
-          <div>
-            <h3 data-l10n-id="orbito-settings-sync"></h3>
-            <p class="hint" data-l10n-id="orbito-settings-sync-hint"></p>
-            <p id="sync-status" role="status"></p>
+          <section id="account">
+            <h3 data-l10n-id="orbito-settings-account"></h3>
+            <ul class="list">
+              <li class="row">
+                <div class="row-main">
+                  <div class="row-title" data-l10n-id="orbito-settings-sync"></div>
+                  <p class="hint" data-l10n-id="orbito-settings-sync-hint"></p>
+                  <p id="sync-status" class="status" role="status"></p>
+                </div>
+                <div id="sync-actions" class="row-control"></div>
+              </li>
+            </ul>
+          </section>
+
+          <section id="layout">
+            <h3 data-l10n-id="orbito-settings-layout"></h3>
+            <ul class="list">
+              <li class="row">
+                <div class="row-main">
+                  <div class="row-title"><label for="sidebar-collapsed" data-l10n-id="orbito-settings-sidebar-collapsed"></label></div>
+                  <p id="sidebar-collapsed-hint" class="hint"></p>
+                </div>
+                <input id="sidebar-collapsed" class="toggle" type="checkbox" role="switch" aria-describedby="sidebar-collapsed-hint" />
+              </li>
+              <li class="row">
+                <div class="row-main">
+                  <div class="row-title"><label for="assistant-auto-open" data-l10n-id="orbito-settings-assistant-auto-open"></label></div>
+                  <p id="assistant-auto-open-hint" class="hint" data-l10n-id="orbito-settings-assistant-auto-open-hint"></p>
+                </div>
+                <input id="assistant-auto-open" class="toggle" type="checkbox" role="switch" aria-describedby="assistant-auto-open-hint" />
+              </li>
+            </ul>
+          </section>
+
+          <section id="updates">
+            <h3 data-l10n-id="orbito-settings-updates"></h3>
+            <ul class="list">
+              <li class="row">
+                <div class="row-main">
+                  <div id="update-version" class="row-title"></div>
+                  <p id="update-status" class="hint" role="status"></p>
+                </div>
+                <div class="row-control">
+                  <button id="update-check" data-l10n-id="orbito-settings-update-check"></button>
+                  <button id="update-apply" class="primary" hidden></button>
+                </div>
+              </li>
+            </ul>
+          </section>
+        </section>
+
+        <section id="backends" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-backends"></h2>
+          <ul class="list">
+            <li id="chatgpt" class="row">
+              <div class="row-main">
+                <div class="row-title">ChatGPT</div>
+                <p class="hint" data-l10n-id="orbito-settings-chatgpt-hint"></p>
+              </div>
+              <div class="row-sub">
+                <div class="foot">
+                  <p id="chatgpt-status" class="status" role="status"></p>
+                  <span class="acts">
+                    <button id="chatgpt-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
+                    <button id="chatgpt-logout" class="quiet" hidden data-l10n-id="orbito-settings-sign-out"></button>
+                    <button id="chatgpt-login" class="primary" data-l10n-id="orbito-settings-chatgpt-login"></button>
+                  </span>
+                </div>
+                <p id="chatgpt-error" class="error" hidden></p>
+              </div>
+            </li>
+            <li id="claude" class="row">
+              <div class="row-main">
+                <div class="row-title">Claude</div>
+                <p class="hint" data-l10n-id="orbito-settings-claude-hint"></p>
+              </div>
+              <div class="row-sub">
+                <div class="foot">
+                  <div id="claude-auth" class="segments" role="radiogroup" data-l10n-id="orbito-settings-claude-auth">
+                    <label><input type="radio" name="claude-auth" value="apiKey" /><span data-l10n-id="orbito-settings-claude-api-key"></span></label>
+                    <label><input type="radio" name="claude-auth" value="claudeAccount" /><span data-l10n-id="orbito-settings-claude-account"></span></label>
+                    <label><input type="radio" name="claude-auth" value="cloud" /><span data-l10n-id="orbito-settings-claude-cloud"></span></label>
+                  </div>
+                  <span class="acts">
+                    <button id="claude-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
+                    <button id="claude-logout" class="quiet" hidden data-l10n-id="orbito-settings-sign-out"></button>
+                    <button id="claude-login" class="primary" hidden data-l10n-id="orbito-settings-claude-login"></button>
+                  </span>
+                </div>
+                <p id="claude-status" class="status" role="status"></p>
+                <p id="claude-error" class="error" hidden></p>
+                <pre id="claude-command" hidden></pre>
+                <form id="claude-cloud" class="form" hidden>
+                  <div class="fields">
+                    <label>
+                      <span data-l10n-id="orbito-settings-claude-cloud-provider"></span>
+                      <select name="provider">
+                        <option value="bedrock">Amazon Bedrock</option>
+                        <option value="vertex">Google Cloud Vertex AI</option>
+                        <option value="foundry">Microsoft Foundry</option>
+                      </select>
+                    </label>
+                    <label data-field="region"><span data-l10n-id="orbito-settings-claude-cloud-region"></span> <input name="region" /></label>
+                    <label data-field="profile"><span data-l10n-id="orbito-settings-claude-cloud-profile"></span> <input name="profile" placeholder="default" /></label>
+                    <label data-field="project"><span data-l10n-id="orbito-settings-claude-cloud-project"></span> <input name="project" /></label>
+                    <label data-field="resource"><span data-l10n-id="orbito-settings-claude-cloud-resource"></span> <input name="resource" /></label>
+                    <label data-field="key"><span data-l10n-id="orbito-settings-claude-cloud-key"></span> <input name="key" type="password" autocomplete="off" /></label>
+                  </div>
+                  <p class="hint" data-provider="bedrock" data-l10n-id="orbito-settings-claude-cloud-bedrock-hint"></p>
+                  <p class="hint" data-provider="vertex" data-l10n-id="orbito-settings-claude-cloud-vertex-hint"></p>
+                  <p class="hint" data-provider="foundry" data-l10n-id="orbito-settings-claude-cloud-foundry-hint"></p>
+                  <div class="form-actions">
+                    <button type="submit" class="primary" data-l10n-id="orbito-settings-save"></button>
+                  </div>
+                </form>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <section id="spaces" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-spaces"></h2>
+          <p class="lead" data-l10n-id="orbito-settings-spaces-hint"></p>
+          <div id="space-list" class="lists"></div>
+        </section>
+
+        <section id="memory" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-memory"></h2>
+          <p class="lead" data-l10n-id="orbito-settings-memory-hint"></p>
+          <ul class="list">
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title"><label for="memory-enabled" data-l10n-id="orbito-settings-memory-enabled"></label></div>
+                <p id="memory-enabled-hint" class="hint" data-l10n-id="orbito-settings-memory-enabled-hint"></p>
+              </div>
+              <input id="memory-enabled" class="toggle" type="checkbox" role="switch" aria-describedby="memory-enabled-hint" />
+            </li>
+          </ul>
+          <div class="list">
+            <ul id="memories" class="rows"></ul>
+            <p id="memories-empty" class="row empty" data-l10n-id="orbito-settings-memories-empty"></p>
+            <div id="memories-clear" class="list-foot">
+              <span id="memories-clear-question" hidden data-l10n-id="orbito-settings-memories-clear-question"></span>
+              <button id="memories-clear-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
+              <button id="memories-clear-confirm" class="primary danger" hidden data-l10n-id="orbito-settings-memories-clear-confirm"></button>
+              <button id="memories-clear-start" class="quiet danger strong" data-l10n-id="orbito-settings-memories-clear-start"></button>
+            </div>
           </div>
-          <div id="sync-actions" class="actions"></div>
-        </div>
-      </section>
+        </section>
 
-      <section id="backends">
-        <h2 data-l10n-id="orbito-settings-backends"></h2>
-        <div id="chatgpt" class="card">
-          <h3>ChatGPT</h3>
-          <p class="hint" data-l10n-id="orbito-settings-chatgpt-hint"></p>
-          <p id="chatgpt-status"></p>
-          <p id="chatgpt-error" class="error" hidden></p>
-          <div class="actions">
-            <button id="chatgpt-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
-            <button id="chatgpt-logout" hidden data-l10n-id="orbito-settings-sign-out"></button>
-            <button id="chatgpt-login" class="primary" data-l10n-id="orbito-settings-chatgpt-login"></button>
+        <section id="recall" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-recall"></h2>
+          <p class="lead" data-l10n-id="orbito-settings-recall-hint"></p>
+          <ul class="list">
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title"><label for="recall-enabled" data-l10n-id="orbito-settings-recall-enabled"></label></div>
+              </div>
+              <input id="recall-enabled" class="toggle" type="checkbox" role="switch" />
+            </li>
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title"><label for="recall-retention" data-l10n-id="orbito-settings-recall-retention"></label></div>
+                <p class="hint" data-l10n-id="orbito-settings-recall-retention-hint"></p>
+              </div>
+              <select id="recall-retention">
+                <option value="30" data-l10n-id="orbito-settings-recall-days" data-l10n-args='{"days": 30}'></option>
+                <option value="90" data-l10n-id="orbito-settings-recall-days" data-l10n-args='{"days": 90}'></option>
+                <option value="180" data-l10n-id="orbito-settings-recall-days" data-l10n-args='{"days": 180}'></option>
+                <option value="0" data-l10n-id="orbito-settings-recall-forever"></option>
+              </select>
+            </li>
+            <li class="row">
+              <div class="row-main">
+                <p id="recall-stats" class="row-title plain"></p>
+              </div>
+              <button id="open-timeline" data-l10n-id="orbito-settings-recall-open-timeline"></button>
+            </li>
+          </ul>
+          <h3 id="recall-domains-label" data-l10n-id="orbito-settings-recall-domains"></h3>
+          <div class="list">
+            <ul id="recall-domains" class="rows" aria-labelledby="recall-domains-label"></ul>
+            <form id="recall-domain-form" class="list-foot add">
+              <input name="domain" placeholder="example.com" data-l10n-id="orbito-settings-recall-domain-input" required />
+              <button type="submit" data-l10n-id="orbito-settings-recall-domain-add"></button>
+              <p class="error" hidden></p>
+            </form>
           </div>
-        </div>
-        <div id="claude" class="card">
-          <h3>Claude</h3>
-          <p class="hint" data-l10n-id="orbito-settings-claude-hint"></p>
-          <label class="checkbox">
-            <input type="radio" name="claude-auth" value="apiKey" />
-            <span data-l10n-id="orbito-settings-claude-api-key"></span>
-          </label>
-          <label class="checkbox">
-            <input type="radio" name="claude-auth" value="claudeAccount" />
-            <span data-l10n-id="orbito-settings-claude-account"></span>
-          </label>
-          <p id="claude-status"></p>
-          <p id="claude-error" class="error" hidden></p>
-          <pre id="claude-command" hidden></pre>
-          <div class="actions">
-            <button id="claude-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
-            <button id="claude-logout" hidden data-l10n-id="orbito-settings-sign-out"></button>
-            <button id="claude-login" class="primary" hidden data-l10n-id="orbito-settings-claude-login"></button>
+          <p class="after" data-l10n-id="orbito-settings-recall-domains-hint"></p>
+        </section>
+
+        <section id="skills" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-skills"></h2>
+          <p class="lead" data-l10n-id="orbito-settings-skills-hint"></p>
+          <div class="list">
+            <form id="skill-form" class="form list-form" hidden>
+              <h3></h3>
+              <div class="fields">
+                <label><span data-l10n-id="orbito-settings-name"></span> <input name="name" placeholder="회의록 정리" /></label>
+                <label><span data-l10n-id="orbito-settings-description"></span> <input name="description" data-l10n-id="orbito-settings-skill-description-input" /></label>
+              </div>
+              <label>
+                <span data-l10n-id="orbito-settings-tools"></span> <input name="tools" placeholder="get_page_text, list_tabs" />
+                <span class="hint" data-l10n-id="orbito-settings-skill-tools-hint"></span>
+              </label>
+              <div class="field">
+                <span id="skill-output-label" data-l10n-id="orbito-settings-output"></span>
+                <div class="segments" role="radiogroup" aria-labelledby="skill-output-label">
+                  <label><input type="radio" name="output" value="chat" checked="" /><span data-l10n-id="orbito-settings-output-chat"></span></label>
+                  <label><input type="radio" name="output" value="document" /><span data-l10n-id="orbito-settings-output-document"></span></label>
+                </div>
+              </div>
+              <label><span data-l10n-id="orbito-settings-skill-instructions"></span> <textarea name="body" rows="6"></textarea></label>
+              <p class="error" hidden></p>
+              <div class="form-actions">
+                <button type="button" id="skill-cancel" data-l10n-id="orbito-settings-cancel"></button>
+                <button type="submit" class="primary" data-l10n-id="orbito-settings-save"></button>
+              </div>
+            </form>
+            <ul id="skill-list" class="rows"></ul>
+            <div class="list-foot">
+              <button id="skill-new" class="quiet accent add" data-l10n-id="orbito-settings-skill-new"></button>
+              <button id="skill-from-demo" class="quiet accent" data-l10n-id="orbito-settings-skill-from-demo"></button>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section id="spaces">
-        <h2 data-l10n-id="orbito-settings-spaces"></h2>
-        <p class="hint" data-l10n-id="orbito-settings-spaces-hint"></p>
-        <ul id="space-list" class="cards"></ul>
-      </section>
-
-      <section id="memory">
-        <h2 data-l10n-id="orbito-settings-memory"></h2>
-        <p class="hint" data-l10n-id="orbito-settings-memory-hint"></p>
-        <label class="checkbox">
-          <input id="memory-enabled" type="checkbox" />
-          <span data-l10n-id="orbito-settings-memory-enabled"></span>
-        </label>
-        <ul id="memories" class="cards"></ul>
-        <p id="memories-empty" class="hint" data-l10n-id="orbito-settings-memories-empty"></p>
-        <div id="memories-clear" class="actions">
-          <span id="memories-clear-question" hidden data-l10n-id="orbito-settings-memories-clear-question"></span>
-          <button id="memories-clear-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
-          <button id="memories-clear-confirm" class="primary" hidden data-l10n-id="orbito-settings-memories-clear-confirm"></button>
-          <button id="memories-clear-start" data-l10n-id="orbito-settings-memories-clear-start"></button>
-        </div>
-      </section>
-
-      <section id="recall">
-        <h2 data-l10n-id="orbito-settings-recall"></h2>
-        <p class="hint" data-l10n-id="orbito-settings-recall-hint"></p>
-        <label class="checkbox">
-          <input id="recall-enabled" type="checkbox" />
-          <span data-l10n-id="orbito-settings-recall-enabled"></span>
-        </label>
-        <div class="setting">
-          <div>
-            <h3><label for="recall-retention" data-l10n-id="orbito-settings-recall-retention"></label></h3>
-            <p class="hint" data-l10n-id="orbito-settings-recall-retention-hint"></p>
+        <section id="tasks" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-tasks"></h2>
+          <p class="lead" data-l10n-id="orbito-settings-tasks-hint"></p>
+          <div class="list">
+            <ul id="task-list" class="rows"></ul>
+            <p id="tasks-empty" class="row empty" data-l10n-id="orbito-settings-tasks-empty"></p>
+            <form id="task-form" class="form list-form" hidden>
+              <h3></h3>
+              <label><span data-l10n-id="orbito-settings-name"></span> <input name="name" data-l10n-id="orbito-settings-task-name-input" /></label>
+              <label>
+                <span data-l10n-id="orbito-settings-skill"></span>
+                <select name="skill"><option value="" data-l10n-id="orbito-settings-task-no-skill"></option></select>
+              </label>
+              <p class="warning direct-warning" role="note" data-l10n-id="orbito-settings-task-direct-warning" hidden></p>
+              <fieldset class="skill-inputs" hidden>
+                <legend data-l10n-id="orbito-settings-task-inputs"></legend>
+                <p class="hint" data-l10n-id="orbito-settings-task-inputs-hint"></p>
+                <div class="input-list"></div>
+              </fieldset>
+              <label><span data-l10n-id="orbito-settings-question"></span> <textarea name="prompt" rows="4"></textarea></label>
+              <div class="fields">
+                <label>
+                  <span data-l10n-id="orbito-settings-repeat"></span>
+                  <select name="kind">
+                    <option value="hourly" data-l10n-id="orbito-settings-repeat-hourly"></option>
+                    <option value="daily" data-l10n-id="orbito-settings-repeat-daily"></option>
+                    <option value="weekly" data-l10n-id="orbito-settings-repeat-weekly"></option>
+                  </select>
+                </label>
+                <label class="minute-field"><span data-l10n-id="orbito-settings-minute"></span> <input name="minute" type="number" min="0" max="59" value="0" /></label>
+                <label class="weekday-field">
+                  <span data-l10n-id="orbito-settings-day"></span>
+                  <select name="weekday">
+                    <option value="1" data-l10n-id="orbito-settings-weekday-monday"></option>
+                    <option value="2" data-l10n-id="orbito-settings-weekday-tuesday"></option>
+                    <option value="3" data-l10n-id="orbito-settings-weekday-wednesday"></option>
+                    <option value="4" data-l10n-id="orbito-settings-weekday-thursday"></option>
+                    <option value="5" data-l10n-id="orbito-settings-weekday-friday"></option>
+                    <option value="6" data-l10n-id="orbito-settings-weekday-saturday"></option>
+                    <option value="0" data-l10n-id="orbito-settings-weekday-sunday"></option>
+                  </select>
+                </label>
+                <label class="time-field"><span data-l10n-id="orbito-settings-time"></span> <input name="time" type="time" value="08:00" /></label>
+              </div>
+              <div class="fields">
+                <label><span data-l10n-id="orbito-settings-task-space"></span> <select name="space"></select></label>
+                <label><span data-l10n-id="orbito-settings-backend"></span> <select name="backend"></select></label>
+                <label><span data-l10n-id="orbito-settings-model"></span> <input name="model" data-l10n-id="orbito-settings-task-model-input" /></label>
+              </div>
+              <fieldset class="allowed-tools">
+                <legend data-l10n-id="orbito-settings-allowed-tools"></legend>
+                <p class="hint" data-l10n-id="orbito-settings-allowed-tools-hint"></p>
+                <div class="tool-list"></div>
+              </fieldset>
+              <p class="error" hidden></p>
+              <div class="form-actions">
+                <button type="button" id="task-cancel" data-l10n-id="orbito-settings-cancel"></button>
+                <button type="submit" class="primary" data-l10n-id="orbito-settings-save"></button>
+              </div>
+            </form>
+            <div class="list-foot">
+              <button id="task-morning-brief" class="quiet accent" data-l10n-id="orbito-settings-task-morning-brief"></button>
+              <button id="task-new" class="quiet accent add" data-l10n-id="orbito-settings-task-new"></button>
+            </div>
           </div>
-          <select id="recall-retention">
-            <option value="30" data-l10n-id="orbito-settings-recall-days" data-l10n-args='{"days": 30}'></option>
-            <option value="90" data-l10n-id="orbito-settings-recall-days" data-l10n-args='{"days": 90}'></option>
-            <option value="180" data-l10n-id="orbito-settings-recall-days" data-l10n-args='{"days": 180}'></option>
-            <option value="0" data-l10n-id="orbito-settings-recall-forever"></option>
-          </select>
-        </div>
-        <h3 id="recall-domains-label" data-l10n-id="orbito-settings-recall-domains"></h3>
-        <p class="hint" data-l10n-id="orbito-settings-recall-domains-hint"></p>
-        <ul id="recall-domains" class="cards" aria-labelledby="recall-domains-label"></ul>
-        <form id="recall-domain-form">
-          <input name="domain" placeholder="example.com" data-l10n-id="orbito-settings-recall-domain-input" required />
-          <button type="submit" data-l10n-id="orbito-settings-recall-domain-add"></button>
-          <p class="error" hidden></p>
-        </form>
-        <div class="setting">
-          <p id="recall-stats" class="hint"></p>
-          <button id="open-timeline" data-l10n-id="orbito-settings-recall-open-timeline"></button>
-        </div>
-      </section>
+        </section>
 
-      <section id="skills">
-        <h2 data-l10n-id="orbito-settings-skills"></h2>
-        <p class="hint" data-l10n-id="orbito-settings-skills-hint"></p>
-        <ul id="skill-list" class="cards"></ul>
-        <div class="actions">
-          <button id="skill-new" data-l10n-id="orbito-settings-skill-new"></button>
-          <button id="skill-from-demo" data-l10n-id="orbito-settings-skill-from-demo"></button>
-        </div>
+        <section id="mcp" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-mcp"></h2>
+          <p class="lead" data-l10n-id="orbito-settings-mcp-hint"></p>
+          <div class="list">
+            <ul id="mcp-servers" class="rows"></ul>
+            <p id="mcp-empty" class="row empty" data-l10n-id="orbito-settings-mcp-empty"></p>
+            <div class="list-foot">
+              <button id="mcp-add-start" class="quiet accent add" data-l10n-id="orbito-settings-mcp-add"></button>
+            </div>
+            <form id="mcp-add" class="form list-form" hidden>
+              <h3 data-l10n-id="orbito-settings-mcp-add"></h3>
+              <div class="fields">
+                <label><span data-l10n-id="orbito-settings-name"></span> <input name="name" required data-l10n-id="orbito-settings-mcp-name-input" /></label>
+                <label><span data-l10n-id="orbito-settings-url"></span> <input name="url" type="url" required placeholder="https://example.com/mcp" /></label>
+              </div>
+              <div class="field">
+                <span id="mcp-add-auth-label" data-l10n-id="orbito-settings-authentication"></span>
+                <div class="segments" role="radiogroup" aria-labelledby="mcp-add-auth-label">
+                  <label><input type="radio" name="auth" value="none" checked="" /><span data-l10n-id="orbito-settings-auth-none"></span></label>
+                  <label><input type="radio" name="auth" value="header" /><span data-l10n-id="orbito-settings-auth-header"></span></label>
+                  <label><input type="radio" name="auth" value="oauth" /><span data-l10n-id="orbito-settings-auth-oauth"></span></label>
+                </div>
+              </div>
+              <div class="header-fields" hidden>
+                <div class="fields">
+                  <label><span data-l10n-id="orbito-settings-header-name"></span> <input name="headerName" value="Authorization" /></label>
+                  <label><span data-l10n-id="orbito-settings-header-value"></span> <input name="headerValue" type="password" autocomplete="off" placeholder="Bearer ..." /></label>
+                </div>
+                <p class="hint" data-l10n-id="orbito-settings-header-hint"></p>
+              </div>
+              <div class="oauth-fields" hidden>
+                <p class="hint" data-l10n-id="orbito-settings-oauth-hint"></p>
+                <div class="fields">
+                  <label><span data-l10n-id="orbito-settings-client-id"></span> <input name="clientId" data-l10n-id="orbito-settings-optional-input" /></label>
+                  <label><span data-l10n-id="orbito-settings-client-secret"></span> <input name="clientSecret" type="password" autocomplete="off" data-l10n-id="orbito-settings-optional-input" /></label>
+                </div>
+              </div>
+              <p class="error" hidden></p>
+              <div class="form-actions">
+                <button type="button" id="mcp-add-cancel" data-l10n-id="orbito-settings-cancel"></button>
+                <button type="submit" class="primary" data-l10n-id="orbito-settings-mcp-add-submit"></button>
+              </div>
+            </form>
+          </div>
+        </section>
 
-        <form id="skill-form" class="card" hidden>
-          <h3></h3>
-          <label><span data-l10n-id="orbito-settings-name"></span> <input name="name" placeholder="회의록 정리" /></label>
-          <label><span data-l10n-id="orbito-settings-description"></span> <input name="description" data-l10n-id="orbito-settings-skill-description-input" /></label>
-          <label><span data-l10n-id="orbito-settings-tools"></span> <input name="tools" placeholder="get_page_text, list_tabs" /></label>
-          <p class="hint" data-l10n-id="orbito-settings-skill-tools-hint"></p>
-          <label>
-            <span data-l10n-id="orbito-settings-output"></span>
-            <select name="output">
-              <option value="chat" data-l10n-id="orbito-settings-output-chat"></option>
-              <option value="document" data-l10n-id="orbito-settings-output-document"></option>
-            </select>
-          </label>
-          <textarea name="body" rows="10" data-l10n-id="orbito-settings-skill-body"></textarea>
-          <p class="error" hidden></p>
-          <div class="actions">
-            <button type="button" id="skill-cancel" data-l10n-id="orbito-settings-cancel"></button>
-            <button type="submit" class="primary" data-l10n-id="orbito-settings-save"></button>
-          </div>
-        </form>
-      </section>
-
-      <section id="tasks">
-        <h2 data-l10n-id="orbito-settings-tasks"></h2>
-        <p class="hint" data-l10n-id="orbito-settings-tasks-hint"></p>
-        <ul id="task-list" class="cards"></ul>
-        <p id="tasks-empty" class="hint" data-l10n-id="orbito-settings-tasks-empty"></p>
-        <div class="actions">
-          <button id="task-morning-brief" data-l10n-id="orbito-settings-task-morning-brief"></button>
-          <button id="task-new" data-l10n-id="orbito-settings-task-new"></button>
-        </div>
-
-        <form id="task-form" class="card" hidden>
-          <h3></h3>
-          <label><span data-l10n-id="orbito-settings-name"></span> <input name="name" data-l10n-id="orbito-settings-task-name-input" /></label>
-          <label>
-            <span data-l10n-id="orbito-settings-skill"></span>
-            <select name="skill"><option value="" data-l10n-id="orbito-settings-task-no-skill"></option></select>
-          </label>
-          <p class="warning direct-warning" role="note" data-l10n-id="orbito-settings-task-direct-warning" hidden></p>
-          <fieldset class="skill-inputs" hidden>
-            <legend data-l10n-id="orbito-settings-task-inputs"></legend>
-            <p class="hint" data-l10n-id="orbito-settings-task-inputs-hint"></p>
-            <div class="input-list"></div>
-          </fieldset>
-          <label><span data-l10n-id="orbito-settings-question"></span> <textarea name="prompt" rows="4"></textarea></label>
-          <label>
-            <span data-l10n-id="orbito-settings-repeat"></span>
-            <select name="kind">
-              <option value="hourly" data-l10n-id="orbito-settings-repeat-hourly"></option>
-              <option value="daily" data-l10n-id="orbito-settings-repeat-daily"></option>
-              <option value="weekly" data-l10n-id="orbito-settings-repeat-weekly"></option>
-            </select>
-          </label>
-          <label class="minute-field"><span data-l10n-id="orbito-settings-minute"></span> <input name="minute" type="number" min="0" max="59" value="0" /></label>
-          <label class="weekday-field">
-            <span data-l10n-id="orbito-settings-day"></span>
-            <select name="weekday">
-              <option value="1" data-l10n-id="orbito-settings-weekday-monday"></option>
-              <option value="2" data-l10n-id="orbito-settings-weekday-tuesday"></option>
-              <option value="3" data-l10n-id="orbito-settings-weekday-wednesday"></option>
-              <option value="4" data-l10n-id="orbito-settings-weekday-thursday"></option>
-              <option value="5" data-l10n-id="orbito-settings-weekday-friday"></option>
-              <option value="6" data-l10n-id="orbito-settings-weekday-saturday"></option>
-              <option value="0" data-l10n-id="orbito-settings-weekday-sunday"></option>
-            </select>
-          </label>
-          <label class="time-field"><span data-l10n-id="orbito-settings-time"></span> <input name="time" type="time" value="08:00" /></label>
-          <label><span data-l10n-id="orbito-settings-task-space"></span> <select name="space"></select></label>
-          <label><span data-l10n-id="orbito-settings-backend"></span> <select name="backend"></select></label>
-          <label><span data-l10n-id="orbito-settings-model"></span> <input name="model" data-l10n-id="orbito-settings-task-model-input" /></label>
-          <fieldset class="allowed-tools">
-            <legend data-l10n-id="orbito-settings-allowed-tools"></legend>
-            <p class="hint" data-l10n-id="orbito-settings-allowed-tools-hint"></p>
-            <div class="tool-list"></div>
-          </fieldset>
-          <p class="error" hidden></p>
-          <div class="actions">
-            <button type="button" id="task-cancel" data-l10n-id="orbito-settings-cancel"></button>
-            <button type="submit" class="primary" data-l10n-id="orbito-settings-save"></button>
-          </div>
-        </form>
-      </section>
-
-      <section id="mcp">
-        <h2 data-l10n-id="orbito-settings-mcp"></h2>
-        <p class="hint" data-l10n-id="orbito-settings-mcp-hint"></p>
-        <ul id="mcp-servers" class="cards"></ul>
-        <p id="mcp-empty" class="hint" data-l10n-id="orbito-settings-mcp-empty"></p>
-
-        <form id="mcp-add" class="card">
-          <h3 data-l10n-id="orbito-settings-mcp-add"></h3>
-          <label><span data-l10n-id="orbito-settings-name"></span> <input name="name" required data-l10n-id="orbito-settings-mcp-name-input" /></label>
-          <label><span data-l10n-id="orbito-settings-url"></span> <input name="url" type="url" required placeholder="https://example.com/mcp" /></label>
-          <label>
-            <span data-l10n-id="orbito-settings-authentication"></span>
-            <select name="auth">
-              <option value="none" data-l10n-id="orbito-settings-auth-none"></option>
-              <option value="header" data-l10n-id="orbito-settings-auth-header"></option>
-              <option value="oauth" data-l10n-id="orbito-settings-auth-oauth"></option>
-            </select>
-          </label>
-          <div class="header-fields" hidden>
-            <label><span data-l10n-id="orbito-settings-header-name"></span> <input name="headerName" value="Authorization" /></label>
-            <label><span data-l10n-id="orbito-settings-header-value"></span> <input name="headerValue" type="password" autocomplete="off" placeholder="Bearer ..." /></label>
-            <p class="hint" data-l10n-id="orbito-settings-header-hint"></p>
-          </div>
-          <div class="oauth-fields" hidden>
-            <p class="hint" data-l10n-id="orbito-settings-oauth-hint"></p>
-            <label><span data-l10n-id="orbito-settings-client-id"></span> <input name="clientId" data-l10n-id="orbito-settings-optional-input" /></label>
-            <label><span data-l10n-id="orbito-settings-client-secret"></span> <input name="clientSecret" type="password" autocomplete="off" data-l10n-id="orbito-settings-optional-input" /></label>
-          </div>
-          <p class="error" hidden></p>
-          <div class="actions"><button type="submit" class="primary" data-l10n-id="orbito-settings-mcp-add-submit"></button></div>
-        </form>
-      </section>
-
-      <section id="advanced">
-        <h2 data-l10n-id="orbito-settings-advanced"></h2>
-        <div class="setting">
-          <div>
-            <h3 data-l10n-id="orbito-settings-firefox-settings"></h3>
-            <p class="hint" data-l10n-id="orbito-settings-firefox-settings-hint"></p>
-          </div>
-          <button id="open-firefox-settings" data-l10n-id="orbito-settings-open-firefox-settings"></button>
-        </div>
-        <div class="setting">
-          <div>
-            <h3 data-l10n-id="orbito-settings-delete-data"></h3>
-            <p class="hint" data-l10n-id="orbito-settings-delete-data-hint"></p>
-          </div>
-          <div id="delete-data" class="actions">
-            <span id="delete-data-question" hidden data-l10n-id="orbito-settings-delete-data-question"></span>
-            <button id="delete-data-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
-            <button id="delete-data-confirm" class="primary" hidden data-l10n-id="orbito-settings-delete-data-confirm"></button>
-            <button id="delete-data-start" data-l10n-id="orbito-settings-delete-data-start"></button>
-          </div>
-        </div>
-      </section>
-    </main>
+        <section id="advanced" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-advanced"></h2>
+          <ul class="list">
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title" data-l10n-id="orbito-settings-firefox-settings"></div>
+                <p class="hint" data-l10n-id="orbito-settings-firefox-settings-hint"></p>
+              </div>
+              <button id="open-firefox-settings" data-l10n-id="orbito-settings-open-firefox-settings"></button>
+            </li>
+          </ul>
+          <ul class="list">
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title" data-l10n-id="orbito-settings-delete-data"></div>
+                <p class="hint" data-l10n-id="orbito-settings-delete-data-hint"></p>
+              </div>
+              <div id="delete-data" class="row-sub foot">
+                <span id="delete-data-question" hidden data-l10n-id="orbito-settings-delete-data-question"></span>
+                <span class="acts">
+                  <button id="delete-data-cancel" hidden data-l10n-id="orbito-settings-cancel"></button>
+                  <button id="delete-data-confirm" class="primary danger" hidden data-l10n-id="orbito-settings-delete-data-confirm"></button>
+                  <button id="delete-data-start" class="danger" data-l10n-id="orbito-settings-delete-data-start"></button>
+                </span>
+              </div>
+            </li>
+          </ul>
+        </section>
+      </main>
+    </div>
   </body>
 </html>

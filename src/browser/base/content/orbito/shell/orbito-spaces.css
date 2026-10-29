@@ -37,7 +37,7 @@
   height: 18px;
   margin: 0;
   padding: 0;
-  padding-inline-start: 9px;
+  padding-inline: 9px 8px;
   border: 1px solid var(--orbito-hairline);
   border-radius: 5px;
   background-color: var(--orbito-surface);
@@ -45,6 +45,7 @@
   font: inherit;
   font-size: 11.5px;
   font-weight: 650;
+  line-height: 16px;
   letter-spacing: 0.02em;
 
   &:focus-visible {
@@ -113,6 +114,7 @@
   &:focus-visible::before {
     outline: var(--orbito-focus-ring);
     outline-offset: 2px;
+    opacity: 1;
   }
 
   /* A Thread of the Space waits for an approval. */
@@ -227,6 +229,13 @@
   gap: 4px;
 
   & select {
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 7px;
+    background-color: var(--orbito-page-sunk);
+    box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+    color: inherit;
     font: inherit;
   }
 }
@@ -242,7 +251,8 @@
     padding: 4px 10px;
     border: 0;
     border-radius: 7px;
-    background-color: var(--orbito-surface-hover);
+    background-color: var(--orbito-page-sunk);
+    box-shadow: inset 0 0 0 1px var(--orbito-page-line);
     color: inherit;
     font: inherit;
     font-weight: 600;
@@ -255,6 +265,7 @@
 
   & .remove-confirm {
     background-color: var(--orbito-danger);
+    box-shadow: none;
     color: white;
   }
 }

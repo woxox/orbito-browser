@@ -17,7 +17,7 @@ const { OrbitoMCP } = ChromeUtils.importESModule(
 const { OrbitoChatGPT } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoChatGPT.sys.mjs"
 );
-const { ClaudeAccount } = ChromeUtils.importESModule(
+const { ClaudeAccount, CLAUDE_CLOUDS } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/ClaudeCLI.sys.mjs"
 );
 const { OrbitoAssistantCore } = ChromeUtils.importESModule(
@@ -60,6 +60,9 @@ const { renameSpace } = ChromeUtils.importESModule(
 );
 const { DownloadUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/DownloadUtils.sys.mjs"
+);
+const { OrbitoUpdates } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoUpdates.sys.mjs"
 );
 const { t, OrbitoL10n, LANGUAGES } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -141,6 +144,111 @@ function radioGroup(group, pick) {
   };
 }
 
+/** An on/off switch: a checkbox drawn as a track and knob. */
+function toggle(checked, props = {}) {
+  return el("input", {
+    type: "checkbox",
+    role: "switch",
+    class: "toggle",
+    ...(checked ? { checked: "" } : {}),
+    ...props,
+  });
+}
+
+/**
+ * A row of a list: its title and what is said about it, one control at the
+ * end, and under them a block the full width (an item's footer, a form).
+ *
+ * @param {object} props The row's attributes.
+ * @param {object} parts
+ * @param {?(Node|string)[]} parts.title The title's content, or null for
+ *   none.
+ * @param {(Node|string)[]} [parts.about] Under the title, as hints; empty
+ *   ones ("") are left out.
+ * @param {?Node} [parts.control]
+ * @param {(Node|string)[]} [parts.sub] Empty ones ("") are left out.
+ */
+function row(props, { title, about = [], control = null, sub = [] }) {
+  let main = el("div", { class: "row-main" }, [
+    ...(title ? [el("div", { class: "row-title" }, title)] : []),
+    ...about.filter(Boolean),
+  ]);
+  sub = sub.filter(Boolean);
+  return el("li", { ...props, class: `row ${props.class ?? ""}`.trim() }, [
+    main,
+    ...(control ? [el("div", { class: "row-control" }, [control])] : []),
+    ...(sub.length ? [el("div", { class: "row-sub" }, sub)] : []),
+  ]);
+}
+
+/**
+ * A quiet action: text in an item's footer or under a list.
+ *
+ * @param {string} text
+ * @param {function} onclick
+ * @param {object} [props] Its other attributes; class adds to "quiet", as
+ *   "danger" for one that deletes.
+ */
+function act(text, onclick, props = {}) {
+  return el("button", {
+    type: "button",
+    text,
+    onclick,
+    ...props,
+    class: `quiet ${props.class ?? ""}`.trim(),
+  });
+}
+
+/**
+ * An item's footer: what it applies to (a Space menu) or its main button
+ * first, its quiet actions at the end.
+ *
+ * @param {Node[]} start
+ * @param {Node[]} end
+ */
+function foot(start, end) {
+  return el("div", { class: "foot" }, [
+    ...start,
+    el("span", { class: "acts" }, end),
+  ]);
+}
+
+/**
+ * A switch inside an item, its name and hint first.
+ *
+ * @param {string} id The switch's id.
+ * @param {string} title
+ * @param {?string} hint
+ * @param {boolean} checked
+ * @param {object} props The switch's other attributes and handlers.
+ */
+function nestedToggle(id, title, hint, checked, props) {
+  return el("div", { class: "nested" }, [
+    el("div", { class: "row-main" }, [
+      el("div", { class: "row-title" }, [el("label", { for: id, text: title })]),
+      ...(hint ? [el("p", { class: "hint", text: hint })] : []),
+    ]),
+    toggle(checked, { id, ...props }),
+  ]);
+}
+
+/**
+ * A segmented control of radios named name: [[value, label]] for options.
+ * Its radios are the form's field.
+ */
+function segments(name, options, props = {}) {
+  return el(
+    "div",
+    { class: "segments", role: "radiogroup", ...props },
+    options.map(([value, text]) =>
+      el("label", {}, [
+        el("input", { type: "radio", name, value }),
+        el("span", { text }),
+      ])
+    )
+  );
+}
+
 /** Token counts as the user reads them, e.g. "1,200 in, 80 out tokens". */
 function tokens(input, output) {
   let n = count => (count ?? 0).toLocaleString();
@@ -149,15 +257,24 @@ function tokens(input, output) {
 
 const OrbitoSettings = {
   init() {
+    this._initPanes();
     this._servers = document.getElementById("mcp-servers");
     this._form = document.getElementById("mcp-add");
-    this._field("auth").addEventListener("change", () =>
-      this._updateAuthFields()
-    );
+    this._form.addEventListener("change", event => {
+      if (event.target.name == "auth") {
+        this._updateAuthFields();
+      }
+    });
     this._form.addEventListener("submit", event => {
       event.preventDefault();
       this._addServer();
     });
+    document.getElementById("mcp-add-start").addEventListener("click", () =>
+      this._showAddServer(true)
+    );
+    document.getElementById("mcp-add-cancel").addEventListener("click", () =>
+      this._showAddServer(false)
+    );
     this._updateAuthFields();
     this._render = this._render.bind(this);
     OrbitoMCP.addListener(this._render);
@@ -166,11 +283,13 @@ const OrbitoSettings = {
     this._renderClaude = this._renderClaude.bind(this);
     ClaudeAccount.addListener(this._renderClaude);
     Services.prefs.addObserver("orbito.agent.auth", this._renderClaude);
+    Services.prefs.addObserver("orbito.agent.cloud", this._renderClaude);
     window.addEventListener("unload", () => {
       OrbitoMCP.removeListener(this._render);
       OrbitoChatGPT.removeListener(this._renderChatGPT);
       ClaudeAccount.removeListener(this._renderClaude);
       Services.prefs.removeObserver("orbito.agent.auth", this._renderClaude);
+      Services.prefs.removeObserver("orbito.agent.cloud", this._renderClaude);
     });
     let button = id => document.getElementById(id);
     button("chatgpt-login").addEventListener("click", () =>
@@ -196,6 +315,12 @@ const OrbitoSettings = {
     button("claude-logout").addEventListener("click", () =>
       ClaudeAccount.logout()
     );
+    let cloud = document.getElementById("claude-cloud");
+    cloud.elements.namedItem("provider").addEventListener("change", () =>
+      this._showCloud()
+    );
+    cloud.addEventListener("submit", event => this._saveCloud(event));
+    this._fillCloud();
     // On its paragraph: localizing the paragraph may replace the button.
     button("open-library").parentElement.addEventListener("click", event => {
       if (event.target.closest("#open-library")) {
@@ -211,6 +336,7 @@ const OrbitoSettings = {
     );
     this._initAppearance();
     this._initLanguage();
+    this._initUpdates();
     this._initLayout();
     this._initAccount();
     this._render();
@@ -222,6 +348,68 @@ const OrbitoSettings = {
     this._initDeleteData();
     this._initSkills();
     this._initTasks();
+  },
+
+  /* Panes: the rail shows one at a time */
+
+  _initPanes() {
+    document.getElementById("panes").addEventListener("click", event => {
+      let button = event.target.closest("[data-pane]");
+      if (button) {
+        this.showPane(button.dataset.pane);
+      }
+    });
+    // A pane asked for (the panel's login, the timeline's recall), now or
+    // while this page is open.
+    let take = () => {
+      let pane = OrbitoPages.takeSettingsPane();
+      if (pane) {
+        this.showPane(pane);
+      }
+    };
+    Services.obs.addObserver(take, OrbitoPages.SETTINGS_PANE_TOPIC);
+    window.addEventListener("unload", () =>
+      Services.obs.removeObserver(take, OrbitoPages.SETTINGS_PANE_TOPIC)
+    );
+    this.showPane("general");
+    take();
+  },
+
+  /**
+   * Shows a pane from its top, and marks it in the rail.
+   *
+   * @param {string} id The pane's: "general", "backends", "spaces",
+   *   "memory", "recall", "skills", "tasks", "mcp" or "advanced".
+   */
+  showPane(id) {
+    let panes = [...document.querySelectorAll("main > .pane")];
+    if (!panes.some(pane => pane.id == id)) {
+      return;
+    }
+    for (let pane of panes) {
+      pane.hidden = pane.id != id;
+    }
+    // A question left open (deleting a Space, the memories, all data) is
+    // dropped with the pane it was in.
+    for (let cancel of document.querySelectorAll(
+      "#memories-clear-cancel:not([hidden]), #delete-data-cancel:not([hidden])"
+    )) {
+      cancel.click();
+    }
+    if (this._confirmingSpace) {
+      this._confirmingSpace = null;
+      this._renderSpaces();
+    }
+    for (let button of document.querySelectorAll("#panes > [data-pane]")) {
+      if (button.dataset.pane == id) {
+        button.setAttribute("aria-current", "page");
+        // The rail scrolls sideways on a narrow page.
+        button.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } else {
+        button.removeAttribute("aria-current");
+      }
+    }
+    window.scrollTo(0, 0);
   },
 
   /* Spaces */
@@ -243,6 +431,7 @@ const OrbitoSettings = {
     let take = () => {
       this._focusSpace = OrbitoPages.takeSpaceSettings();
       if (this._focusSpace) {
+        this.showPane("spaces");
         this._renderSpaces();
       }
     };
@@ -360,35 +549,70 @@ const OrbitoSettings = {
     });
     models.value = model ?? "";
     models.disabled = !backend;
-    let kept = (cls, label, items) => [
-      el("h4", { text: t(label) }),
-      items.length
-        ? el(
-            "ul",
-            { class: cls },
-            items.map(text => el("li", { text }))
-          )
-        : el("p", { class: `hint ${cls}`, text: t("orbito-settings-space-none") }),
-    ];
-    return el("li", { class: "card space", "data-space": space.id }, [
-      el("h3", { text: space.name }),
-      el("label", {}, [
-        el("span", { text: t("orbito-settings-space-name") }),
-        name,
-      ]),
-      el("label", {}, [el("span", { text: t("orbito-settings-backend") }), backends]),
-      el("label", {}, [el("span", { text: t("orbito-settings-model") }), models]),
-      ...kept(
-        "space-memories",
-        "orbito-settings-space-memories",
-        memories.map(m => m.text)
+    let kept = (cls, label, items) =>
+      el("div", {}, [
+        el("dt", { text: t(label) }),
+        el("dd", { class: "kept" }, [
+          items.length
+            ? el(
+                "ul",
+                { class: cls },
+                items.map(text => el("li", { text }))
+              )
+            : el("span", {
+                class: `${cls} none`,
+                text: t("orbito-settings-space-none"),
+              }),
+        ]),
+      ]);
+    let others = shown.filter(s => s.id != space.id);
+    let confirming = this._confirmingSpace == space.id;
+    let remove = act(
+      t("orbito-settings-space-remove"),
+      () => {
+        this._confirmingSpace = space.id;
+        this._renderSpaces();
+      },
+      { class: "danger space-remove" }
+    );
+    remove.disabled = !others.length;
+    return el("ul", { class: "list" }, [
+      row(
+        { class: "space head", "data-space": space.id },
+        {
+          title: [el("span", { text: space.name })],
+          control: confirming ? null : remove,
+          sub: [
+            el("div", { class: "form fields" }, [
+              el("label", {}, [
+                el("span", { text: t("orbito-settings-space-name") }),
+                name,
+              ]),
+              el("label", {}, [
+                el("span", { text: t("orbito-settings-backend") }),
+                backends,
+              ]),
+              el("label", {}, [
+                el("span", { text: t("orbito-settings-model") }),
+                models,
+              ]),
+            ]),
+            el("dl", { class: "facts ruled" }, [
+              kept(
+                "space-memories",
+                "orbito-settings-space-memories",
+                memories.map(m => m.text)
+              ),
+              kept(
+                "space-skills",
+                "orbito-settings-space-skills",
+                skills.map(skill => `/${skill.name}`)
+              ),
+            ]),
+            confirming ? this._spaceRemove(space, others) : "",
+          ],
+        }
       ),
-      ...kept(
-        "space-skills",
-        "orbito-settings-space-skills",
-        skills.map(skill => `/${skill.name}`)
-      ),
-      this._spaceRemove(space, shown),
     ]);
   },
 
@@ -397,20 +621,7 @@ const OrbitoSettings = {
    * is picked: moved to another Space (the first other one by default) or
    * deleted with it. Its tabs close.
    */
-  _spaceRemove(space, shown) {
-    let others = shown.filter(s => s.id != space.id);
-    if (this._confirmingSpace != space.id) {
-      let start = el("button", {
-        class: "space-remove",
-        text: t("orbito-settings-space-remove"),
-        onclick: () => {
-          this._confirmingSpace = space.id;
-          this._renderSpaces();
-        },
-      });
-      start.disabled = !others.length;
-      return el("div", { class: "actions" }, [start]);
-    }
+  _spaceRemove(space, others) {
     let choice = el(
       "select",
       { class: "space-remove-data" },
@@ -424,7 +635,7 @@ const OrbitoSettings = {
         el("option", { value: "", text: t("orbito-spaces-remove-delete") }),
       ]
     );
-    return el("div", { class: "space-remove-form" }, [
+    return el("div", { class: "confirm space-remove-form" }, [
       el("p", {
         text: t("orbito-spaces-remove-title", { name: space.name }),
       }),
@@ -432,7 +643,7 @@ const OrbitoSettings = {
         el("span", { text: t("orbito-spaces-remove-data") }),
         choice,
       ]),
-      el("div", { class: "actions" }, [
+      el("span", { class: "acts" }, [
         el("button", {
           class: "space-remove-cancel",
           text: t("orbito-settings-cancel"),
@@ -442,7 +653,7 @@ const OrbitoSettings = {
           },
         }),
         el("button", {
-          class: "primary space-remove-confirm",
+          class: "primary danger space-remove-confirm",
           text: t("orbito-spaces-remove-confirm"),
           onclick: () => {
             this._confirmingSpace = null;
@@ -457,18 +668,24 @@ const OrbitoSettings = {
 
   /** A Space being removed, until its undo time is up. */
   _removedSpaceCard(space) {
-    return el("li", { class: "card space removed", "data-space": space.id }, [
-      el("p", {
-        role: "status",
-        text: t("orbito-spaces-removed", { name: space.name }),
-      }),
-      el("div", { class: "actions" }, [
-        el("button", {
-          class: "space-undo",
-          text: t("orbito-spaces-undo"),
-          onclick: () => OrbitoAssistantCore.undoRemoveSpace(space.id),
-        }),
-      ]),
+    return el("ul", { class: "list" }, [
+      row(
+        { class: "space removed", "data-space": space.id },
+        {
+          title: [
+            el("span", {
+              class: "plain",
+              role: "status",
+              text: t("orbito-spaces-removed", { name: space.name }),
+            }),
+          ],
+          control: el("button", {
+            class: "space-undo",
+            text: t("orbito-spaces-undo"),
+            onclick: () => OrbitoAssistantCore.undoRemoveSpace(space.id),
+          }),
+        }
+      ),
     ]);
   },
 
@@ -513,6 +730,72 @@ const OrbitoSettings = {
   },
 
   /* Language: Orbito's and Firefox's, from the next start */
+
+  _initUpdates() {
+    document.getElementById("update-version").textContent = t(
+      "orbito-settings-update-version",
+      { version: Services.appinfo.version }
+    );
+    let status = document.getElementById("update-status");
+    let check = document.getElementById("update-check");
+    let apply = document.getElementById("update-apply");
+    if (!OrbitoUpdates.supported) {
+      status.textContent = t("orbito-settings-update-unsupported");
+      check.hidden = true;
+      return;
+    }
+    OrbitoUpdates.init();
+    check.addEventListener("click", () => OrbitoUpdates.check());
+    apply.addEventListener("click", () => OrbitoUpdates.update());
+    let { STATUS } = OrbitoUpdates;
+    let render = () => {
+      let { version, progress, progressMax } = OrbitoUpdates;
+      let percent =
+        progressMax > 0 ? Math.floor((progress / progressMax) * 100) : 0;
+      let [text, action] =
+        {
+          [STATUS.CHECKING]: ["orbito-settings-update-checking"],
+          [STATUS.NO_UPDATES_FOUND]: ["orbito-settings-update-none"],
+          [STATUS.DOWNLOAD_AND_INSTALL]: [
+            "orbito-settings-update-available",
+            "orbito-settings-update-install",
+          ],
+          [STATUS.DOWNLOADING]: ["orbito-settings-update-downloading"],
+          [STATUS.STAGING]: ["orbito-settings-update-staging"],
+          [STATUS.READY_FOR_RESTART]: [
+            "orbito-settings-update-ready",
+            "orbito-settings-update-restart",
+          ],
+          [STATUS.MANUAL_UPDATE]: [
+            "orbito-settings-update-manual",
+            "orbito-settings-update-open-release",
+          ],
+          [STATUS.CHECKING_FAILED]: ["orbito-settings-update-check-failed"],
+          [STATUS.INTERNAL_ERROR]: ["orbito-settings-update-check-failed"],
+          [STATUS.DOWNLOAD_FAILED]: ["orbito-settings-update-download-failed"],
+          [STATUS.OTHER_INSTANCE_HANDLING_UPDATES]: [
+            "orbito-settings-update-other-instance",
+          ],
+          [STATUS.UPDATE_DISABLED_BY_POLICY]: [
+            "orbito-settings-update-unsupported",
+          ],
+          [STATUS.NO_UPDATER]: ["orbito-settings-update-unsupported"],
+          [STATUS.UNSUPPORTED_SYSTEM]: ["orbito-settings-update-unsupported"],
+        }[OrbitoUpdates.status] ?? [];
+      status.textContent = text ? t(text, { version, percent }) : "";
+      apply.hidden = !action;
+      if (action) {
+        apply.textContent = t(action);
+      }
+      check.hidden = !!action;
+      check.disabled = [STATUS.CHECKING, STATUS.DOWNLOADING, STATUS.STAGING].includes(
+        OrbitoUpdates.status
+      );
+    };
+    OrbitoUpdates.addListener(render);
+    window.addEventListener("unload", () => OrbitoUpdates.removeListener(render));
+    render();
+  },
 
   _initLanguage() {
     let group = document.getElementById("language");
@@ -573,8 +856,8 @@ const OrbitoSettings = {
   _initLayout() {
     let mac = AppConstants.platform == "macosx";
     document.l10n.setAttributes(
-      document.getElementById("sidebar-collapsed-label"),
-      "orbito-settings-sidebar-collapsed",
+      document.getElementById("sidebar-collapsed-hint"),
+      "orbito-settings-sidebar-collapsed-hint",
       { shortcut: mac ? "⌘S" : "Ctrl+S" }
     );
     let boxes = [
@@ -711,7 +994,6 @@ const OrbitoSettings = {
             {
               id: "sign-in",
               label: t("orbito-settings-sign-in"),
-              primary: true,
               run: () => gSync.openFxAEmailFirstPage(entry),
             },
           ],
@@ -864,19 +1146,25 @@ const OrbitoSettings = {
     let domains = OrbitoRecall.excludedDomains;
     document.getElementById("recall-domains").replaceChildren(
       ...domains.map(domain =>
-        el("li", { class: "card domain", "data-domain": domain }, [
-          el("span", { text: domain }),
-          el("button", {
-            text: t("orbito-settings-recall-domain-remove"),
-            "aria-label": t("orbito-settings-recall-domain-remove-label", {
-              domain,
-            }),
-            onclick: () =>
-              this._setDomains(
-                OrbitoRecall.excludedDomains.filter(d => d != domain)
-              ),
-          }),
-        ])
+        row(
+          { class: "tight domain", "data-domain": domain },
+          {
+            title: [el("span", { class: "plain", text: domain })],
+            control: act(
+              t("orbito-settings-recall-domain-remove"),
+              () =>
+                this._setDomains(
+                  OrbitoRecall.excludedDomains.filter(d => d != domain)
+                ),
+              {
+                class: "danger",
+                "aria-label": t("orbito-settings-recall-domain-remove-label", {
+                  domain,
+                }),
+              }
+            ),
+          }
+        )
       )
     );
   },
@@ -952,32 +1240,41 @@ const OrbitoSettings = {
           }),
         ])
       : "";
-    return el("li", { class: "card memory", "data-id": memory.id }, [
-      this._editingMemory == memory.id
-        ? this._memoryForm(memory)
-        : el("p", { class: "memory-text", text: memory.text }),
-      el("p", { class: "hint memory-meta", text: meta }),
-      source,
-      this._editingMemory == memory.id
-        ? ""
-        : el("div", { class: "actions" }, [
-            this._memorySpace(memory),
-            el("button", {
-              text: t("orbito-settings-delete"),
-              onclick: async () => {
-                await OrbitoAssistantCore.deleteMemory(memory.id);
-                this._renderMemories();
-              },
-            }),
-            el("button", {
-              text: t("orbito-settings-edit"),
-              onclick: () => {
-                this._editingMemory = memory.id;
-                this._renderMemories();
-              },
-            }),
-          ]),
-    ]);
+    let editing = this._editingMemory == memory.id;
+    return row(
+      { class: "memory", "data-id": memory.id },
+      {
+        title: null,
+        about: [
+          editing
+            ? this._memoryForm(memory)
+            : el("p", { class: "row-title fact memory-text", text: memory.text }),
+          el("p", { class: "hint memory-meta", text: meta }),
+          source,
+        ],
+        sub: editing
+          ? []
+          : [
+              foot(
+                [this._memorySpace(memory)],
+                [
+                  act(t("orbito-settings-edit"), () => {
+                    this._editingMemory = memory.id;
+                    this._renderMemories();
+                  }),
+                  act(
+                    t("orbito-settings-delete"),
+                    async () => {
+                      await OrbitoAssistantCore.deleteMemory(memory.id);
+                      this._renderMemories();
+                    },
+                    { class: "danger" }
+                  ),
+                ]
+              ),
+            ],
+      }
+    );
   },
 
   /** The menu of the Space a memory is kept for, or all of them. */
@@ -1017,10 +1314,10 @@ const OrbitoSettings = {
     let text = el("textarea", { name: "text", rows: "2" });
     text.value = memory.text;
     let error = el("p", { class: "error", hidden: "" });
-    let form = el("form", { class: "edit" }, [
+    let form = el("form", { class: "form edit" }, [
       text,
       error,
-      el("div", { class: "actions" }, [
+      el("div", { class: "form-actions" }, [
         el("button", {
           type: "button",
           text: t("orbito-settings-cancel"),
@@ -1080,6 +1377,7 @@ const OrbitoSettings = {
     let takeDraft = () => {
       let draft = OrbitoPages.takeSkillDraft();
       if (draft) {
+        this.showPane("skills");
         this._openSkillForm(
           t("orbito-settings-skill-new-from-thread"),
           draft,
@@ -1110,81 +1408,83 @@ const OrbitoSettings = {
   },
 
   _skillCard(skill) {
-    let button = (text, onclick) => el("button", { text, onclick });
-    return el(
-      "li",
+    return row(
       {
-        class: "card skill",
+        class: "skill",
         "data-name": skill.name,
         ...(skill.dir ? { "data-dir": skill.dir } : {}),
         ...(skill.source ? { "data-source": skill.source } : {}),
       },
-      [
-        el("div", { class: "skill-head" }, [
+      {
+        title: [
           el("span", { class: "skill-name", text: `/${skill.name}` }),
           el("span", {
-            class: "skill-kind",
+            class: "skill-kind kind",
             text: skill.builtin
               ? t("orbito-settings-skill-builtin")
               : skill.source == "demo"
                 ? t("orbito-settings-skill-from-demo-kind")
                 : t("orbito-settings-skill-yours"),
           }),
-        ]),
-        el("p", { class: "skill-description", text: skill.description }),
-        el("div", { class: "actions" }, [
-          el("label", { class: "checkbox" }, [
-            el("input", {
-              type: "checkbox",
-              ...(skill.enabled ? { checked: "" } : {}),
-              onchange: event => {
-                OrbitoAssistantCore.setSkillEnabled(skill, event.target.checked);
-                this._renderSkills();
-              },
-            }),
-            t("orbito-settings-on"),
-          ]),
-          this._skillSpace(skill),
-          ...(skill.builtin
-            ? [
-                button(t("orbito-settings-skill-copy"), () =>
-                  this._openSkillForm(
-                    t("orbito-settings-skill-copy-title", { name: skill.name }),
-                    skill,
-                    { original: skill.name }
-                  )
-                ),
-              ]
-            : [
-                button(t("orbito-settings-delete"), async () => {
-                  await OrbitoAssistantCore.deleteSkill(skill.dir);
-                  if (this._skillTarget?.dir == skill.dir) {
-                    this._closeSkillForm();
-                  }
-                  this._renderSkills();
-                }),
-                button(t("orbito-settings-edit"), () =>
-                  this._openSkillForm(
-                    t("orbito-settings-skill-edit-title", { name: skill.name }),
-                    skill,
-                    { dir: skill.dir, original: skill.name, source: skill.source }
-                  )
-                ),
-                // Show Orbito again in this window; saving the new demo
-                // replaces this skill.
-                ...(skill.source == "demo"
-                  ? [
-                      button(t("orbito-settings-skill-rerecord"), () =>
-                        window.browsingContext.topChromeWindow.OrbitoShell?.show.begin({
-                          replace: { dir: skill.dir, name: skill.name },
-                          goal: skill.description,
-                        })
-                      ),
-                    ]
-                  : []),
-              ]),
-        ]),
-      ]
+        ],
+        about: [
+          el("p", { class: "hint skill-description", text: skill.description }),
+        ],
+        control: toggle(skill.enabled, {
+          "aria-label": t("orbito-settings-on"),
+          onchange: event => {
+            OrbitoAssistantCore.setSkillEnabled(skill, event.target.checked);
+            this._renderSkills();
+          },
+        }),
+        sub: [
+          foot(
+            [this._skillSpace(skill)],
+            skill.builtin
+              ? [
+                  act(t("orbito-settings-skill-copy"), () =>
+                    this._openSkillForm(
+                      t("orbito-settings-skill-copy-title", { name: skill.name }),
+                      skill,
+                      { original: skill.name }
+                    )
+                  ),
+                ]
+              : [
+                  // Show Orbito again in this window; saving the new demo
+                  // replaces this skill.
+                  ...(skill.source == "demo"
+                    ? [
+                        act(t("orbito-settings-skill-rerecord"), () =>
+                          window.browsingContext.topChromeWindow.OrbitoShell?.show.begin({
+                            replace: { dir: skill.dir, name: skill.name },
+                            goal: skill.description,
+                          })
+                        ),
+                      ]
+                    : []),
+                  act(t("orbito-settings-edit"), () =>
+                    this._openSkillForm(
+                      t("orbito-settings-skill-edit-title", { name: skill.name }),
+                      skill,
+                      { dir: skill.dir, original: skill.name, source: skill.source }
+                    )
+                  ),
+                  act(
+                    t("orbito-settings-delete"),
+                    async () => {
+                      await OrbitoAssistantCore.deleteSkill(skill.dir);
+                      if (this._skillTarget?.dir == skill.dir) {
+                        this._closeSkillForm();
+                      }
+                      this._renderSkills();
+                    },
+                    { class: "danger" }
+                  ),
+                ]
+          ),
+        ],
+      }
     );
   },
 
@@ -1310,6 +1610,7 @@ const OrbitoSettings = {
     let takeRuns = () => {
       let id = OrbitoPages.takeTaskRuns();
       if (id) {
+        this.showPane("tasks");
         this._showRuns = id;
         this._renderTasks();
       }
@@ -1377,9 +1678,7 @@ const OrbitoSettings = {
             }),
           })
         : state;
-    let button = (text, onclick, props = {}) =>
-      el("button", { text, onclick, ...props });
-    let runs = el("details", { class: "task-runs", "data-task": task.id }, [
+    let runs = el("details", { class: "task-runs runs", "data-task": task.id }, [
       el("summary", { text: t("orbito-settings-task-runs") }),
       runsOpen ? await this._runList(task) : el("ul"),
     ]);
@@ -1389,51 +1688,59 @@ const OrbitoSettings = {
         runs.lastChild.replaceWith(await this._runList(task));
       }
     });
-    return el("li", { class: "card task", "data-id": task.id }, [
-      el("div", { class: "task-head" }, [
-        el("span", { class: "task-name", text: task.name }),
-        el("span", {
-          class: "task-schedule",
-          text: scheduleText(task.schedule),
-        }),
-      ]),
-      el("p", { class: "hint task-meta", text: meta }),
-      task.total_input_tokens || task.total_output_tokens
-        ? el("p", {
-            class: "hint task-tokens",
-            text: t("orbito-settings-task-tokens", {
-              tokens: tokens(task.total_input_tokens, task.total_output_tokens),
-            }),
-          })
-        : "",
-      el("div", { class: "actions" }, [
-        el("label", { class: "checkbox" }, [
-          el("input", {
-            type: "checkbox",
-            ...(task.enabled ? { checked: "" } : {}),
-            onchange: event =>
-              OrbitoTasks.setEnabled(task.id, event.target.checked),
+    return row(
+      { class: "task", "data-id": task.id },
+      {
+        title: [
+          el("span", { class: "task-name", text: task.name }),
+          el("span", {
+            class: "task-schedule kind",
+            text: scheduleText(task.schedule),
           }),
-          t("orbito-settings-on"),
-        ]),
-        button(t("orbito-settings-delete"), async () => {
-          if (this._editingTask == task.id) {
-            this._closeTaskForm();
-          }
-          await OrbitoTasks.remove(task.id);
+        ],
+        about: [
+          el("p", { class: "hint task-meta", text: meta }),
+          task.total_input_tokens || task.total_output_tokens
+            ? el("p", {
+                class: "hint task-tokens",
+                text: t("orbito-settings-task-tokens", {
+                  tokens: tokens(task.total_input_tokens, task.total_output_tokens),
+                }),
+              })
+            : "",
+        ],
+        control: toggle(task.enabled, {
+          "aria-label": t("orbito-settings-on"),
+          onchange: event => OrbitoTasks.setEnabled(task.id, event.target.checked),
         }),
-        button(t("orbito-settings-edit"), () => this._openTaskForm(task)),
-        button(
-          t("orbito-settings-task-run-now"),
-          () => OrbitoTasks.runNow(task.id),
-          {
-            class: "run-now",
-            ...(OrbitoTasks.isPending(task.id) ? { disabled: "" } : {}),
-          }
-        ),
-      ]),
-      runs,
-    ]);
+        sub: [
+          foot(
+            [
+              el("button", {
+                class: "run-now",
+                text: t("orbito-settings-task-run-now"),
+                onclick: () => OrbitoTasks.runNow(task.id),
+                ...(OrbitoTasks.isPending(task.id) ? { disabled: "" } : {}),
+              }),
+            ],
+            [
+              act(t("orbito-settings-edit"), () => this._openTaskForm(task)),
+              act(
+                t("orbito-settings-delete"),
+                async () => {
+                  if (this._editingTask == task.id) {
+                    this._closeTaskForm();
+                  }
+                  await OrbitoTasks.remove(task.id);
+                },
+                { class: "danger" }
+              ),
+            ]
+          ),
+          runs,
+        ],
+      }
+    );
   },
 
   async _runList(task) {
@@ -1450,13 +1757,13 @@ const OrbitoSettings = {
         el("li", { class: "run", "data-id": run.id }, [
           el("span", { text: new Date(run.started_at).toLocaleString() }),
           el("span", {
-            class: "run-status",
+            class: `run-status kind ${{ ok: "ok", failed: "bad" }[run.status] ?? ""}`,
             "data-status": run.status,
             text: t("orbito-settings-run-status", { status: run.status }),
           }),
           run.input_tokens != null || run.output_tokens != null
             ? el("span", {
-                class: "run-tokens",
+                class: "hint run-tokens",
                 text: tokens(run.input_tokens, run.output_tokens),
               })
             : "",
@@ -1763,9 +2070,22 @@ const OrbitoSettings = {
         ? t("orbito-settings-claude-signed-in-as", { email })
         : t("orbito-settings-claude-signed-in"),
     };
-    $("claude-status").textContent = account
-      ? text[state]
-      : t(auth ? "orbito-settings-claude-uses-key" : "orbito-settings-claude-choose");
+    let cloud = auth == "cloud";
+    $("claude-cloud").hidden = !cloud;
+    if (account) {
+      $("claude-status").textContent = text[state];
+    } else if (cloud) {
+      let { provider } = OrbitoAssistantCore.claudeCloud();
+      $("claude-status").textContent = OrbitoAssistantCore.claudeCloudReady()
+        ? t("orbito-settings-claude-cloud-ready", {
+            provider: CLAUDE_CLOUDS[provider].label,
+          })
+        : t("orbito-settings-claude-cloud-set-up");
+    } else {
+      $("claude-status").textContent = t(
+        auth ? "orbito-settings-claude-uses-key" : "orbito-settings-claude-choose"
+      );
+    }
     $("claude-status").dataset.state = account ? state : "";
     $("claude-error").textContent = error || "";
     $("claude-error").hidden = !error;
@@ -1774,6 +2094,50 @@ const OrbitoSettings = {
     $("claude-login").hidden = !account || state != "signed_out";
     $("claude-cancel").hidden = !account || state != "signing_in";
     $("claude-logout").hidden = !account || state != "signed_in";
+  },
+
+  /** Fills the cloud provider's form with what is saved. */
+  async _fillCloud() {
+    let form = document.getElementById("claude-cloud");
+    let cloud = OrbitoAssistantCore.claudeCloud();
+    form.elements.namedItem("provider").value = cloud.provider || "bedrock";
+    for (let field of ["region", "profile", "project", "resource"]) {
+      form.elements.namedItem(field).value = cloud[field];
+    }
+    await this._showCloud();
+  },
+
+  /** Shows the fields of the provider chosen in the form, with its key. */
+  async _showCloud() {
+    let form = document.getElementById("claude-cloud");
+    let provider = form.elements.namedItem("provider").value;
+    let { fields, keyRealm } = CLAUDE_CLOUDS[provider];
+    for (let label of form.querySelectorAll("[data-field]")) {
+      let field = label.dataset.field;
+      label.hidden = field == "key" ? !keyRealm : !fields.includes(field);
+    }
+    for (let hint of form.querySelectorAll("[data-provider]")) {
+      hint.hidden = hint.dataset.provider != provider;
+    }
+    form.elements.namedItem("key").value =
+      await OrbitoAssistantCore.getCloudKey(provider);
+  },
+
+  async _saveCloud(event) {
+    event.preventDefault();
+    let form = event.target;
+    let value = name => form.elements.namedItem(name).value;
+    let provider = value("provider");
+    if (CLAUDE_CLOUDS[provider].keyRealm) {
+      await OrbitoAssistantCore.setCloudKey(provider, value("key").trim());
+    }
+    OrbitoAssistantCore.setClaudeCloud({
+      provider,
+      region: value("region"),
+      profile: value("profile"),
+      project: value("project"),
+      resource: value("resource"),
+    });
   },
 
   // By name, since form.name is the form's own name.
@@ -1802,11 +2166,25 @@ const OrbitoSettings = {
         clientId: value("clientId"),
         clientSecret: value("clientSecret"),
       });
-      form.reset();
-      this._updateAuthFields();
+      this._showAddServer(false);
     } catch (e) {
       error.textContent = e.message;
       error.hidden = false;
+    }
+  },
+
+  /** Opens the form to add a server, or closes and empties it. */
+  _showAddServer(open) {
+    let form = this._form;
+    if (!open) {
+      form.reset();
+      form.querySelector(".error").hidden = true;
+      this._updateAuthFields();
+    }
+    form.hidden = !open;
+    document.getElementById("mcp-add-start").hidden = open;
+    if (open) {
+      this._field("name").focus();
     }
   },
 
@@ -1841,121 +2219,148 @@ const OrbitoSettings = {
             el("li", {}, [
               el("span", { class: "tool-name", text: tool.name }),
               tool.readOnly
-                ? ` ${t("orbito-settings-mcp-tool-read-only")}`
+                ? el("span", {
+                    class: "tool-about",
+                    text: t("orbito-settings-mcp-tool-read-only"),
+                  })
                 : "",
-              tool.description ? ` — ${tool.description}` : "",
+              tool.description
+                ? el("span", { class: "tool-about", text: tool.description })
+                : "",
             ])
           )
         ),
       ]
     );
     tools.open = toolsOpen;
-    let checkbox = (label, checked, key) =>
-      el("label", { class: "checkbox" }, [
-        el("input", {
-          type: "checkbox",
-          "data-key": key,
-          ...(checked ? { checked: "" } : {}),
-          onchange: event =>
-            this._update(server.id, { [key]: event.target.checked }),
-        }),
-        label,
-      ]);
-    return el("li", { class: "card server", "data-id": server.id }, [
-      el("div", { class: "server-head" }, [
-        el("span", { class: "server-name", text: server.name }),
-        el("span", { class: "server-url", text: server.url }),
-        el("span", {
-          class: "status",
-          "data-status": server.status,
-          text: t("orbito-settings-mcp-status", { status: server.status }),
-        }),
-      ]),
-      ...(server.error ? [el("p", { class: "error", text: server.error })] : []),
-      ...server.warnings.map(w => el("p", { class: "hint warning", text: w })),
-      tools,
-      el("div", { class: "options" }, [
-        checkbox(t("orbito-settings-on"), server.enabled, "enabled"),
-        checkbox(
-          t("orbito-settings-mcp-trust-read-only"),
-          server.trustReadOnly,
-          "trustReadOnly"
+    let option = (key, props) => ({
+      "data-key": key,
+      onchange: event =>
+        this._update(server.id, { [key]: event.target.checked }),
+      ...props,
+    });
+    let { start, end } = this._loginButtons(server);
+    return row(
+      { class: "server", "data-id": server.id },
+      {
+        title: [
+          el("span", { class: "server-name", text: server.name }),
+          el("span", {
+            class: `status kind ${{ connected: "ok", error: "bad" }[server.status] ?? ""}`,
+            "data-status": server.status,
+            text: t("orbito-settings-mcp-status", { status: server.status }),
+          }),
+        ],
+        about: [
+          el("p", { class: "hint server-url", text: server.url }),
+          ...(server.error ? [el("p", { class: "error", text: server.error })] : []),
+          ...server.warnings.map(w => el("p", { class: "hint warning", text: w })),
+        ],
+        control: toggle(
+          server.enabled,
+          option("enabled", {
+            id: `server-${server.id}-enabled`,
+            "aria-label": t("orbito-settings-on"),
+          })
         ),
-      ]),
-      this._editing == server.id
-        ? this._editForm(server)
-        : el("div", { class: "actions" }, [
-            el("button", {
-              text: t("orbito-settings-mcp-remove"),
-              onclick: () => OrbitoMCP.removeServer(server.id),
-            }),
-            ...this._loginButtons(server),
-            el("button", {
-              text: t("orbito-settings-edit"),
-              onclick: () => {
-                this._editing = server.id;
-                this._render();
-              },
-            }),
-            el("button", {
-              text: t("orbito-settings-mcp-reconnect"),
-              onclick: () => OrbitoMCP.reconnect(server.id),
-            }),
-          ]),
-    ]);
+        sub: [
+          nestedToggle(
+            `server-${server.id}-trustReadOnly`,
+            t("orbito-settings-mcp-trust-read-only"),
+            t("orbito-settings-mcp-trust-read-only-hint"),
+            server.trustReadOnly,
+            option("trustReadOnly")
+          ),
+          tools,
+          this._editing == server.id
+            ? this._editForm(server)
+            : foot(start, [
+                ...end,
+                act(t("orbito-settings-edit"), () => {
+                  this._editing = server.id;
+                  this._render();
+                }),
+                act(
+                  t("orbito-settings-mcp-remove"),
+                  () => OrbitoMCP.removeServer(server.id),
+                  { class: "danger" }
+                ),
+              ]),
+        ],
+      }
+    );
   },
 
+  /**
+   * A server's buttons for connecting and logging in: {start, end}, those
+   * for its footer's start and the quiet ones for its end.
+   */
   _loginButtons(server) {
+    let reconnect = el("button", {
+      text: t("orbito-settings-mcp-reconnect"),
+      onclick: () => OrbitoMCP.reconnect(server.id),
+    });
     if (server.status == "logging_in") {
-      return [
-        el("button", {
-          text: t("orbito-settings-mcp-cancel-login"),
-          onclick: () => OrbitoMCP.cancelLogin(server.id),
-        }),
-      ];
+      return {
+        start: [
+          reconnect,
+          el("button", {
+            text: t("orbito-settings-mcp-cancel-login"),
+            onclick: () => OrbitoMCP.cancelLogin(server.id),
+          }),
+        ],
+        end: [],
+      };
     }
     if (server.auth != "oauth" || !server.enabled) {
-      return [];
+      return { start: [reconnect], end: [] };
     }
     if (server.status == "needs_login") {
-      return [
-        el("button", {
-          class: "primary",
-          text: t("orbito-settings-mcp-log-in"),
-          onclick: () => OrbitoMCP.login(server.id),
-        }),
-      ];
+      // Not reconnect: the login is what connects it.
+      return {
+        start: [
+          el("button", {
+            class: "primary",
+            text: t("orbito-settings-mcp-log-in"),
+            onclick: () => OrbitoMCP.login(server.id),
+          }),
+        ],
+        end: [],
+      };
     }
-    return [
-      el("button", {
-        text: t("orbito-settings-mcp-log-out"),
-        onclick: () => OrbitoMCP.logout(server.id),
-      }),
-    ];
+    return {
+      start: [reconnect],
+      end: [
+        act(t("orbito-settings-mcp-log-out"), () => OrbitoMCP.logout(server.id)),
+      ],
+    };
   },
 
   _editForm(server) {
     let input = (name, value, props = {}) =>
       el("input", { name, value, ...props });
-    let form = el("form", { class: "edit" }, [
-      el("label", {}, [t("orbito-settings-name"), input("name", server.name)]),
-      el("label", {}, [
-        t("orbito-settings-url"),
-        input("url", server.url, { type: "url" }),
-      ]),
-      el("label", {}, [
-        t("orbito-settings-authentication"),
-        el("select", { name: "auth" }, [
-          el("option", { value: "none", text: t("orbito-settings-auth-none") }),
-          el("option", {
-            value: "header",
-            text: t("orbito-settings-auth-header"),
-          }),
-          el("option", {
-            value: "oauth",
-            text: t("orbito-settings-auth-oauth"),
-          }),
+    let form = el("form", { class: "form edit" }, [
+      el("div", { class: "fields" }, [
+        el("label", {}, [t("orbito-settings-name"), input("name", server.name)]),
+        el("label", {}, [
+          t("orbito-settings-url"),
+          input("url", server.url, { type: "url" }),
         ]),
+      ]),
+      el("div", { class: "field" }, [
+        el("span", {
+          id: `server-${server.id}-auth`,
+          text: t("orbito-settings-authentication"),
+        }),
+        segments(
+          "auth",
+          [
+            ["none", t("orbito-settings-auth-none")],
+            ["header", t("orbito-settings-auth-header")],
+            ["oauth", t("orbito-settings-auth-oauth")],
+          ],
+          { "aria-labelledby": `server-${server.id}-auth` }
+        ),
       ]),
       el("div", { class: "header-fields" }, [
         el("label", {}, [
@@ -1988,7 +2393,7 @@ const OrbitoSettings = {
         ]),
       ]),
       el("p", { class: "error", hidden: "" }),
-      el("div", { class: "actions" }, [
+      el("div", { class: "form-actions" }, [
         el("button", {
           type: "button",
           text: t("orbito-settings-cancel"),
@@ -2006,9 +2411,11 @@ const OrbitoSettings = {
     ]);
     let field = name => form.elements.namedItem(name);
     field("auth").value = server.auth || "none";
-    field("auth").addEventListener("change", () =>
-      this._updateAuthFields(form)
-    );
+    form.addEventListener("change", event => {
+      if (event.target.name == "auth") {
+        this._updateAuthFields(form);
+      }
+    });
     this._updateAuthFields(form);
     form.addEventListener("submit", async event => {
       event.preventDefault();

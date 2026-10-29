@@ -230,7 +230,9 @@ export class OrbitoExtensions extends OrbitoTopBarPanel {
       ${item.badge ? html`<span class="badge">${item.badge}</span>` : nothing}
       ${action
         ? nothing
-        : html`<span class="mini">${t("orbito-extensions-details")}</span>`}
+        : html`<span class="mini ghost"
+            >${t("orbito-extensions-details")}</span
+          >`}
     </button>`;
   }
 
@@ -261,7 +263,8 @@ export class OrbitoExtensions extends OrbitoTopBarPanel {
                   <span class="grow">${this.#requestText(n)}</span>
                   <span class="mini">${t("orbito-extensions-answer")}</span>
                 </button>`
-              )}`
+              )}
+              <div class="sep"></div>`
           : nothing}
         ${extensions.length
           ? extensions.map(item => this.#renderExtension(item))

@@ -172,10 +172,14 @@ pref("orbito.agent.claude", "");
 // Overrides the Anthropic API base URL, e.g. for a proxy or a mock server;
 // with an API key only, never for a Claude account.
 pref("orbito.agent.baseURL", "");
-// How the Claude backend authenticates: "apiKey" or "claudeAccount" (the
-// Claude Code CLI's own login, ClaudeAccount in ClaudeCLI.sys.mjs). Empty
-// until the user chooses, or has a Claude API key saved.
+// How the Claude backend authenticates: "apiKey", "claudeAccount" (the
+// Claude Code CLI's own login, ClaudeAccount in ClaudeCLI.sys.mjs) or "cloud"
+// (orbito.agent.cloud). Empty until the user chooses, or has a Claude API key
+// saved.
 pref("orbito.agent.auth", "");
+// The cloud provider "cloud" uses, as JSON {provider, region, project,
+// profile, resource}; provider is a key of CLAUDE_CLOUDS in ClaudeCLI.sys.mjs.
+pref("orbito.agent.cloud", "");
 
 // Browsing recall (OrbitoRecall.sys.mjs): whether the pages the user reads
 // are remembered (off pauses it), and days they are kept after their last

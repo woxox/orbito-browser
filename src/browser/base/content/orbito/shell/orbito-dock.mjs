@@ -39,17 +39,24 @@ const WINDOW_EVENTS = ["OrbitoDocksChange", "OrbitoSpacesChange"];
 // How far a press moves before it becomes a drag.
 const DRAG_THRESHOLD = 4;
 
+// Stands in the Dock's items for the copy of a dragged tab.
+const PREVIEW = Symbol("preview");
+
 /**
  * The Dock under the Space's name: a row per Dock tab of the Space shown
  * (OrbitoShell.docks), in the Dock's order, with a line under it that sets
  * it apart from the tab list. It slides with the Space's name and tabs.
  * Clicking a row selects its tab, which loads its page if it rests (closed
  * back to where it was docked, or not selected yet; those rows are dimmed).
- * Closing one keeps its row: the tab goes back to the docked page, unloaded.
+ * Closing one (its × button) keeps its row: the tab goes back to the docked
+ * page, unloaded. A row at rest has a − button instead, which takes it out
+ * of the Dock.
  *
  * A tab dragged from the tab list onto the Dock is docked there; dragging a
- * row moves it in the Dock, and dropping it on the tab list undocks it. The
- * context menu (the menu key or Shift+F10 too) docks and undocks as well.
+ * row moves it in the Dock, and dropping it on the tab list undocks it.
+ * Where a drop would land, a see-through copy of the dragged tab's row
+ * takes the place. The context menu (the menu key or Shift+F10 too) docks
+ * and undocks as well.
  *
  * The Dock is one tab stop: Up and Down move between rows, Home and End to
  * the first and last, Enter or Space select.
@@ -61,14 +68,14 @@ const DRAG_THRESHOLD = 4;
 export class OrbitoDock extends MozLitElement {
   static properties = {
     /**
-     * While a tab is dragged from the tab list: {index}, where it would
-     * land in the Dock, -1 when the pointer is not over it. Else null.
+     * While a tab is dragged from the tab list: {index, tab}, where the tab
+     * would land in the Dock, -1 when the pointer is not over it. Else null.
      */
     tabDrag: { type: Object },
   };
 
   static queries = {
-    rows: { all: ".list .tab" },
+    rows: { all: ".list .tab:not([preview])" },
     list: ".list",
   };
 
@@ -78,6 +85,11 @@ export class OrbitoDock extends MozLitElement {
   // where it would land (an index in the Dock, or the tab list).
   #press = null;
   #drag = null;
+  // Where the rows were as the Dock last showed without the copy of a
+  // dragged tab: {box, rows: [{tab, rect}]}. Drops are placed by
+  // these, so that the copy, moving the rows, does not move where a drop
+  // lands under the pointer.
+  #slots = null;
   // The Space whose Dock shows, for the motion: none on a switch.
   #shownSpace = null;
   #motion = new ListMotion({
@@ -194,16 +206,36 @@ export class OrbitoDock extends MozLitElement {
     if (!list || !list.checkVisibility()) {
       return -1;
     }
-    let box = list.getBoundingClientRect();
-    if (x < box.left || x > box.right || y < box.top || y > box.bottom) {
+    this.#slots ??= {
+      box: list.getBoundingClientRect(),
+      rows: [...this.rows].map(row => ({
+        tab: row.tab,
+        rect: row.getBoundingClientRect(),
+      })),
+    };
+    // The Dock as it was, and as the copy makes it: a row longer, or with
+    // no Dock tab, in its place under the Space's name.
+    let was = this.#slots.box;
+    let now = list.getBoundingClientRect();
+    if (
+      x < Math.min(was.left, now.left) ||
+      x > Math.max(was.right, now.right) ||
+      y < Math.min(was.top, now.top) ||
+      y > Math.max(was.bottom, now.bottom)
+    ) {
       return -1;
     }
-    let rows = [...this.rows].filter(row => row.tab != skip);
-    let index = rows.findIndex(row => {
-      let rect = row.getBoundingClientRect();
-      return y < rect.top + rect.height / 2;
-    });
+    let rows = this.#slots.rows.filter(row => row.tab != skip);
+    let index = rows.findIndex(
+      ({ rect }) => y < rect.top + rect.height / 2
+    );
     return index == -1 ? rows.length : index;
+  }
+
+  /** Where the dragged tab would land: {tab, index} (as dropIndexAt), or null. */
+  get #landing() {
+    let drag = this.#drag ?? this.tabDrag;
+    return drag?.tab && drag.index != -1 ? drag : null;
   }
 
   #onKeyDown(event) {
@@ -292,6 +324,11 @@ export class OrbitoDock extends MozLitElement {
       this.#tabList.toggleAttribute("undock-drop", undock);
       this.requestUpdate();
     }
+    // Over the tab list, its guide bar shows where the tab would go.
+    this.#drag.landing = this.#tabList.landOutside(
+      this.#drag.tab,
+      undock ? y : null
+    );
   }
 
   #onPointerUp(event) {
@@ -311,6 +348,9 @@ export class OrbitoDock extends MozLitElement {
     }
     if (undock) {
       this.docks.undockTab(tab);
+      if (drag.landing) {
+        this.#tabList.dropOutside(tab, drag.landing);
+      }
       return;
     }
     let others = this.tabs.filter(t => t != tab);
@@ -329,6 +369,7 @@ export class OrbitoDock extends MozLitElement {
     this.#drag = null;
     this.removeAttribute("dragging");
     this.#tabList?.removeAttribute("undock-drop");
+    this.#tabList?.landOutside(null, null);
     window.removeEventListener("pointermove", this, true);
     window.removeEventListener("pointerup", this, true);
     window.removeEventListener("pointercancel", this, true);
@@ -372,7 +413,19 @@ export class OrbitoDock extends MozLitElement {
       ${tabIcon(tab)}
       <span class="label">${name}</span>
       ${resting
-        ? nothing
+        ? html`<button
+            class="close"
+            remove
+            tabindex="-1"
+            aria-label=${t("orbito-dock-remove")}
+            title=${t("orbito-dock-remove")}
+            ?hidden=${!this.docks.canAdd}
+            @mousedown=${event => event.preventDefault()}
+            @click=${event => {
+              event.stopPropagation();
+              this.docks.removeResting(tab);
+            }}
+          ></button>`
         : html`<button
             class="close"
             tabindex="-1"
@@ -387,15 +440,29 @@ export class OrbitoDock extends MozLitElement {
     </div>`;
   }
 
+  // The see-through copy of a dragged tab's row, where it would land.
+  #preview(tab) {
+    return html`<div class="tab" preview aria-hidden="true">
+      ${tabIcon(tab)}
+      <span class="label">${tab.label}</span>
+    </div>`;
+  }
+
   willUpdate() {
     this.#motion.capture(this.#shownSpace);
   }
 
   updated() {
     // With no Dock tab, the Dock takes no room; while a tab is dragged it
-    // keeps a small invisible strip to drop on (orbito-dock.css).
+    // keeps a small invisible strip to drop on (orbito-dock.css), until the
+    // copy of the tab shows where it would land.
     this.toggleAttribute("empty", !this.tabs.length);
     this.toggleAttribute("dropping", !!this.tabDrag);
+    this.toggleAttribute("landing", !!this.#landing);
+    if (!this.#landing) {
+      // Measured again as they show now.
+      this.#slots = null;
+    }
     this.#motion.play(this.#shownSpace);
   }
 
@@ -404,6 +471,13 @@ export class OrbitoDock extends MozLitElement {
     let tabs = this.tabs;
     let selectedTab = gBrowser.selectedTab;
     let rovingTab = this.#rovingTab;
+    let landing = this.#landing;
+    let items = [...tabs];
+    if (landing) {
+      let others = tabs.filter(tab => tab != landing.tab);
+      let at = others[landing.index];
+      items.splice(at ? items.indexOf(at) : items.length, 0, PREVIEW);
+    }
     return html`
       <link
         rel="stylesheet"
@@ -418,9 +492,12 @@ export class OrbitoDock extends MozLitElement {
         @keydown=${this.#onKeyDown}
       >
         ${repeat(
-          tabs,
-          tab => tab,
-          tab => this.#row(tab, tab == selectedTab, tab == rovingTab)
+          items,
+          item => item,
+          item =>
+            item == PREVIEW
+              ? this.#preview(landing.tab)
+              : this.#row(item, item == selectedTab, item == rovingTab)
         )}
       </div>
       <div class="separator"></div>
