@@ -76,6 +76,7 @@ const SIDEBAR_COLLAPSED_PREF = "orbito.sidebar.collapsed";
 const ASSISTANT_AUTO_OPEN_PREF = "orbito.assistant.autoOpen";
 // Where Sync's pages are opened from, for Mozilla's account server.
 const SYNC_ENTRY_POINT = "orbito-settings";
+const IMPORT_URL = "chrome://browser/content/orbito/settings/import.html";
 
 function el(tag, props = {}, children = []) {
   let node = document.createElement(tag);
@@ -339,6 +340,7 @@ const OrbitoSettings = {
     this._initUpdates();
     this._initLayout();
     this._initAccount();
+    this._initImport();
     this._render();
     this._renderChatGPT();
     this._renderClaude();
@@ -1028,6 +1030,59 @@ const OrbitoSettings = {
       button.disabled = !!action.disabled;
       button.onclick = action.run;
     }
+  },
+
+  /* Import (Firefox's migration wizard, in import.html) */
+
+  _initImport() {
+    let dialog = document.getElementById("import-dialog");
+    document
+      .getElementById("import-start")
+      .addEventListener("click", () => this._showImport(dialog));
+  },
+
+  /**
+   * Opens the import dialog at the wizard's browser selection. The wizard's
+   * page loads the first time; it takes the page's light, dark and accent,
+   * and the dialog takes its size. Its Cancel and Done, and Escape inside
+   * it, close the dialog.
+   */
+  async _showImport(dialog) {
+    // A load that failed is tried again on the next click.
+    this._importLoaded ??= this._loadImport(dialog).catch(error => {
+      this._importLoaded = null;
+      dialog.replaceChildren();
+      throw error;
+    });
+    let wizard = await this._importLoaded;
+    if (!dialog.open) {
+      wizard.requestState();
+      dialog.showModal();
+    }
+  },
+
+  /** Loads the wizard's page into the dialog; returns its wizard. */
+  async _loadImport(dialog) {
+    let frame = el("iframe", { src: IMPORT_URL });
+    dialog.append(frame);
+    await new Promise(resolve =>
+      frame.addEventListener("load", resolve, { once: true })
+    );
+    let frameWin = frame.contentWindow;
+    OrbitoAppearance.follow(frameWin.document);
+    frameWin.addEventListener("MigrationWizard:Close", () => dialog.close());
+    frameWin.addEventListener("keydown", event => {
+      if (event.key == "Escape" && !event.defaultPrevented) {
+        dialog.close();
+      }
+    });
+    let body = frameWin.document.body;
+    new frameWin.ResizeObserver(() => {
+      frame.style.width = `${body.scrollWidth}px`;
+      frame.style.height = `${body.scrollHeight}px`;
+    }).observe(body);
+    await frameWin.customElements.whenDefined("migration-wizard");
+    return frameWin.document.querySelector("migration-wizard");
   },
 
   /* Memories */

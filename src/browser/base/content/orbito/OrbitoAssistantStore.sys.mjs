@@ -1313,6 +1313,18 @@ export class SqliteStore {
     );
   }
 
+  /** How many pages were visited at or after since, each once. */
+  async countPagesVisitedSince(since) {
+    let rows = await (
+      await this.#db()
+    ).execute(
+      `SELECT count(DISTINCT page_id) AS n FROM page_visits
+       WHERE visited_at >= :since`,
+      { since }
+    );
+    return rows[0].getResultByName("n");
+  }
+
   /**
    * How much Browsing recall keeps: {pages, bytes}, bytes being what the
    * pages' text and their full-text indexes take.

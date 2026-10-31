@@ -1,0 +1,183 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Grouping, as the tab list's Firefox tab groups and the Dock's folders
+ * show it (each list's stylesheet imports this one): a box holding a
+ * header and its rows, and a row a dragged tab is held over to group the
+ * two. */
+
+/* A dragged tab held over this row: a bar fills along its bottom, then it
+ * arms, saying what a drop does (hold-hint: groups the two). :host puts it
+ * over the row's own states (under the pointer, selected), which the
+ * list's stylesheet gives after this one. */
+:host .tab[hold] {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--orbito-accent) 40%, transparent);
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset-inline: 10px;
+    bottom: 3px;
+    height: 2px;
+    border-radius: 1px;
+    background-color: var(--orbito-accent);
+    transform-origin: left;
+    animation: hold-fill 550ms linear both;
+    pointer-events: none;
+  }
+}
+
+:host .tab[hold="armed"] {
+  background-color: var(--orbito-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--orbito-accent);
+  animation: armed-pop var(--orbito-duration-medium) var(--orbito-ease);
+
+  &::after {
+    content: attr(hold-hint);
+    inset-inline: auto 8px;
+    top: 50%;
+    bottom: auto;
+    height: auto;
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: var(--orbito-accent-ink);
+    font-size: 11px;
+    font-weight: 650;
+    transform: translateY(-50%);
+    animation: none;
+  }
+
+  & .close {
+    visibility: hidden;
+  }
+}
+
+@keyframes hold-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes armed-pop {
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+/* A group: one box in its color holding its header and its rows, set 12px
+ * in. The hue comes from the group's color (a Firefox tab group's, set on
+ * it); without one, as a gray group, no color at all. */
+.group {
+  --orbito-group-hue: 0;
+  --orbito-group-chroma-scale: 0;
+  --group-box: light-dark(
+    oklch(0.45 calc(0.09 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.14),
+    oklch(0.1 calc(0.03 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.5)
+  );
+  --group-box-hover: light-dark(
+    oklch(0.45 calc(0.09 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.21),
+    oklch(0.1 calc(0.03 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.57)
+  );
+  --group-edge: light-dark(
+    oklch(0.45 calc(0.09 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.2),
+    oklch(0.1 calc(0.03 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue) / 0.56)
+  );
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  margin-block: 4px;
+  padding: 3px;
+  border-radius: var(--orbito-radius-card);
+  background-color: var(--group-box);
+  box-shadow: inset 0 0 0 1px var(--group-edge);
+  transition: background-color var(--orbito-duration-short) var(--orbito-ease);
+
+  /* The whole box darkens under the pointer on the title, not the title
+   * alone; the close button leaves it be. */
+  &:has(> .group-head > .group-toggle:hover) {
+    background-color: var(--group-box-hover);
+  }
+
+  &[dragged] {
+    opacity: 0.4;
+  }
+
+  /* Just made by holding one tab over another. */
+  &[fresh] {
+    animation: group-pop-in var(--orbito-duration-medium) var(--orbito-ease);
+  }
+}
+
+@keyframes group-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.group-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding-inline-end: 4px;
+
+  /* A group's close button is always shown. */
+  & .close {
+    opacity: 1;
+  }
+}
+
+.group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding-inline: 7px 8px;
+  border-radius: 8px;
+  font-weight: 650;
+  cursor: default;
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: var(--orbito-focus-ring-offset);
+  }
+
+  & .label {
+    flex: 0 1 auto;
+  }
+}
+
+.dot {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+  background-color: oklch(0.62 calc(0.14 * var(--orbito-group-chroma-scale)) var(--orbito-group-hue));
+}
+
+.chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  background: url("chrome://global/skin/icons/arrow-down-12.svg") center / 12px no-repeat;
+  -moz-context-properties: fill;
+  fill: var(--orbito-text-muted);
+  transition: transform var(--orbito-duration-short) var(--orbito-ease);
+
+  .group[collapsed] & {
+    transform: rotate(-90deg);
+  }
+}
+
+.group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-inline-start: 9px;
+}

@@ -1,0 +1,30 @@
+diff --git a/browser/components/migration/MigrationUtils.sys.mjs b/browser/components/migration/MigrationUtils.sys.mjs
+index e366c09df3e7b54d24e0d84bb63b950cbda95110..0368e12c5091d2a199cba29068a04f76ecb059c0 100644
+--- a/browser/components/migration/MigrationUtils.sys.mjs
++++ b/browser/components/migration/MigrationUtils.sys.mjs
+@@ -117,6 +117,16 @@ const MIGRATOR_MODULES = Object.freeze({
+     platforms: ["macosx", "win"],
+   },
+ 
++  // Orbito: Chromium browsers Firefox has no migrator for.
++  ArcProfileMigrator: {
++    moduleURI: "chrome://browser/content/orbito/OrbitoMigrators.sys.mjs",
++    platforms: ["macosx"],
++  },
++  DiaProfileMigrator: {
++    moduleURI: "chrome://browser/content/orbito/OrbitoMigrators.sys.mjs",
++    platforms: ["macosx"],
++  },
++
+   InternalTestingProfileMigrator: {
+     moduleURI: "resource:///modules/InternalTestingProfileMigrator.sys.mjs",
+     platforms: ["linux", "macosx", "win"],
+@@ -176,6 +186,8 @@ class MigrationUtils {
+         "chrome://browser/content/migration/migration-dialog-window.html",
+         "chrome://browser/content/spotlight.html",
+         "about:firefoxview",
++        // Orbito's settings page's import dialog.
++        "chrome://browser/content/orbito/settings/import.html",
+       ],
+       remoteTypes: ["parent", "privilegedabout"],
+     });

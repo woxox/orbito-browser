@@ -236,6 +236,11 @@ export const OrbitoRecall = {
     }
   },
 
+  /** How many pages were read at or after since (epoch ms). */
+  pagesReadSince(since) {
+    return this._store.countPagesVisitedSince(since);
+  },
+
   /** How much is remembered: {pages, bytes}. */
   stats() {
     return this._store.pageStats();

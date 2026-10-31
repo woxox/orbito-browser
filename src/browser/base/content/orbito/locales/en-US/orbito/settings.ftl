@@ -75,7 +75,22 @@ orbito-settings-manage-account = Manage account
 orbito-settings-confirm-account = Confirm account
 orbito-settings-turn-on-sync = Turn on sync
 orbito-settings-choose-what-to-sync = Choose what to sync
+# The item for the Shell's lists in Firefox's "Choose what to sync".
+orbito-sync-engine-shell = Orbito Pins, Spaces and Docks
 orbito-settings-sync-now = Sync now
+
+## Import
+
+orbito-settings-import = Import
+orbito-settings-import-browser = Import from another browser
+orbito-settings-import-browser-hint =
+    Brings bookmarks, history and saved passwords from Chrome, Arc, Dia,
+    Safari, Edge and other browsers on this computer.
+orbito-settings-import-start = Import…
+orbito-settings-import-dialog =
+    .aria-label = Import from another browser
+# The folder of Arc's Favorites, among the bookmarks imported from Arc.
+orbito-import-arc-favorites = Favorites
 
 ## Backends
 

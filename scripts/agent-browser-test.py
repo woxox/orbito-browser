@@ -7626,42 +7626,54 @@ def the_new_tab_page_suggests_related_pages_from_memory(b):
         let el = tab.linkedBrowser.contentDocument?.querySelector("orbito-new-tab");
         return el?.hasUpdated && el;
       }, "the new tab page");
+      page.input.focus();
       let type = text => {
         page.input.value = text;
         page.input.dispatchEvent(new page.ownerDocument.defaultView.InputEvent("input"));
       };
-      let titles = () => [...page.memoryLinks].map(a => a.title).join();
-      let card = () => page.shadowRoot.querySelector(".memory");
-      check(!card(), "a card before typing");
+      // The suggestions under "From memory".
+      let group = () => [...page.shadowRoot.querySelectorAll(".suggestions [role=group]")]
+        .find(g => g.querySelector(".section span")?.textContent == "From memory");
+      let memoryRows = () => [...(group()?.querySelectorAll(".suggestion") ?? [])];
+      let titles = () => memoryRows().map(row => row.querySelector(".title").textContent).join();
+      check(!page.suggestionList, "suggestions before typing");
 
       // Every word typed: the window's Space first, then the other's, under
-      // the card's heading; the same pages the Command bar would suggest.
+      // the group's heading, in the input's suggestions as the Command bar
+      // would show them.
       type(`그래픽카드 ${word}`);
-      await wait(() => page.memoryLinks.length, "the pages", 5000);
+      await wait(() => memoryRows().length, "the pages", 15000);
       check(titles() == `Here GPU ${word},There GPU ${word}`, titles());
-      check(card().querySelector("h2").textContent == "From memory", card().querySelector("h2").textContent);
-      let [first] = page.memoryLinks;
-      check(first.href == url(`Here GPU ${word}`), first.href);
+      let [first] = memoryRows();
       check(first.querySelector("img").src == `page-icon:${url(`Here GPU ${word}`)}`, "no favicon");
-      check(first.textContent.includes(new URL(MOCK).host), first.textContent);
-      // One tab stop, the arrow keys moving in it.
-      check([...page.memoryLinks].map(a => a.tabIndex).join() == "0,-1", "not one tab stop");
-      first.focus();
-      first.dispatchEvent(new page.ownerDocument.defaultView.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-      await wait(() => page.shadowRoot.activeElement == page.memoryLinks[1], "the arrow key to move");
-      check([...page.memoryLinks].map(a => a.tabIndex).join() == "-1,0", "the tab stop stayed");
+      check(first.querySelector(".sub").textContent == new URL(MOCK).host, first.querySelector(".sub").textContent);
+      check(first.querySelector(".hint").textContent == "Open", first.querySelector(".hint").textContent);
+      // The other suggestions stay: the search and asking.
+      let kinds = () => [...page.suggestionRows].map(row => row.dataset.kind);
+      check(kinds().includes("ask") && kinds().includes("search"), kinds().join());
+      // "See all" opens the timeline.
+      check(group().querySelector(".more").textContent.trim() == "See all", "no See all");
 
-      // Unrelated text, short text and addresses get no card.
+      // Unrelated text, short text and addresses get no group.
       for (let text of ["qzxv wpmk", "ab", "example.com/a"]) {
         type(text);
         await sleep(600);
-        check(!card(), `a card for ${text}: ${titles()}`);
+        check(!group(), `a group for ${text}: ${titles()}`);
       }
 
-      // A click opens the page in this tab, without asking a model.
+      // Picking it with the arrow keys and Enter opens the page in this
+      // tab, without asking a model.
       type(`그래픽카드 ${word}`);
-      await wait(() => page.memoryLinks.length == 2, "the pages again", 5000);
-      page.memoryLinks[0].click();
+      await wait(() => memoryRows().length == 2, "the pages again", 15000);
+      let index = [...page.suggestionRows].indexOf(memoryRows()[0]);
+      let key = name => page.input.dispatchEvent(new page.ownerDocument.defaultView.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+      for (let i = 0; i < index; i++) {
+        key("ArrowDown");
+      }
+      await page.updateComplete;
+      check(page.input.getAttribute("aria-activedescendant") == memoryRows()[0].id, page.input.getAttribute("aria-activedescendant"));
+      check(memoryRows()[0].getAttribute("aria-selected") == "true", "the page is not picked");
+      key("Enter");
       await wait(() => tab.linkedBrowser.contentTitle == `Here GPU ${word}`, "the page to open");
       check(await mockRequests() == before, "a model was asked");
       win.gBrowser.removeTab(tab);
@@ -7677,10 +7689,13 @@ def the_new_tab_page_suggests_related_pages_from_memory(b):
           let el = ptab.linkedBrowser.contentDocument?.querySelector("orbito-new-tab");
           return el?.hasUpdated && el;
         }, "the private new tab page");
+        ppage.input.focus();
         ppage.input.value = `그래픽카드 ${word}`;
         ppage.input.dispatchEvent(new ppage.ownerDocument.defaultView.InputEvent("input"));
+        await wait(() => ppage.suggestionRows.length, "the private window's suggestions", 15000);
         await sleep(600);
-        check(!ppage.shadowRoot.querySelector(".memory"), "a card in a private window");
+        let sections = [...ppage.shadowRoot.querySelectorAll(".section span")].map(el => el.textContent);
+        check(!sections.includes("From memory"), `a group in a private window: ${sections}`);
       } finally {
         pw.close();
       }

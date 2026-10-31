@@ -71,6 +71,19 @@ orbito-dock-list = Dock
 orbito-dock-close-tab-title = 닫기 (Dock 자리는 유지)
 orbito-dock-add = Dock에 추가
 orbito-dock-remove = Dock에서 제거
+orbito-dock-folder-untitled = 폴더
+orbito-dock-folder-new-name = 새 폴더
+orbito-dock-folder-new-numbered-name = 새 폴더 { $number }
+orbito-dock-hold-new-folder = 폴더 만들기
+orbito-dock-hold-add-to-folder = 폴더에 넣기
+orbito-dock-folder-new-with-tab = 새 폴더로 옮기기
+orbito-dock-folder-move-to = 폴더로 옮기기
+orbito-dock-folder-take-out = 폴더에서 빼기
+orbito-dock-folder-name = 폴더 이름
+orbito-dock-folder-rename = 폴더 이름 바꾸기
+orbito-dock-folder-ungroup = 폴더 풀기 (탭은 Dock에 남김)
+orbito-dock-folder-delete = 폴더와 탭 지우기
+orbito-dock-folder-title = { $name }: 탭 { $count }개
 
 ## Side panel
 

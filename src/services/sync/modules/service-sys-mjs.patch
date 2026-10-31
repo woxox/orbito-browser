@@ -1,0 +1,17 @@
+diff --git a/services/sync/modules/service.sys.mjs b/services/sync/modules/service.sys.mjs
+index 90a1d919f5c38236f1e522639f0ae377eb314044..d941d1b3b3af327a0b6c0422339995de8ba6d711 100644
+--- a/services/sync/modules/service.sys.mjs
++++ b/services/sync/modules/service.sys.mjs
+@@ -85,6 +85,12 @@ function getEngineModules() {
+     result.Form = { module: "forms.sys.mjs", symbol: "FormEngine" };
+     result.History = { module: "history.sys.mjs", symbol: "HistoryEngine" };
+     result.Tab = { module: "tabs.sys.mjs", symbol: "TabEngine" };
++    // Orbito's Pins, Spaces and Docks.
++    result.Orbito = {
++      module:
++        "chrome://browser/content/orbito/shell/OrbitoShellSyncEngine.sys.mjs",
++      symbol: "OrbitoShellEngine",
++    };
+   }
+   if (Svc.PrefBranch.getBoolPref("engine.addresses.available", false)) {
+     result.Addresses = {

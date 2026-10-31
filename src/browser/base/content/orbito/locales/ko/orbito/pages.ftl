@@ -81,6 +81,34 @@ orbito-newtab-recent = 최근 방문
 orbito-newtab-memory = 기억에서
 # Opens the timeline of every remembered page.
 orbito-newtab-memory-all = 모두 보기
+# The group of suggestions from the browsing history.
+orbito-newtab-history = 방문 기록
+# The accessible name of the input's list of suggestions.
+orbito-newtab-suggestions = 제안
+# The key that takes the address completed in the input.
+orbito-newtab-key-tab = Tab
+# Said next to that key: it takes the completion.
+orbito-newtab-complete = 완성
+# The greeting above the input from 5:00 to 11:59.
+orbito-newtab-greeting-morning = 좋은 아침이에요
+# The greeting from 12:00 to 17:59.
+orbito-newtab-greeting-afternoon = 좋은 오후예요
+# The greeting from 18:00 to 21:59.
+orbito-newtab-greeting-evening = 좋은 저녁이에요
+# The greeting from 22:00 to 4:59.
+orbito-newtab-greeting-night = 편안한 밤이에요
+# Under the greeting, after today's date.
+# Variables:
+#   $count (Number): how many pages Browsing recall remembered today
+orbito-newtab-pages-read = 오늘 읽은 페이지 { $count }개
+# Under the greeting, after the pages read.
+# Variables:
+#   $count (Number): how many scheduled task runs started today
+orbito-newtab-task-runs = 예약 작업 { $count }번 실행
+# The Space the window shows, at the page's top corner.
+# Variables:
+#   $name (String): the Space's name
+orbito-newtab-space = Space: { $name }
 
 ## Document page (about:orbito-doc)
 

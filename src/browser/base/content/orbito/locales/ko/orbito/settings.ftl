@@ -72,7 +72,20 @@ orbito-settings-manage-account = 계정 관리
 orbito-settings-confirm-account = 계정 확인
 orbito-settings-turn-on-sync = 동기화 켜기
 orbito-settings-choose-what-to-sync = 동기화할 항목 선택
+# The item for the Shell's lists in Firefox's "Choose what to sync".
+orbito-sync-engine-shell = Orbito Pin, Space, Dock
 orbito-settings-sync-now = 지금 동기화
+
+## Import
+
+orbito-settings-import = 가져오기
+orbito-settings-import-browser = 다른 브라우저에서 가져오기
+orbito-settings-import-browser-hint = 이 컴퓨터의 Chrome, Arc, Dia, Safari, Edge 등에서 북마크, 방문 기록, 저장된 비밀번호를 가져옵니다.
+orbito-settings-import-start = 가져오기…
+orbito-settings-import-dialog =
+    .aria-label = 다른 브라우저에서 가져오기
+# The folder of Arc's Favorites, among the bookmarks imported from Arc.
+orbito-import-arc-favorites = 즐겨찾기
 
 ## Backends
 

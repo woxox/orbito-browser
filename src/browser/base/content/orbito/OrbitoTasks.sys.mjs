@@ -134,6 +134,11 @@ export const OrbitoTasks = {
     return this._store.getTask(id);
   },
 
+  /** How many runs started at or after since (epoch ms), not skipped. */
+  runsSince(since) {
+    return this._store.countTaskRunsSince(since);
+  },
+
   /** A task's runs, latest first. */
   runs(taskId) {
     return this._store.listTaskRuns(taskId);

@@ -192,3 +192,13 @@ pref("orbito.recall.dwellSeconds", 10);
 // Domains whose pages are never remembered (and their subdomains), as a JSON
 // array: mail, banks, payments and account pages.
 pref("orbito.recall.excludedDomains", "[\"mail.google.com\",\"accounts.google.com\",\"outlook.live.com\",\"outlook.office.com\",\"mail.yahoo.com\",\"mail.proton.me\",\"icloud.com\",\"mail.naver.com\",\"nid.naver.com\",\"mail.daum.net\",\"accounts.kakao.com\",\"paypal.com\",\"stripe.com\",\"toss.im\",\"kbstar.com\",\"shinhan.com\",\"wooribank.com\",\"kebhana.com\",\"ibk.co.kr\",\"nonghyup.com\",\"kakaobank.com\",\"chase.com\",\"bankofamerica.com\",\"wellsfargo.com\",\"citi.com\"]");
+
+// Firefox Sync takes the Shell's Pins, Spaces and Docks to the account's
+// other devices (shell/OrbitoShellSyncEngine.sys.mjs), unless turned off in
+// "Choose what to sync".
+pref("services.sync.engine.orbito", true);
+
+// The import wizard lists Arc and Dia (OrbitoMigrators.sys.mjs), as
+// Firefox's own browser.migrate.<key>.enabled prefs do for its migrators.
+pref("browser.migrate.arc.enabled", true);
+pref("browser.migrate.dia.enabled", true);

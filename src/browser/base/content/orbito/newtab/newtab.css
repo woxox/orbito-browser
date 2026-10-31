@@ -13,6 +13,13 @@ body {
   height: 100%;
   margin: 0;
   background-color: var(--orbito-page);
+  /* A wash of the frame's leading tint, faint, over the page's top. */
+  background-image: radial-gradient(
+    900px 420px at 50% -120px,
+    color-mix(in oklab, var(--orbito-frame-leading) 55%, transparent),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
   color: var(--orbito-page-text);
   font: var(--orbito-font);
 }

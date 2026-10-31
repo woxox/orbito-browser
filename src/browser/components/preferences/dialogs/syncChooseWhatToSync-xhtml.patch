@@ -1,0 +1,17 @@
+diff --git a/browser/components/preferences/dialogs/syncChooseWhatToSync.xhtml b/browser/components/preferences/dialogs/syncChooseWhatToSync.xhtml
+index a893c5ec3d007820d98f5d92dd039640faa2c181..72da78edc8c0107078d84e0064fc0d3679522892 100644
+--- a/browser/components/preferences/dialogs/syncChooseWhatToSync.xhtml
++++ b/browser/components/preferences/dialogs/syncChooseWhatToSync.xhtml
+@@ -86,6 +86,12 @@
+           preference="services.sync.engine.prefs"
+         />
+       </html:div>
++      <html:div class="sync-engine-orbito">
++        <checkbox
++          id="syncEngineOrbito"
++          preference="services.sync.engine.orbito"
++        />
++      </html:div>
+     </html:div>
+   </dialog>
+ </window>

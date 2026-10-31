@@ -130,6 +130,17 @@ const VIEW_TEMPLATE = {
   ],
 };
 
+/**
+ * Does a command in a browser window; the new tab page runs the commands it
+ * suggests with it.
+ *
+ * @param {string} name The command's name.
+ * @param {Window} win
+ */
+export function runCommand(name, win) {
+  COMMANDS.find(c => c.name == name)?.run(win);
+}
+
 class OrbitoCommandsProvider extends UrlbarProvider {
   get name() {
     return "OrbitoCommands";
@@ -181,7 +192,7 @@ class OrbitoCommandsProvider extends UrlbarProvider {
 
   onEngagement(queryContext, controller, details) {
     let win = controller.browserWindow;
-    COMMANDS.find(c => c.name == details.result.payload.command).run(win);
+    runCommand(details.result.payload.command, win);
     win.OrbitoShell?.commandBar.close({ restoreFocus: false });
   }
 }

@@ -318,7 +318,7 @@ export class OrbitoTabList extends MozLitElement {
     if (!drag) {
       return this.#outsideDrag;
     }
-    if (drag.pin != -1 || drag.dock != -1 || drag.hold?.armed || !drag.target) {
+    if (drag.pin != -1 || drag.dock || drag.hold?.armed || !drag.target) {
       return null;
     }
     return drag;
@@ -566,7 +566,8 @@ export class OrbitoTabList extends MozLitElement {
         target: null,
         before: false,
         pin: -1,
-        dock: -1,
+        // Where in the Dock (its dropSpotAt), or null.
+        dock: null,
         // {tab, armed, timer}: the tab it is held over.
         hold: null,
       };
@@ -581,16 +582,16 @@ export class OrbitoTabList extends MozLitElement {
     // (orbito.css): the grid comes first.
     let pin = grid?.dropIndexAt(event.clientX, event.clientY) ?? -1;
     let docked =
-      pin == -1 ? (dock?.dropIndexAt(event.clientX, event.clientY) ?? -1) : -1;
+      pin == -1 ? (dock?.dropSpotAt(event.clientX, event.clientY) ?? null) : null;
     Object.assign(this.#drag, { pin, dock: docked });
     let tab = this.#drag.item;
     if (grid && grid.tabDrag?.index !== pin) {
       grid.tabDrag = { index: pin, tab };
     }
-    if (dock && dock.tabDrag?.index !== docked) {
-      dock.tabDrag = { index: docked, tab };
+    if (dock && dock.tabDrag?.spot !== docked) {
+      dock.tabDrag = { spot: docked, tab };
     }
-    if (pin != -1 || docked != -1) {
+    if (pin != -1 || docked) {
       this.#holdOver(null);
       if (this.#drag.target) {
         // The guide bar goes.
@@ -719,7 +720,7 @@ export class OrbitoTabList extends MozLitElement {
       window.OrbitoShell.pins.pinTab(drag.item, drag.pin);
       return;
     }
-    if (drag.dock != -1) {
+    if (drag.dock) {
       window.OrbitoShell.docks.dockTab(drag.item, drag.dock);
       return;
     }

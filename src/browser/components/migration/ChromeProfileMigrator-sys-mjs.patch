@@ -1,0 +1,17 @@
+diff --git a/browser/components/migration/ChromeProfileMigrator.sys.mjs b/browser/components/migration/ChromeProfileMigrator.sys.mjs
+index 69b6a90566371912614272582efe4c89a4c3553f..94062aa7bbd3fb47a5ddf0e548f19f6e9383b397 100644
+--- a/browser/components/migration/ChromeProfileMigrator.sys.mjs
++++ b/browser/components/migration/ChromeProfileMigrator.sys.mjs
+@@ -140,6 +140,12 @@ export class ChromeProfileMigrator extends MigratorBase {
+       let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+       fp.init(win?.browsingContext, "", Ci.nsIFilePicker.modeGetFolder);
+       fp.filterIndex = 1;
++      // Orbito: open at the folder to pick, so that picking is one click.
++      if (originalDataPath) {
++        let folder = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
++        folder.initWithPath(originalDataPath);
++        fp.displayDirectory = folder;
++      }
+       // Now wait for the filepicker to open and close. If the user picks
+       // the local state folder, the OS should grant us read access to everything
+       // inside, so we don't need to check or do anything else with what's

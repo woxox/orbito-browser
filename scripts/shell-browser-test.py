@@ -622,9 +622,20 @@ function dockRowFor(tab, w = win) {
 function storedDocks() {
   return OrbitoShellStore.get("docks") ?? {};
 }
-// The stored Dock of a Space (the one the window shows by default).
+// The stored Dock of a Space (the one the window shows by default),
+// folders and all.
 function storedDock(space = spaces().current) {
   return storedDocks()[space] ?? [];
+}
+// Its entries, those in folders too, in order.
+function storedDockEntries(space = spaces().current) {
+  return storedDock(space).flatMap(item => item.children ?? [item]);
+}
+// The stored Dock as "a f(b,c)" by titles, a folder by its title.
+function dockShape(space = spaces().current) {
+  return storedDock(space)
+    .map(item => (item.children ? `${item.title}(${item.children.map(e => e.title).join()})` : item.title))
+    .join(" ");
 }
 // The Dock entry ids of a window's Dock tabs in a Space, in order.
 function dockIds(space, w = win) {
@@ -632,16 +643,29 @@ function dockIds(space, w = win) {
   return docks.tabsIn(space ?? w.OrbitoShell.spaces.current).map(t => docks.dockOf(t).id);
 }
 // Waits until a window has a tab for each stored Dock entry of every Space,
-// in order, and its Dock shows the Space's.
+// in order, and its Dock shows the Space's: every tab's row but those in a
+// closed folder (the selected one's still), and a row per folder.
 async function docksMatch(w = win) {
   for (let space of w.OrbitoShell.spaces.list) {
-    let ids = JSON.stringify(storedDock(space.id).map(e => e.id));
+    let ids = JSON.stringify(storedDockEntries(space.id).map(e => e.id));
     await wait(() => JSON.stringify(dockIds(space.id, w)) == ids, "the window's Dock tabs to follow the list");
   }
   let rows = await dockRows(w);
-  let tabs = w.OrbitoShell.docks.tabsIn();
+  let docks = w.OrbitoShell.docks;
+  let tabs = docks.tabsIn().filter(t => {
+    let folder = docks.folderOf(t);
+    return !folder || docks.isOpen(folder.id) || t.selected;
+  });
   check(rows.length == tabs.length && rows.every((r, i) => r.tab == tabs[i]),
     "the Dock does not show the Space's Dock tabs");
+  let folders = docks.listOf().filter(item => item.children).map(f => f.id);
+  check(JSON.stringify([...dock(w).folders].map(r => r.item)) == JSON.stringify(folders),
+    "the Dock does not show the Space's folders");
+}
+// The header button of a Dock folder's box (the first by default), which
+// opens and closes it and takes the keyboard.
+function folderHead(i = 0, w = win) {
+  return dock(w).folders[i]?.querySelector(".group-toggle");
 }
 function dockLabels(w = win) {
   return w.OrbitoShell.docks.tabsIn().map(t => t.label).join();
@@ -9519,6 +9543,582 @@ def the_dock_follows_the_keyboard_rules(b):
 
 
 @test
+def dock_folders_hold_tabs_open_close_and_follow_drags_and_menus(b):
+    b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    for (let title of ["Fold A", "Fold B", "Fold C"]) {
+      shell.docks.dockTab(await openPage(title));
+    }
+    await openPage("Fold page");
+    await docksMatch();
+    // A Dock tab's menu makes a folder at its place, with it, and names it.
+    let a = byLabel("Fold A");
+    let menu = shell.pins.menu;
+    let shownMenu = new Promise(r => menu.addEventListener("popupshown", r, { once: true }));
+    shell.pins.openMenu(a, dockRowFor(a));
+    await shownMenu;
+    let item = menu.querySelector("#orbito-tab-menu-dock-new-folder");
+    check(!item.hidden && menu.querySelector("#orbito-tab-menu-dock-out-of-folder").hidden
+      && menu.querySelector("#orbito-tab-menu-dock-move").hidden, "the menu offers other folder items");
+    let hidden = new Promise(r => menu.addEventListener("popuphidden", r, { once: true }));
+    menu.activateItem(item);
+    await hidden;
+    await wait(() => dockShape() == "New folder(Fold A) Fold B Fold C", dockShape());
+    await wait(() => dock().field && deepActive() == dock().field, "the folder's name field");
+    """)
+    b.keys(*"Reading", Keys.ENTER)
+    start, end = b.js("""
+    await wait(() => dockShape() == "Reading(Fold A) Fold B Fold C", dockShape());
+    await wait(() => !dock().field && deepActive() == folderHead(), "focus back on the folder's header");
+    await docksMatch();
+    let row = folderHead();
+    check(row.textContent.includes("Reading") && row.getAttribute("aria-expanded") == "true", row.outerHTML);
+    // The child's row is in the folder's box, under its header.
+    let child = dockRowFor(byLabel("Fold A"));
+    check(child.closest(".group") == dock().folders.item(0) && child.getBoundingClientRect().top > row.getBoundingClientRect().top, "the tab is not under its folder");
+    // B onto the middle of the folder's header: in it, at its end.
+    return [middle(dockRowFor(byLabel("Fold B"))), middle(row)];
+    """)
+    b.drag(start, end)
+    start, end = b.js("""
+    await wait(() => dockShape() == "Reading(Fold A,Fold B) Fold C", dockShape());
+    await docksMatch();
+    check(dockLabels() == "Fold A,Fold B,Fold C", dockLabels());
+    // C onto the top half of B's row: in the folder, before B.
+    let r = dockRowFor(byLabel("Fold B")).getBoundingClientRect();
+    return [middle(dockRowFor(byLabel("Fold C"))), [r.left + r.width / 2, r.top + 5]];
+    """)
+    b.drag(start, end)
+    start, end = b.js("""
+    await wait(() => dockShape() == "Reading(Fold A,Fold C,Fold B)", dockShape());
+    await docksMatch();
+    check(dockLabels() == "Fold A,Fold C,Fold B", dockLabels());
+    // A below the last row: out of the folder, at the end of the Dock.
+    let r = dockRowFor(byLabel("Fold B")).getBoundingClientRect();
+    return [middle(dockRowFor(byLabel("Fold A"))), [r.left + r.width / 2, r.bottom - 3]];
+    """)
+    b.drag(start, end)
+    start, end = b.js("""
+    await wait(() => dockShape() == "Reading(Fold C,Fold B) Fold A", dockShape());
+    await docksMatch();
+    // A tab of the tab list dropped on the folder's row goes in it.
+    return [middle(rowFor(byLabel("Fold page"))), middle(folderHead())];
+    """)
+    b.drag(start, end)
+    b.js("""
+    await wait(() => dockShape() == "Reading(Fold C,Fold B,Fold page) Fold A", dockShape());
+    await docksMatch();
+    await listMatchesGBrowser();
+    // Clicking the folder's header closes it: its tabs' rows go, but the
+    // selected one's; the window keeps it closed in its session.
+    let folder = storedDock()[0].id;
+    let selected = byLabel("Fold page");
+    win.gBrowser.selectedTab = selected;
+    folderHead().click();
+    await wait(() => !shell.docks.isOpen(folder), "the folder to close");
+    await docksMatch();
+    check((await dockRows()).map(r => r.tab.label).join() == "Fold page,Fold A", (await dockRows()).map(r => r.tab.label).join());
+    check(SessionStore.getCustomWindowValue(win, "orbitoDockClosedFolders") == JSON.stringify([folder]), "the session does not keep it closed");
+    folderHead().click();
+    await wait(() => shell.docks.isOpen(folder), "the folder to open");
+    await docksMatch();
+    // A tab's menu moves it into a folder of its Space, and out.
+    let a = byLabel("Fold A");
+    let menu = shell.pins.menu;
+    let shownMenu = new Promise(r => menu.addEventListener("popupshown", r, { once: true }));
+    shell.pins.openMenu(a, dockRowFor(a));
+    await shownMenu;
+    let move = menu.querySelector("#orbito-tab-menu-dock-move");
+    check(!move.hidden && [...move.menupopup.children].map(i => i.getAttribute("label")).join() == "Reading", "the folders to move to");
+    let hidden = new Promise(r => menu.addEventListener("popuphidden", r, { once: true }));
+    menu.hidePopup();
+    await hidden;
+    shell.docks.moveTab(a, { folder });
+    await wait(() => dockShape() == "Reading(Fold C,Fold B,Fold page,Fold A)", dockShape());
+    shell.docks.takeOutOfFolder(byLabel("Fold C"));
+    await wait(() => dockShape() == "Reading(Fold B,Fold page,Fold A) Fold C", dockShape());
+    await docksMatch();
+    """)
+    # The keyboard: on the folder's header, Left closes it, Right opens it,
+    # Down goes to its first tab, Left from there back to the folder, F2
+    # renames it and Escape keeps the old name.
+    b.js("""
+    let folder = storedDock()[0].id;
+    let row = folderHead();
+    row.focus({ focusVisible: true });
+    await wait(() => deepActive() == row, "focus on the folder's header");
+    """)
+    b.keys(Keys.ARROW_LEFT)
+    b.js('await wait(() => !shell.docks.isOpen(storedDock()[0].id), "Left to close the folder");')
+    b.keys(Keys.ARROW_RIGHT)
+    b.js('await wait(() => shell.docks.isOpen(storedDock()[0].id), "Right to open the folder");')
+    b.keys(Keys.ENTER)
+    b.js('await wait(() => !shell.docks.isOpen(storedDock()[0].id), "Enter to close the folder");')
+    b.keys(Keys.SPACE)
+    b.js('await wait(() => shell.docks.isOpen(storedDock()[0].id), "Space to open the folder");')
+    b.keys(Keys.ARROW_DOWN)
+    b.js('await wait(() => deepActive()?.tab == byLabel("Fold B"), "Down to the folder\'s first tab");')
+    b.keys(Keys.ARROW_LEFT)
+    b.js('await wait(() => deepActive() == folderHead(), "Left back to the folder");')
+    b.keys(Keys.F2)
+    b.js('await wait(() => dock().field && deepActive() == dock().field, "F2 to rename");')
+    b.keys(*"Other", Keys.ESCAPE)
+    b.js("""
+    await wait(() => !dock().field && deepActive() == folderHead(), "Escape to end the renaming");
+    check(dockShape().startsWith("Reading("), dockShape());
+    """)
+    b.keys((Keys.SHIFT, Keys.F10))
+    b.js("""
+    let menu = shell.docks.folderMenu;
+    await wait(() => menu.state == "open", "Shift+F10 to open the folder's menu");
+    let hidden = new Promise(r => menu.addEventListener("popuphidden", r, { once: true }));
+    menu.hidePopup();
+    await hidden;
+    let other = win.OpenBrowserWindow();
+    try {
+      await wait(() => other.gBrowserInit?.delayedStartupFinished && other.OrbitoShell?.docks, "the new window");
+      // Another window has the folder, open there.
+      await docksMatch(other);
+      // Ungroup: the tabs stay in the Dock where the folder was.
+      let folder = storedDock()[0].id;
+      shell.docks.ungroupFolder(folder);
+      await wait(() => dockShape() == "Fold B Fold page Fold A Fold C", dockShape());
+      await docksMatch(other);
+      // Delete: the folder and its tabs go, a loaded one staying as a plain tab.
+      let made = shell.docks.newFolder(byLabel("Fold B"));
+      shell.docks.moveTab(byLabel("Fold page"), { folder: made });
+      await wait(() => dockShape() == "New folder(Fold B,Fold page) Fold A Fold C", dockShape());
+      shell.docks.deleteFolder(made);
+      await wait(() => dockShape() == "Fold A Fold C", dockShape());
+      await docksMatch();
+      await docksMatch(other);
+      check(byLabel("Fold page") && !shell.docks.dockOf(byLabel("Fold page")), "the loaded tab did not stay");
+      await listMatchesGBrowser();
+    } finally {
+      await new Promise(resolve => {
+        other.addEventListener("unload", resolve, { once: true });
+        other.close();
+      });
+      await resetDocks();
+    }
+    """)
+
+
+@test
+def a_long_dock_scrolls_above_the_space_switcher(b):
+    b.js("""
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let [width, height] = [win.outerWidth, win.outerHeight];
+    win.resizeTo(1366, 768);
+    try {
+      await wait(() => win.outerHeight <= 768, "the window to shrink");
+      // As an Arc import makes it: folders of 8 and 2 tabs, and 10 more.
+      let entry = title => ({ id: `long-${title}`, url: pageURL(title), title, icon: "" });
+      let titles = n => Array.from({ length: n }, (_, i) => `Long ${n}-${i}`);
+      let space = spaces().current;
+      OrbitoShellStore.set("docks", {
+        [space]: [
+          { id: "long-f8", title: "Eight", children: titles(8).map(entry) },
+          { id: "long-f2", title: "Two", children: ["A", "B"].map(t => entry(`Long two ${t}`)) },
+          ...titles(10).map(entry),
+        ],
+      });
+      await docksMatch();
+      let list = dock().list;
+      let edge = () => switcher().getBoundingClientRect().top;
+      await wait(() => list.getBoundingClientRect().bottom <= edge() + 0.5, "the Dock to end above the Space switcher");
+      check(list.scrollHeight > list.clientHeight, "the long Dock does not scroll");
+      let tabs = tabList().getBoundingClientRect();
+      check(tabs.bottom <= edge() + 0.5 && tabs.height >= 60, `the tab list: ${tabs.top}-${tabs.bottom}, switcher at ${edge()}`);
+      // Its last row scrolls into view, still above the switcher, which
+      // nothing covers.
+      let last = (await dockRows()).at(-1);
+      last.scrollIntoView({ block: "end" });
+      await wait(() => {
+        let r = last.getBoundingClientRect();
+        return r.bottom <= list.getBoundingClientRect().bottom + 0.5 && r.bottom <= edge();
+      }, "the last Dock row in view above the switcher");
+      let dot = switcher().getBoundingClientRect();
+      let hit = win.document.elementFromPoint(dot.left + dot.width / 2, dot.top + dot.height / 2);
+      check(hit == switcher() || switcher().contains(hit), `the switcher is covered by ${hit?.localName}`);
+    } finally {
+      win.resizeTo(width, height);
+      await resetDocks();
+    }
+    """)
+
+
+SHELL_SYNC = """
+// The Firefox Sync engine of the Shell's lists, given records as another
+// device would send them (no account or server).
+const { Service: syncService } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { OrbitoShellRecord } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/shell/OrbitoShellSyncEngine.sys.mjs"
+);
+async function syncEngine() {
+  await syncService.promiseInitialized;
+  let engine = syncService.engineManager.get("orbito");
+  check(engine, "no Orbito Sync engine");
+  return engine;
+}
+function syncRecord(id, fields) {
+  let record = new OrbitoShellRecord("orbito", id);
+  if (fields) {
+    Object.assign(record.cleartext, fields);
+  } else {
+    record.deleted = true;
+  }
+  return record;
+}
+async function applyRemote(...records) {
+  let engine = await syncEngine();
+  await engine._applyRecords(records);
+}
+async function openWindow() {
+  let other = win.OpenBrowserWindow();
+  await wait(() => other.gBrowserInit?.delayedStartupFinished && other.OrbitoShell?.docks, "the new window");
+  return other;
+}
+async function closeWindow(other) {
+  await new Promise(resolve => {
+    other.addEventListener("unload", resolve, { once: true });
+    other.close();
+  });
+}
+"""
+
+
+@test
+def pins_and_dock_entries_from_another_device_come_unloaded_and_go_closed(b):
+    b.js(SHELL_SYNC + """
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let space = spaces().current;
+    let other = await openWindow();
+    try {
+      await applyRemote(
+        syncRecord("remote-pin", { kind: "pin", url: pageURL("Remote pin"), title: "Remote pin", icon: "" }),
+        syncRecord("remote-dock", { kind: "dock", url: pageURL("Remote dock"), title: "Remote dock", icon: "", space }),
+      );
+      check(storedPins().map(p => p.id).join() == "remote-pin", JSON.stringify(storedPins()));
+      check(storedDock(space).map(e => e.id).join() == "remote-dock", JSON.stringify(storedDocks()));
+      // Every window gets unloaded tabs for them.
+      for (let w of [win, other]) {
+        await pinsMatch(w);
+        await docksMatch(w);
+        let [pinTab] = w.OrbitoShell.pins.tabs;
+        let [dockTab] = w.OrbitoShell.docks.tabsIn(space);
+        check(!pinTab.linkedPanel && pinTab.label == "Remote pin", "the Pin's tab is loaded");
+        check(!dockTab.linkedPanel && dockTab.label == "Remote dock", "the Dock tab is loaded");
+      }
+      // Loaded here, they still close when the other device removes them.
+      let pinTab = shell.pins.tabs[0];
+      let dockTab = shell.docks.tabsIn(space)[0];
+      win.gBrowser.selectedTab = pinTab;
+      await wait(() => pinTab.linkedPanel && pinTab.linkedBrowser.contentTitle == "Remote pin", "the Pin to load");
+      win.gBrowser.selectedTab = dockTab;
+      await wait(() => dockTab.linkedPanel && dockTab.linkedBrowser.contentTitle == "Remote dock", "the Dock tab to load");
+      await applyRemote(syncRecord("remote-pin"), syncRecord("remote-dock"));
+      check(!storedPins().length && !storedDock(space).length, "the tombstones did not apply");
+      for (let w of [win, other]) {
+        await wait(() => !w.gBrowser.tabs.some(t => ["Remote pin", "Remote dock"].includes(t.label)), "their tabs to close");
+        await pinsMatch(w);
+        await docksMatch(w);
+        await listMatchesGBrowser(w);
+      }
+    } finally {
+      await closeWindow(other);
+      await resetPins();
+      await resetDocks();
+    }
+    """)
+
+
+@test
+def dock_folders_look_as_gray_tab_groups_and_are_made_by_holding_a_tab(b):
+    start, end = b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    for (let title of ["Hold A", "Hold B", "Hold C", "Hold D"]) {
+      shell.docks.dockTab(await openPage(title));
+    }
+    await docksMatch();
+    return [middle(dockRowFor(byLabel("Hold C"))), middle(dockRowFor(byLabel("Hold A")))];
+    """)
+    # Passing over a Dock tab does not arm it: the drop moves the tab.
+    b.pointer(start, "down", (start[0], start[1] - 10), end, "up")
+    start, end = b.js("""
+    await wait(() => !dock().dragging, "the drag to end");
+    await docksMatch();
+    check(!storedDock().some(item => item.children), `a quick drop made a folder: ${dockShape()}`);
+    check(dockShape() != "Hold A Hold B Hold C Hold D", `a quick drop did not move the tab: ${dockShape()}`);
+    return [middle(dockRowFor(byLabel("Hold C"))), middle(dockRowFor(byLabel("Hold A")))];
+    """)
+    # Held over A's middle: A arms, then the drop makes a folder of the two.
+    x, y = start
+    hold = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+    hold.pointer_move(round(x), round(y)).pointer_down()
+    hold.pointer_move(round(x), round(y + 10), duration=50).pointer_move(round(end[0]), round(end[1]), duration=50)
+    hold.perform()
+    try:
+        b.js("""
+        let a = () => dockRowFor(byLabel("Hold A"));
+        await wait(() => a()?.getAttribute("hold") == "", "A to be held over");
+        // No copy shows where a drop would land.
+        check(!dock().renderRoot.querySelector("[preview]"), "a copy shows while holding");
+        await wait(() => a().getAttribute("hold") == "armed", "A to arm");
+        check(a().getAttribute("hold-hint") == "Create folder", a().getAttribute("hold-hint"));
+        check(win.getComputedStyle(a().querySelector(".close")).visibility == "hidden", "the close button shows on an armed tab");
+        """)
+        drop = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+        drop.pointer_up()
+        drop.perform()
+    finally:
+        b.m.actions.release()
+    start, end = b.js("""
+    await wait(() => dockShape() == "New folder 1(Hold A,Hold C) Hold B Hold D", dockShape());
+    check(!dock().renderRoot.querySelector("[hold]") && !dock().dragging, "the drag did not end");
+    await docksMatch();
+    let box = dock().folders[0];
+    check(box.hasAttribute("fresh"), "the new folder does not pop in");
+    // B held over C, in the folder, joins it, last.
+    return [middle(dockRowFor(byLabel("Hold B"))), middle(dockRowFor(byLabel("Hold C")))];
+    """)
+    b.pointer(start, "down", (start[0], start[1] - 10), end, 700, "up")
+    start, end = b.js("""
+    await wait(() => dockShape() == "New folder 1(Hold A,Hold C,Hold B) Hold D", dockShape());
+    await docksMatch();
+    // Tabs in one folder do not arm each other: the drop only moves (a
+    // little above B's middle: before B, in the folder still).
+    let [bx, by] = middle(dockRowFor(byLabel("Hold B")));
+    return [middle(dockRowFor(byLabel("Hold A"))), [bx, by - 4]];
+    """)
+    b.pointer(start, "down", (start[0], start[1] + 10), end, 700, "up")
+    start, end = b.js("""
+    await wait(() => !dock().dragging, "the drag to end");
+    await docksMatch();
+    check(dockShape() == "New folder 1(Hold C,Hold A,Hold B) Hold D", dockShape());
+    // Another new folder takes the next number no folder has.
+    shell.docks.dockTab(await openPage("Hold E"));
+    await docksMatch();
+    return [middle(dockRowFor(byLabel("Hold E"))), middle(dockRowFor(byLabel("Hold D")))];
+    """)
+    b.pointer(start, "down", (start[0], start[1] - 10), end, 700, "up")
+    # Away from the Dock, so that no box is under the pointer.
+    b.pointer((start[0] + 600, start[1]))
+    b.js("""
+    await wait(() => dockShape().endsWith(" New folder 2(Hold D,Hold E)"), dockShape());
+    await docksMatch();
+    // The box is a gray tab group's: the same box, header and body.
+    let tab = await openPage("Hold group");
+    let group = win.gBrowser.addTabGroup([tab], { color: "gray", label: "Gray" });
+    await rows();
+    let theirs = headerFor(group).closest(".group");
+    let ours = dock().folders[0];
+    let style = el => win.getComputedStyle(el);
+    for (let key of ["backgroundColor", "boxShadow", "borderTopLeftRadius", "paddingTop", "paddingLeft", "marginTop", "marginBottom"]) {
+      check(style(ours)[key] == style(theirs)[key], `${key}: ${style(ours)[key]}, a gray group's ${style(theirs)[key]}`);
+    }
+    let pick = (box, sel) => box.querySelector(sel);
+    for (let [sel, key] of [[".group-head", "height"], [".group-toggle", "fontWeight"], [".group-toggle", "height"], [".dot", "backgroundColor"], [".group-body", "paddingInlineStart"]]) {
+      check(style(pick(ours, sel))[key] == style(pick(theirs, sel))[key], `${sel} ${key}: ${style(pick(ours, sel))[key]}, a gray group's ${style(pick(theirs, sel))[key]}`);
+    }
+    // The chevron right after the name, turned while closed.
+    let label = pick(ours, ".group-toggle .label").getBoundingClientRect();
+    let chevron = pick(ours, ".chevron").getBoundingClientRect();
+    check(chevron.left - label.right < 12, `the chevron is ${chevron.left - label.right}px after the name`);
+    check(style(pick(ours, ".chevron")).transform == "none", style(pick(ours, ".chevron")).transform);
+    folderHead().click();
+    await wait(() => ours.hasAttribute("collapsed"), "the folder to close");
+    await wait(() => style(pick(ours, ".chevron")).transform != "none", "the chevron to turn");
+    folderHead().click();
+    await wait(() => !ours.hasAttribute("collapsed"), "the folder to open");
+    // The header's × button, always shown, deletes the folder with its
+    // tabs; the loaded ones stay as plain tabs.
+    let close = pick(dock().folders[1], ".group-head .close");
+    check(close.getAttribute("aria-label") == "Delete folder and its tabs" && close.title == "Delete folder and its tabs", close.outerHTML);
+    check(style(close).opacity == "1", `the × button's opacity is ${style(close).opacity}`);
+    close.click();
+    await wait(() => dockShape() == "New folder 1(Hold C,Hold A,Hold B)", dockShape());
+    await docksMatch();
+    check(byLabel("Hold D") && !shell.docks.dockOf(byLabel("Hold D")), "the loaded tab did not stay");
+    win.gBrowser.removeTabGroup(group);
+    await resetDocks();
+    """)
+
+
+@test
+def dock_folders_from_another_device_hold_their_tabs_in_order(b):
+    b.js(SHELL_SYNC + """
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let space = spaces().current;
+    let dockRecord = (id, title, folder) => syncRecord(id, { kind: "dock", url: pageURL(title), title, icon: "", space, folder });
+    try {
+      // An entry before its folder waits for it.
+      await applyRemote(dockRecord("synced-b", "Synced B", "remote-folder"));
+      check(!storedDock(space).length, JSON.stringify(storedDocks()));
+      await applyRemote(
+        syncRecord("remote-folder", { kind: "dock-folder", title: "Synced", space }),
+        dockRecord("synced-a", "Synced A", "remote-folder"),
+        dockRecord("synced-c", "Synced C"),
+        syncRecord(`order-dock-${space}`, { kind: "order", ids: ["synced-c", "remote-folder"] }),
+        syncRecord("order-folder-remote-folder", { kind: "order", ids: ["synced-a", "synced-b"] }),
+      );
+      await wait(() => dockShape(space) == "Synced C Synced(Synced A,Synced B)", dockShape(space));
+      await docksMatch();
+      check(dockLabels() == "Synced C,Synced A,Synced B", dockLabels());
+      check(shell.docks.tabsIn().every(t => !t.linkedPanel), "a synced Dock tab is loaded");
+      // The folder's tombstone leaves its tabs in the Dock.
+      await applyRemote(syncRecord("remote-folder"));
+      await wait(() => dockShape(space) == "Synced C Synced A Synced B", dockShape(space));
+      await docksMatch();
+      // What changes here goes out: the folder, its entries, its order.
+      let tracker = (await syncEngine())._tracker;
+      tracker.start();
+      tracker.clearChangedIDs();
+      let made = shell.docks.newFolder(byLabel("Synced A"));
+      await wait(async () => {
+        let changed = Object.keys(await tracker.getChangedIDs());
+        return [made, "synced-a", `order-folder-${made}`, `order-dock-${space}`].every(id => changed.includes(id));
+      }, "the folder's records to be marked");
+    } finally {
+      await resetDocks();
+    }
+    """)
+
+
+@test
+def a_space_removed_on_another_device_goes_with_its_tabs_and_data(b):
+    b.js(SHELL_SYNC + SPACE_DATA + """
+    await resetSpaces();
+    await onlyBlankTab();
+    let first = spaces().current;
+    let second = (await newSpace()).id;
+    let third = (await newSpace()).id;
+    let doomed = await openPage("Removed elsewhere");
+    let data = await spaceData(third, "Elsewhere");
+    let other = await openWindow();
+    try {
+      other.OrbitoShell.spaces.switchTo(third);
+      await applyRemote(syncRecord(third));
+      check(!OrbitoShellStore.get("spaces").some(s => s.id == third), "the Space is still stored");
+      // Its tabs close; a window that showed it shows the first Space, not
+      // the one before it.
+      await wait(() => !win.gBrowser.tabs.includes(doomed), "its tab to close");
+      for (let w of [win, other]) {
+        await wait(() => spaces(w).current == first, `${spaces(w).current} shown, not the first Space`);
+        check(spaces(w).list.map(s => s.id).join() == `${first},${second}`, "the Space list");
+        await listMatchesGBrowser(w);
+      }
+      // What was kept in it here goes with it.
+      await wait(async () => JSON.parse(await whereData(data)).thread == "gone", "the data to go");
+      check(await whereData(data) == JSON.stringify({ memory: "gone", thread: "gone", artifact: "gone", page: "gone", task: "gone", skill: null }), await whereData(data));
+    } finally {
+      await closeWindow(other);
+      await clearData(data);
+      await resetSpaces();
+    }
+    """)
+
+
+@test
+def choose_what_to_sync_offers_the_pins_spaces_and_docks_on_by_default(b):
+    b.js("""
+    const PREF = "services.sync.engine.orbito";
+    check(Services.prefs.getBoolPref(PREF), "off by default");
+    let dialog = win.openDialog(
+      "chrome://browser/content/preferences/dialogs/syncChooseWhatToSync.xhtml",
+      "", "chrome,dialog", {}
+    );
+    try {
+      await wait(() => dialog.document?.readyState == "complete" && dialog.document.getElementById("syncEngineOrbito")?.label, "the dialog");
+      let box = dialog.document.getElementById("syncEngineOrbito");
+      check(box.label == "Orbito Pins, Spaces and Docks", box.label);
+      check(box.checked, "the item is not checked");
+      // Unchecked and saved, the engine is off.
+      box.click();
+      dialog.document.getElementById("syncChooseOptions").acceptDialog();
+      await wait(() => !Services.prefs.getBoolPref(PREF), "the pref to go off");
+    } finally {
+      if (!dialog.closed) {
+        dialog.close();
+      }
+      Services.prefs.clearUserPref(PREF);
+    }
+    """)
+
+
+@test
+def changes_here_are_tracked_for_sync_but_an_undone_space_removal_is_not(b):
+    b.js(SHELL_SYNC + """
+    await resetPins();
+    await resetSpaces();
+    await onlyBlankTab();
+    let engine = await syncEngine();
+    let tracker = engine._tracker;
+    tracker.start();
+    try {
+      let second = (await newSpace()).id;
+      let tracked = async () => Object.keys(await tracker.getChangedIDs());
+      // A Pin made here is to be sent, with its list's order.
+      tracker.clearChangedIDs();
+      shell.pins.pinTab(await openPage("Tracked pin"));
+      await pinsMatch();
+      let pin = storedPins()[0].id;
+      await wait(async () => (await tracked()).includes(pin), "the Pin to be tracked");
+      check((await tracked()).includes("order-pins"), (await tracked()).join());
+      // Another device's change is not sent back.
+      tracker.clearChangedIDs();
+      await applyRemote(syncRecord(pin, { kind: "pin", url: pageURL("Tracked pin"), title: "Renamed elsewhere", icon: "" }));
+      check(storedPins()[0].title == "Renamed elsewhere", JSON.stringify(storedPins()));
+      await sleep(100);
+      check(!(await tracked()).length, (await tracked()).join());
+      // A tombstone for a Pin changed here still applies; a change to an
+      // item removed here does not bring it back.
+      let now = Date.now() / 1000;
+      engine._modified.set(pin, now);
+      engine._modified.set("removed-here", now);
+      try {
+        check(await engine._reconcile(syncRecord(pin)), "a change here won over a tombstone");
+        check(!(await engine._reconcile(syncRecord("removed-here", { kind: "pin", url: pageURL("Removed here"), title: "Removed here", icon: "" }))),
+          "a change elsewhere brought back an item removed here");
+      } finally {
+        engine._modified.clear();
+      }
+      // A Space removed and taken back within its undo time: nothing to send.
+      spaces().remove(second);
+      await wait(() => spaces().list.length == 1, "the Space to go");
+      spaces().undo();
+      await wait(() => spaces().list.length == 2, "the Space back");
+      await sleep(5300);
+      check(!(await tracked()).length, (await tracked()).join());
+      // Removed for good: its tombstone is.
+      spaces().remove(second);
+      await sleep(5300);
+      await wait(async () => (await tracked()).includes(second), "the removed Space to be tracked");
+    } finally {
+      tracker.stop();
+      tracker.clearChangedIDs();
+      await resetPins();
+      await resetSpaces();
+    }
+    """)
+
+
+@test
 def the_shell_text_focus_rings_and_icons_follow_the_design(b):
     b.js("""
     await onlyBlankTab();
@@ -9842,7 +10442,7 @@ def f6_reaches_the_notification_bars(b):
 
 
 @test
-def the_new_tab_page_shows_the_ask_input_and_recent_visits_only(b):
+def the_new_tab_page_shows_the_greeting_the_ask_input_and_recent_visits_only(b):
     b.js("""
     await onlyBlankTab();
     let hosts = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta"];
@@ -9876,21 +10476,22 @@ def the_new_tab_page_shows_the_ask_input_and_recent_visits_only(b):
         let root = page.shadowRoot;
         let parts = () => [...root.querySelector("main").children].map(el => el.className || el.localName).join();
         // The recent visits come once the history is read.
-        await wait(() => parts() == "mark,ask,nav", parts(), 5000);
+        await wait(() => parts() == "mark,greeting,ask-slot,nav", parts(), 5000);
         check(shown(page.input) && shown(page.recentList), "a part is not shown");
+        check(/^(Good (morning|afternoon|evening)|Hello, night owl)$/.test(root.querySelector(".greeting h1").textContent),
+          root.querySelector(".greeting h1").textContent);
         // The input alone in its box, no send button, with the design's
-        // words, padding and line.
+        // words and padding, and no suggestions before typing.
         let box = root.querySelector(".ask");
-        check(!box.querySelector("button"), "the input has a button");
+        check(!box.querySelector("button") && !page.suggestionList, "the input has a button or suggestions");
         check(page.input.placeholder == "Ask anything or enter an address", page.input.placeholder);
-        let boxStyle = getComputedStyle(box);
-        check(boxStyle.padding == "14px 16px", boxStyle.padding);
+        check(getComputedStyle(root.querySelector(".field")).padding == "0px 18px", getComputedStyle(root.querySelector(".field")).padding);
         // The page focuses the input, which rings the box; without focus
-        // it has the line.
+        // it has none.
         let focused = page.shadowRoot.activeElement == page.input;
+        let boxStyle = getComputedStyle(box);
         page.input.blur();
-        check(boxStyle.boxShadow.startsWith(tokenIn(box, "--orbito-page-line", "color")) && boxStyle.boxShadow.includes(" 1px"),
-          boxStyle.boxShadow);
+        check(!boxStyle.boxShadow.includes("1.5px"), boxStyle.boxShadow);
         if (focused) {
           page.input.focus();
         }
@@ -10035,6 +10636,185 @@ def enter_on_the_new_tab_page_goes_to_an_address_or_searches(b):
         await resetAssistant();
         await onlyBlankTab();
         """)
+
+
+@test
+def typing_on_the_new_tab_page_suggests_what_the_command_bar_would(b):
+    # The input asks the urlbar's providers: an address it knows is
+    # completed past the caret, and the arrow keys and Enter run a
+    # suggestion (an open tab here); Escape closes them.
+    b.js("""
+    await onlyBlankTab();
+    await resetAssistant();
+    useSiteHosts(["alpha"]);
+    Services.prefs.setBoolPref("dom.security.https_first_schemeless", false);
+    // Autofill completes only addresses typed lately.
+    await setHistory([]);
+    await PlacesUtils.history.insert({
+      url: siteURL("alpha", "Alpha"),
+      title: "Alpha",
+      visits: [{ date: new Date(), transition: PlacesUtils.history.TRANSITIONS.TYPED }],
+    });
+    // Autofill goes by frecency, worked out later on its own.
+    await Cc["@mozilla.org/places/frecency-recalculator;1"]
+      .getService(Ci.nsIObserver).wrappedJSObject.recalculateAnyOutdatedFrecencies();
+    await openPage("Zircon open tab");
+    let { page } = await openNewTabPage();
+    win.gBrowser.selectedBrowser.focus();
+    await wait(() => page.shadowRoot.activeElement == page.input, "the input to take focus");
+    """)
+    state = """
+    let page = newTabPageOf(win.gBrowser.selectedTab);
+    let input = page.input;
+    let kinds = () => [...page.suggestionRows].map(row => row.dataset.kind).join();
+    """
+    try:
+        # The known address completes past what is typed, selected; Enter
+        # would go there first.
+        b.keys(*"alp")
+        b.js(state + """
+        await wait(() => page.completed, `a completion: ${input.value} ${kinds()}`, 5000);
+        check(input.value.startsWith("alpha.orbito.test") && input.selectionStart == 3 && input.selectionEnd == input.value.length,
+          `${input.value} ${input.selectionStart}-${input.selectionEnd}`);
+        await wait(() => page.suggestionList, "the suggestions");
+        check(kinds().startsWith("go"), kinds());
+        check(input.getAttribute("aria-expanded") == "true", "not expanded");
+        let hint = page.shadowRoot.querySelector(".complete");
+        check(hint?.textContent.replace(/\s+/g, " ").trim() == "Tab Complete", hint?.textContent);
+        """)
+        # Tab takes it; Escape closes the suggestions and keeps the text.
+        b.keys(Keys.TAB)
+        b.js(state + """
+        await wait(() => !page.completed && input.selectionStart == input.value.length, "the completion taken");
+        check(page.shadowRoot.activeElement == input, "Tab left the input");
+        """)
+        b.keys(Keys.ESCAPE)
+        b.js(state + """
+        await wait(() => !page.suggestionList, "the suggestions to close");
+        check(input.value.startsWith("alpha.orbito.test"), input.value);
+        input.value = "";
+        input.dispatchEvent(new page.ownerDocument.defaultView.InputEvent("input"));
+        """)
+
+        # Backspace takes the completion away, and deleting does not
+        # complete again.
+        b.keys(*"alpha.orb")
+        b.js(state + 'await wait(() => page.completed, `a completion: ${input.value}`, 5000);')
+        b.keys(Keys.BACK_SPACE)
+        b.js(state + """
+        await wait(() => page.suggestionList, "the suggestions");
+        await sleep(300);
+        check(input.value == "alpha.orb" && !page.completed, input.value);
+        input.value = "";
+        input.dispatchEvent(new page.ownerDocument.defaultView.InputEvent("input"));
+        await wait(() => !page.suggestionList, "the suggestions to go with the text");
+        """)
+
+        # A search, the engine named, with asking below it.
+        b.keys(*"zebra stripes")
+        b.js(state + """
+        await wait(() => kinds().startsWith("search"), `the search first: ${kinds()}`, 5000);
+        check(kinds().includes("ask"), kinds());
+        let [first] = page.suggestionRows;
+        check(first.getAttribute("aria-selected") == "true" && first.querySelector(".hint").textContent == "Search", first.textContent);
+        check(first.querySelector(".sub")?.textContent, "no engine");
+        """)
+        # A suggestion picked, then Escape: shown again, the first is picked,
+        # as Enter would run the first with them closed.
+        b.keys(Keys.ARROW_DOWN)
+        b.js(state + 'await wait(() => input.getAttribute("aria-activedescendant") == "suggestion-1", "the second picked");')
+        b.keys(Keys.ESCAPE)
+        b.js(state + 'await wait(() => !page.suggestionList, "the suggestions to close");')
+        b.keys(Keys.ARROW_DOWN)
+        b.js(state + """
+        await wait(() => page.suggestionList, "the suggestions again");
+        check(input.getAttribute("aria-activedescendant") == "suggestion-0", input.getAttribute("aria-activedescendant"));
+        input.value = "";
+        input.dispatchEvent(new page.ownerDocument.defaultView.InputEvent("input"));
+        """)
+
+        # A Command bar command, as its row shows it; Enter does it.
+        b.keys(*"settings")
+        b.js(state + """
+        await wait(() => kinds().includes("command"), `the command: ${kinds()}`, 5000);
+        let row = [...page.suggestionRows].find(row => row.dataset.kind == "command");
+        check(row.querySelector(".title").textContent == "Open settings", row.querySelector(".title").textContent);
+        check(row.querySelector(".hint").textContent == "Command", row.querySelector(".hint").textContent);
+        check(row.querySelector("img").src == "chrome://global/skin/icons/settings.svg", row.querySelector("img").src);
+        win.testIndex = [...page.suggestionRows].indexOf(row);
+        """)
+        index = b.js("return win.testIndex;")
+        b.keys(*([Keys.ARROW_DOWN] * index), Keys.ENTER)
+        b.js("""
+        await wait(() => win.gBrowser.selectedBrowser.currentURI.spec == "about:orbito-settings", "the settings to open");
+        let { page } = await openNewTabPage();
+        win.gBrowser.selectedBrowser.focus();
+        await wait(() => page.shadowRoot.activeElement == page.input, "the input to take focus");
+        """)
+
+        # An open tab: picked with the arrow keys, Enter switches to it.
+        b.keys(*"Zircon")
+        b.js(state + """
+        await wait(() => kinds().includes("switch-tab"), `the open tab: ${kinds()}`, 5000);
+        let rows = [...page.suggestionRows];
+        let index = rows.findIndex(row => row.dataset.kind == "switch-tab");
+        check(rows[index].closest("[role=group]").querySelector(".section").textContent.trim() == "Open tabs", "no Open tabs heading");
+        win.testIndex = index;
+        """)
+        index = b.js("return win.testIndex;")
+        b.keys(*([Keys.ARROW_DOWN] * index))
+        b.js(state + """
+        await wait(() => page.suggestionRows[win.testIndex].getAttribute("aria-selected") == "true", "the open tab picked");
+        check(input.getAttribute("aria-activedescendant") == page.suggestionRows[win.testIndex].id, input.getAttribute("aria-activedescendant"));
+        """)
+        b.keys(Keys.ENTER)
+        b.js("""
+        await wait(() => win.gBrowser.selectedTab.label == "Zircon open tab", "the open tab to be selected");
+        """)
+    finally:
+        b.js("""
+        delete win.testIndex;
+        Services.prefs.clearUserPref("dom.security.https_first_schemeless");
+        await setHistory([]);
+        dropSiteHosts();
+        await onlyBlankTab();
+        """)
+
+
+@test
+def the_new_tab_page_greets_by_the_hour_and_counts_the_day(b):
+    b.js("""
+    await onlyBlankTab();
+    let { OrbitoRecall } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoRecall.sys.mjs");
+    let { OrbitoTasks } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoTasks.sys.mjs");
+    let pagesReadSince = OrbitoRecall.pagesReadSince;
+    let runsSince = OrbitoTasks.runsSince;
+    let asked = [];
+    OrbitoRecall.pagesReadSince = async since => (asked.push(since), 14);
+    OrbitoTasks.runsSince = async since => (asked.push(since), 1);
+    try {
+      let { tab, page } = await openNewTabPage();
+      let line = () => page.shadowRoot.querySelector(".greeting p").textContent;
+      await wait(() => line().endsWith("14 pages read today · 1 scheduled task ran"), line());
+      let today = new Date().setHours(0, 0, 0, 0);
+      check(asked.every(since => since == today), JSON.stringify(asked));
+      check(line().startsWith(new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", weekday: "long" })), line());
+      // None today: the date alone.
+      OrbitoRecall.pagesReadSince = async () => 0;
+      OrbitoTasks.runsSince = async () => 0;
+      win.gBrowser.removeTab(tab);
+      ({ page } = await openNewTabPage());
+      await wait(() => !line().includes("·"), line());
+      // With one Space the corner names none; with more, the window's.
+      let spaces = win.OrbitoShell.spaces;
+      let corner = page.shadowRoot.querySelector(".space")?.textContent.trim() ?? "";
+      check(corner == (spaces.list.length > 1 ? `Space: ${spaces.currentSpace.name}` : ""), corner);
+    } finally {
+      OrbitoRecall.pagesReadSince = pagesReadSince;
+      OrbitoTasks.runsSince = runsSince;
+      await onlyBlankTab();
+    }
+    """)
 
 
 @test
@@ -10363,6 +11143,55 @@ def the_account_section_signs_in_turns_on_and_manages_sync(b):
 
 
 @test
+def the_general_pane_imports_from_another_browser_in_the_shells_tone(b):
+    b.js("""
+    await onlyBlankTab();
+    resetAppearance();
+    let settings = await openOrbitoSettings();
+    let start = settings.getElementById("import-start");
+    let dialog = settings.getElementById("import-dialog");
+    let row = start.closest(".row");
+    check(shown(start) && start.textContent == "Import…", `the import button: ${start.textContent}`);
+    check(row.querySelector(".row-title").textContent == "Import from another browser", row.textContent);
+    check(!dialog.open, "the import dialog is open before asked for");
+    // Firefox's migration wizard, in a page of its own: its Firefox strings
+    // stay out of the settings page's Orbito strings.
+    start.click();
+    let frame = dialog.querySelector("iframe");
+    let wizard = await wait(() => frame.contentDocument?.querySelector("migration-wizard"), "the migration wizard");
+    let deck = () => wizard.shadowRoot?.getElementById("wizard-deck")?.getAttribute("selected-view");
+    // The wizard's actor answers: the browsers to pick from.
+    await wait(() => deck() == "page-selection", "the browser selection");
+    check(dialog.open && shown(frame), "the import dialog is not shown");
+    check(!settings.querySelector('link[href*="migrationWizard.ftl"]'), "Firefox's strings in the settings page");
+    // In the Shell's tone: Orbito's page color and accent, not Firefox's.
+    let primary = settings.createElement("button");
+    primary.className = "primary";
+    settings.getElementById("import").append(primary);
+    let accent = settings.defaultView.getComputedStyle(primary).backgroundColor;
+    primary.remove();
+    let page = settings.defaultView.getComputedStyle(settings.body).backgroundColor;
+    let frameWin = frame.contentWindow;
+    check(frameWin.getComputedStyle(frame.contentDocument.body).backgroundColor == page, "the wizard's page color");
+    let importButton = wizard.shadowRoot.querySelector('[part="import-primary"]');
+    check(frameWin.getComputedStyle(importButton).backgroundColor == accent,
+      `the import button is ${frameWin.getComputedStyle(importButton).backgroundColor}, not ${accent}`);
+    // Its Cancel closes the dialog, and it opens again at the selection.
+    wizard.shadowRoot.querySelector('div[name="page-selection"] .cancel-close').click();
+    await wait(() => !dialog.open, "the dialog closed by Cancel");
+    start.click();
+    await wait(() => dialog.open && deck() == "page-selection", "the dialog again");
+    """)
+    # Escape from inside the wizard closes it too.
+    b.keys(Keys.ESCAPE)
+    b.js("""
+    let settings = win.gBrowser.selectedBrowser.contentDocument;
+    await wait(() => !settings.getElementById("import-dialog").open, "the dialog closed by Escape");
+    await onlyBlankTab();
+    """)
+
+
+@test
 def the_orbito_settings_show_one_pane_at_a_time_from_the_rail(b):
     b.js("""
     await onlyBlankTab();
@@ -10472,6 +11301,7 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
             (Keys.TAB, "accent coral"),
             (Keys.TAB, "language en-US"),
             (Keys.TAB, "Sign in"),
+            (Keys.TAB, "Import…"),
             (Keys.TAB, "sidebar-collapsed"),
             (Keys.TAB, "assistant-auto-open"),
         ]
@@ -10482,8 +11312,8 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
         picked = b.js("return [Services.prefs.getStringPref(THEME_PREF), Services.prefs.getStringPref(ACCENT_PREF)];")
         assert picked == ["light", "coral"], picked
 
-        # Back over the Layout switches, the account and the language to the accent.
-        for _ in range(4):
+        # Back over the Layout switches, the import, the account and the language to the accent.
+        for _ in range(5):
             b.keys((Keys.SHIFT, Keys.TAB))
         assert b.js(state + "return focusedOn;") == "accent coral"
         ring = b.js(state + """
@@ -10955,10 +11785,16 @@ def docks_survive_a_restart_unloaded(b):
     await resetSpaces();
     await onlyBlankTab();
     let blank = win.gBrowser.selectedTab;
-    for (let title of ["Kept dock A", "Kept dock B"]) {
+    for (let title of ["Kept dock A", "Kept dock B", "Kept dock C"]) {
       shell.docks.dockTab(await openPage(title));
     }
+    // B in a folder, closed in this window, and C in it too.
+    let folder = shell.docks.newFolder(byLabel("Kept dock B"));
+    shell.docks.moveTab(byLabel("Kept dock C"), { folder });
+    shell.docks.renameFolder(folder, "Kept folder");
     win.gBrowser.selectedTab = blank;
+    await wait(() => dockShape() == "Kept dock A Kept folder(Kept dock B,Kept dock C)", dockShape());
+    shell.docks.setOpen(folder, false);
     await docksMatch();
     Services.prefs.setBoolPref("browser.sessionstore.resume_session_once", true);
     Services.prefs.savePrefFile(null);
@@ -10975,7 +11811,10 @@ def docks_survive_a_restart_unloaded(b):
         // Session Restore brings the tabs back: still one per entry, in
         // order, none loaded.
         await docksMatch();
-        check(dockLabels() == "Kept dock A,Kept dock B", dockLabels());
+        check(dockLabels() == "Kept dock A,Kept dock B,Kept dock C", dockLabels());
+        // The folder, closed in the window as it was.
+        check(!shell.docks.isOpen(storedDock()[1].id), "the folder is open again");
+        check((await dockRows()).map(r => r.tab.label).join() == "Kept dock A", "a closed folder's tab shows");
         check(shell.docks.tabsIn().every(t => shell.docks.isResting(t)),
           `a Dock tab loaded at start: ${{shell.docks.tabsIn().map(t => [!!t.linkedPanel, t.hasAttribute("pending")])}}`);
         """)

@@ -14,7 +14,9 @@
  * anywhere else) adds a Pin; unpinning it removes the Pin; moving a Pin's tab
  * among the pinned ones reorders the list. Every window hears of the change
  * and follows: a new Pin gets an unloaded tab, a removed Pin's tab is
- * unpinned (into the Space shown) if it was ever loaded, else closed.
+ * unpinned (into the Space shown) if it was ever loaded, else closed; it
+ * closes in any case when another device removed the Pin (Firefox Sync).
+ * What it shares with the Docks is in shell/list-tabs.mjs.
  * Closing a Pin's tab keeps the Pin: an unloaded tab of its URL takes the
  * tab's place.
  *
@@ -30,26 +32,19 @@ import {
   orderPins,
   sameOrder,
 } from "chrome://browser/content/orbito/shell/OrbitoPins.sys.mjs";
+import {
+  isLoaded,
+  ListTabs,
+} from "chrome://browser/content/orbito/shell/list-tabs.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
-);
-
-// Through the shared module loader: one store for every window (a static
-// import would load a copy into each).
-const { OrbitoShellStore, STORE_CHANGED } = ChromeUtils.importESModule(
-  "chrome://browser/content/orbito/shell/OrbitoShellStore.sys.mjs"
-);
-const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
 /** The store key of the Pin list. */
 const LIST_KEY = "pins";
 /** The session tab value holding the id of the Pin a tab is the tab of. */
 const PIN_VALUE = "orbitoPin";
-/** Icons a tab can be given back without a page to load them (setIcon). */
-const LOCAL_ICON = /^(chrome|about|resource|data):/;
 
 const TAB_EVENTS = [
   "TabPinned",
@@ -58,24 +53,10 @@ const TAB_EVENTS = [
   "TabClose",
   "SSTabRestoring",
 ];
-const WINDOW_EVENTS = ["SSWindowStateBusy", "SSWindowStateReady"];
 
-const newId = () => crypto.randomUUID();
-
-/** Whether a tab's page was ever loaded (not a lazy or pending tab). */
-function isLoaded(tab) {
-  return !!tab.linkedPanel && !tab.hasAttribute("pending");
-}
-
-export class Pins {
+export class Pins extends ListTabs {
   /** The profile's Pins, in order: [{id, url, title, icon}]. */
   list = [];
-  /** While Session Restore fills the window, tabs come in any order. */
-  #restoring = false;
-  /** While the window changes its own tabs to follow the list. */
-  #quiet = false;
-  /** Whether the window's tabs have been made yet (not before load). */
-  #ready = false;
   /** The tabs this window made for Pins. */
   #made = new WeakSet();
   /** The tab menu, and the tab it was opened for. */
@@ -87,44 +68,21 @@ export class Pins {
    */
   #menuItems = [];
 
-  // Held weakly by the observer service, so a closed window does not leak.
-  #observer = {
-    observe: (subject, topic, key) => {
-      if (key == LIST_KEY) {
-        this.list = checkPins(OrbitoShellStore.get(LIST_KEY));
-        this.sync();
-      }
-    },
-    QueryInterface: ChromeUtils.generateQI([
-      "nsIObserver",
-      "nsISupportsWeakReference",
-    ]),
-  };
+  constructor() {
+    super({
+      key: LIST_KEY,
+      value: PIN_VALUE,
+      changeEvent: "OrbitoPinsChange",
+      tabEvents: TAB_EVENTS,
+    });
+  }
 
-  init() {
-    this.list = checkPins(OrbitoShellStore.get(LIST_KEY));
-    Services.obs.addObserver(this.#observer, STORE_CHANGED, true);
-    for (let type of TAB_EVENTS) {
-      gBrowser.tabContainer.addEventListener(type, this);
-    }
-    for (let type of WINDOW_EVENTS) {
-      window.addEventListener(type, this);
-    }
-    window.addEventListener(
-      "unload",
-      () => Services.obs.removeObserver(this.#observer, STORE_CHANGED),
-      { once: true }
-    );
-    // Session Restore takes the window on at load (gBrowserInit.onLoad);
-    // tabs can only be given a state after that.
-    window.addEventListener(
-      "load",
-      () => {
-        this.#ready = true;
-        this.sync();
-      },
-      { once: true }
-    );
+  take(stored) {
+    this.list = checkPins(stored);
+  }
+
+  ids() {
+    return this.list.map(pin => pin.id);
   }
 
   /**
@@ -252,11 +210,6 @@ export class Pins {
     }
   }
 
-  /** Whether this window can add Pins: not a private one. */
-  get canAdd() {
-    return !PrivateBrowsingUtils.isWindowPrivate(window);
-  }
-
   /** The window's pinned tabs, in order: the Pins', then its own. */
   get tabs() {
     return gBrowser.tabs.filter(tab => tab.pinned && !tab.closing);
@@ -267,8 +220,12 @@ export class Pins {
     if (!tab.pinned) {
       return null;
     }
-    let id = SessionStore.getCustomTabValue(tab, PIN_VALUE);
+    let id = this.idOf(tab);
     return this.list.find(pin => pin.id == id) ?? null;
+  }
+
+  entryOf(tab) {
+    return this.pinOf(tab);
   }
 
   /**
@@ -279,12 +236,12 @@ export class Pins {
     if (tab.pinned || tab.closing || !this.canAdd) {
       return;
     }
-    let pin = this.#pinFrom(tab);
-    this.#quietly(() => {
+    let pin = this.entryFrom(tab);
+    this.quietly(() => {
       gBrowser.pinTab(tab);
       SessionStore.setCustomTabValue(tab, PIN_VALUE, pin.id);
     });
-    this.#save(addPin(this.list, pin, index));
+    this.save(addPin(this.list, pin, index));
   }
 
   /** Removes the Pin a tab is the tab of, in every window; it stays open. */
@@ -292,108 +249,37 @@ export class Pins {
     gBrowser.unpinTab(tab);
   }
 
-  /**
-   * Brings the window's tabs in line with the list: a tab for each Pin, in
-   * the list's order, before the window's own pinned tabs.
-   */
-  sync() {
-    if (!this.#ready || this.#restoring || this.#quiet || window.closed) {
-      return;
-    }
-    this.#quietly(() => {
-      let ids = new Set(this.list.map(pin => pin.id));
-      let tabs = new Map();
-      for (let tab of this.tabs) {
-        let id = SessionStore.getCustomTabValue(tab, PIN_VALUE);
-        if (!id) {
-          continue;
-        }
-        if (!ids.has(id)) {
-          this.#letGo(tab);
-          continue;
-        }
-        // Two tabs for one Pin (one closed and opened again): the one in
-        // use stays.
-        let other = tabs.get(id);
-        if (other) {
-          let [keep, drop] =
-            this.#use(tab) > this.#use(other) ? [tab, other] : [other, tab];
-          tabs.set(id, keep);
-          this.#letGo(drop);
-        } else {
-          tabs.set(id, tab);
-        }
-      }
-      this.list.forEach((pin, index) => {
-        let tab = tabs.get(pin.id) ?? this.#openTab(pin);
-        gBrowser.moveTabTo(tab, { tabIndex: index });
-      });
-    });
-    window.dispatchEvent(new CustomEvent("OrbitoPinsChange"));
+  wanted() {
+    return this.list.map(entry => ({ entry }));
   }
 
-  #quietly(fn) {
-    let quiet = this.#quiet;
-    this.#quiet = true;
-    try {
-      fn();
-    } finally {
-      this.#quiet = quiet;
-    }
+  isEligible(tab) {
+    return tab.pinned;
   }
 
-  #save(list) {
-    // Every window, this one too, follows from the store's notification.
-    OrbitoShellStore.set(LIST_KEY, list);
-  }
-
-  /** How much a tab is in use: selected, loaded, or not. */
-  #use(tab) {
-    return tab.selected ? 2 : Number(isLoaded(tab));
-  }
-
-  #pinFrom(tab) {
-    let url = tab.linkedBrowser.currentURI.spec;
-    let icon = gBrowser.getIcon(tab) ?? "";
-    return {
-      id: newId(),
-      url,
-      title: tab.label || url,
-      icon: LOCAL_ICON.test(icon) ? icon : "",
-    };
+  /** A Pin's tab goes at its place in the list, before others pinned. */
+  placeTab(tab, index) {
+    gBrowser.moveTabTo(tab, { tabIndex: index });
   }
 
   /** An unloaded pinned tab for a Pin. */
-  #openTab(pin) {
-    let tab = gBrowser.addTrustedTab(pin.url, {
-      createLazyBrowser: true,
-      lazyTabTitle: pin.title,
-      skipAnimation: true,
-    });
-    if (pin.icon) {
-      gBrowser.setIcon(tab, pin.icon);
-    }
-    SessionStore.setCustomTabValue(tab, PIN_VALUE, pin.id);
+  openTab(pin) {
+    let tab = super.openTab(pin);
     gBrowser.pinTab(tab);
     this.#made.add(tab);
     return tab;
   }
 
   /**
-   * A tab whose Pin is gone: unpinned into the Space shown if its page was
-   * loaded, else closed, as it has nothing to keep.
+   * A tab whose Pin is gone is unpinned into the Space shown if its page
+   * was loaded, else closed, as it has nothing to keep.
    */
-  #letGo(tab) {
-    SessionStore.deleteCustomTabValue(tab, PIN_VALUE);
-    if (isLoaded(tab)) {
-      gBrowser.unpinTab(tab);
-    } else {
-      gBrowser.removeTab(tab, {
-        animate: false,
-        skipPermitUnload: true,
-        skipSessionStore: true,
-      });
-    }
+  keeps(tab) {
+    return isLoaded(tab);
+  }
+
+  release(tab) {
+    gBrowser.unpinTab(tab);
   }
 
   /**
@@ -401,20 +287,20 @@ export class Pins {
    * Restore): a Pin's own tab, opened again, or a new Pin.
    */
   #pinned(tab) {
-    if (SessionStore.getCustomTabValue(tab, PIN_VALUE)) {
+    if (this.idOf(tab)) {
       this.sync();
       return;
     }
     if (!this.canAdd) {
       return;
     }
-    let pin = this.#pinFrom(tab);
+    let pin = this.entryFrom(tab);
     let tabs = this.tabs;
     let index = tabs
       .slice(0, tabs.indexOf(tab))
       .filter(t => this.pinOf(t)).length;
     SessionStore.setCustomTabValue(tab, PIN_VALUE, pin.id);
-    this.#save(addPin(this.list, pin, index));
+    this.save(addPin(this.list, pin, index));
   }
 
   /**
@@ -422,27 +308,26 @@ export class Pins {
    * and Session Restore unpinned to put its own tabs first go; pinned tabs
    * from before Pins become Pins.
    */
-  #restored() {
+  restored() {
+    if (!this.ready) {
+      return;
+    }
     for (let tab of gBrowser.tabs) {
-      if (
-        !tab.pinned &&
-        this.#made.has(tab) &&
-        SessionStore.getCustomTabValue(tab, PIN_VALUE)
-      ) {
-        this.#letGo(tab);
+      if (!tab.pinned && this.#made.has(tab) && this.idOf(tab)) {
+        this.letGo(tab);
       }
     }
     if (this.canAdd) {
       let list = this.list;
       for (let tab of this.tabs) {
-        if (!SessionStore.getCustomTabValue(tab, PIN_VALUE)) {
-          let pin = this.#pinFrom(tab);
+        if (!this.idOf(tab)) {
+          let pin = this.entryFrom(tab);
           SessionStore.setCustomTabValue(tab, PIN_VALUE, pin.id);
           list = addPin(list, pin);
         }
       }
       if (list != this.list) {
-        this.#save(list);
+        this.save(list);
         return;
       }
     }
@@ -453,18 +338,18 @@ export class Pins {
     let tab = event.target;
     switch (event.type) {
       case "TabUnpinned": {
-        let id = SessionStore.getCustomTabValue(tab, PIN_VALUE);
+        let id = this.idOf(tab);
         if (!id) {
           break;
         }
         // Session Restore unpins the tabs it finds to put its own first;
         // those are seen to once it is done.
-        if (this.#restoring) {
+        if (this.restore.restoring) {
           break;
         }
         SessionStore.deleteCustomTabValue(tab, PIN_VALUE);
-        if (!this.#quiet) {
-          this.#save(this.list.filter(pin => pin.id != id));
+        if (!this.quiet) {
+          this.save(this.list.filter(pin => pin.id != id));
         }
         break;
       }
@@ -477,9 +362,9 @@ export class Pins {
       case "TabPinned":
         // Session Restore pins a tab it reopens before it gives the tab its
         // values (which Pin it is the tab of): after that.
-        if (!this.#quiet && !this.#restoring && this.#ready) {
+        if (!this.busy) {
           setTimeout(() => {
-            if (tab.pinned && !tab.closing && !this.#restoring) {
+            if (tab.pinned && !tab.closing && !this.restore.restoring) {
               this.#pinned(tab);
             }
           }, 0);
@@ -488,38 +373,18 @@ export class Pins {
       case "TabMove":
         // Moved among the pinned tabs (the Pin grid, Firefox's keys): the
         // list takes the new order.
-        if (!this.#quiet && !this.#restoring && this.pinOf(tab)) {
+        if (!this.quiet && !this.restore.restoring && this.pinOf(tab)) {
           let order = orderPins(
             this.list,
             this.tabs.map(t => this.pinOf(t)?.id).filter(Boolean)
           );
           if (!sameOrder(order, this.list)) {
-            this.#save(order);
+            this.save(order);
           }
         }
         break;
-      case "TabClose":
-        // The Pin stays: an unloaded tab takes the closed one's place.
-        if (!this.#quiet && !this.#restoring && this.pinOf(tab)) {
-          setTimeout(() => this.sync(), 0);
-        }
-        break;
-      // Session Restore marks the window busy around each tab it restores,
-      // the tabs made here for Pins too: those are not waited for.
-      case "SSWindowStateBusy":
-        if (!this.#quiet) {
-          this.#restoring = true;
-        }
-        break;
-      case "SSWindowStateReady":
-        if (this.#quiet) {
-          break;
-        }
-        this.#restoring = false;
-        if (this.#ready) {
-          this.#restored();
-        }
-        break;
+      default:
+        super.handleEvent(event);
     }
   }
 }

@@ -20,48 +20,58 @@
  * tab among its Space's Dock tabs reorders the Dock. Pinning a Dock tab, or
  * putting it in a tab group, undocks it. Every window hears of the change
  * and follows: a new entry gets an unloaded tab, a removed entry's tab stays
- * as a plain tab if it was ever loaded, else closes. Closing a Dock tab
+ * as a plain tab if it was ever loaded, else closes (in any case when another
+ * device removed the entry, by Firefox Sync). Closing a Dock tab
  * keeps its place: an unloaded tab of the entry's URL takes it (Arc's way),
  * so the page goes back to where it was docked and takes no memory until it
  * is selected again.
  *
+ * A Dock can hold folders of entries (shell/OrbitoDocks.sys.mjs), made from
+ * a Dock tab's menu ("Move to new folder") or by holding a dragged Dock tab
+ * over another ("New folder N", with the two), and named, unmade ("Ungroup":
+ * its tabs stay in the Dock) or removed with its entries ("Delete folder")
+ * from the folder's menu. A Dock tab goes in or out of a folder by its menu
+ * or by a drag (shell/orbito-dock.mjs). A Dock's tabs sit in the order of
+ * its entries, those in folders where their folder is. Which folders are
+ * closed is the window's own, kept in its session.
+ *
  * Private windows show and open the Docks but change none: an entry made
- * there would write a private page's address to the profile.
+ * there would write a private page's address to the profile. What the Docks
+ * share with the Pins is in shell/list-tabs.mjs.
  */
 
 import {
-  addPin,
-  orderPins,
-  sameOrder,
-} from "chrome://browser/content/orbito/shell/OrbitoPins.sys.mjs";
-import {
+  addDock,
   checkDocks,
+  dockEntries,
+  dockFolder,
   dockList,
+  findDock,
+  isDockFolder,
   keepSpaces,
+  moveDock,
+  orderDock,
   removeDock,
+  renameDockFolder,
+  sameDock,
+  ungroupDockFolder,
   withDockList,
 } from "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs";
-import { RestoreWatch } from "chrome://browser/content/orbito/shell/spaces.mjs";
+import {
+  isLoaded,
+  ListTabs,
+} from "chrome://browser/content/orbito/shell/list-tabs.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
-);
-
-// Through the shared module loader: one store for every window (a static
-// import would load a copy into each).
-const { OrbitoShellStore, STORE_CHANGED } = ChromeUtils.importESModule(
-  "chrome://browser/content/orbito/shell/OrbitoShellStore.sys.mjs"
-);
-const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
 /** The store key of the Dock lists. */
 const LIST_KEY = "docks";
 /** The session tab value holding the id of the Dock entry a tab is of. */
 const DOCK_VALUE = "orbitoDock";
-/** Icons a tab can be given back without a page to load them (setIcon). */
-const LOCAL_ICON = /^(chrome|about|resource|data):/;
+/** The session window value holding the ids of the folders closed in it. */
+const CLOSED_VALUE = "orbitoDockClosedFolders";
 
 const TAB_EVENTS = [
   "TabSelect",
@@ -70,43 +80,22 @@ const TAB_EVENTS = [
   "TabClose",
   "TabGrouped",
 ];
-const WINDOW_EVENTS = ["SSWindowStateBusy", "SSWindowStateReady"];
-
-const newId = () => crypto.randomUUID();
-
-/** Whether a tab's page was ever loaded (not a lazy or pending tab). */
-function isLoaded(tab) {
-  return !!tab.linkedPanel && !tab.hasAttribute("pending");
-}
-
-export class Docks {
-  /** Every Space's Dock: {[spaceId]: [{id, url, title, icon}]}. */
+export class Docks extends ListTabs {
+  /**
+   * Every Space's Dock: {[spaceId]: [entry | folder]}, an entry
+   * {id, url, title, icon}, a folder {id, title, children: [entry]}.
+   */
   lists = {};
-  /** While Session Restore fills the window, tabs come in any order. */
-  #restore = new RestoreWatch(() => this.sync());
-  /** While the window changes its own tabs to follow the lists. */
-  #quiet = false;
-  /** Whether the window's tabs have been made yet (not before load). */
-  #ready = false;
   /**
    * Dock tabs at rest, as the window made or found them; a tab stays here
    * through a selection undone at once (see TabSelect).
    */
   #asleep = new WeakSet();
-
-  // Held weakly by the observer service, so a closed window does not leak.
-  #observer = {
-    observe: (subject, topic, key) => {
-      if (key == LIST_KEY) {
-        this.lists = checkDocks(OrbitoShellStore.get(LIST_KEY));
-        this.sync();
-      }
-    },
-    QueryInterface: ChromeUtils.generateQI([
-      "nsIObserver",
-      "nsISupportsWeakReference",
-    ]),
-  };
+  /** The ids of the folders closed in this window. */
+  #closed = new Set();
+  /** The folder menu, and the folder it was opened for. */
+  #folderMenu = null;
+  #menuFolder = null;
 
   /**
    * @param {Spaces} spaces The window's Spaces.
@@ -114,35 +103,30 @@ export class Docks {
    *   items.
    */
   constructor(spaces, pins) {
+    super({
+      key: LIST_KEY,
+      value: DOCK_VALUE,
+      changeEvent: "OrbitoDocksChange",
+      tabEvents: TAB_EVENTS,
+    });
     this.spaces = spaces;
     this.pins = pins;
   }
 
+  take(stored) {
+    this.lists = checkDocks(stored);
+  }
+
+  ids() {
+    return Object.values(this.lists).flatMap(list =>
+      dockEntries(list).map(entry => entry.id)
+    );
+  }
+
   init() {
-    this.lists = checkDocks(OrbitoShellStore.get(LIST_KEY));
-    Services.obs.addObserver(this.#observer, STORE_CHANGED, true);
-    for (let type of TAB_EVENTS) {
-      gBrowser.tabContainer.addEventListener(type, this);
-    }
-    for (let type of WINDOW_EVENTS) {
-      window.addEventListener(type, this);
-    }
+    super.init();
     window.addEventListener("OrbitoSpacesChange", this);
-    window.addEventListener(
-      "unload",
-      () => Services.obs.removeObserver(this.#observer, STORE_CHANGED),
-      { once: true }
-    );
-    // Session Restore takes the window on at load (gBrowserInit.onLoad);
-    // tabs can only be given a state after that.
-    window.addEventListener(
-      "load",
-      () => {
-        this.#ready = true;
-        this.sync();
-      },
-      { once: true }
-    );
+    window.addEventListener("load", () => this.#readClosed(), { once: true });
     this.pins.addMenuItem({
       id: "orbito-tab-menu-dock",
       label: t("orbito-dock-add"),
@@ -156,16 +140,44 @@ export class Docks {
       run: tab =>
         this.isResting(tab) ? this.removeResting(tab) : this.undockTab(tab),
     });
+    this.pins.addMenuItem({
+      id: "orbito-tab-menu-dock-new-folder",
+      label: t("orbito-dock-folder-new-with-tab"),
+      shows: tab => this.canAdd && !!this.dockOf(tab) && !this.folderOf(tab),
+      run: tab => {
+        let id = this.newFolder(tab);
+        if (id) {
+          document.getElementById("orbito-dock")?.rename(id);
+        }
+      },
+    });
+    this.pins.addMenu({
+      id: "orbito-tab-menu-dock-move",
+      label: () => t("orbito-dock-folder-move-to"),
+      shows: tab => this.canAdd && this.#otherFolders(tab).length > 0,
+      items: tab =>
+        this.#otherFolders(tab).map(folder => ({
+          value: folder.id,
+          label: this.folderName(folder),
+        })),
+      run: (tab, folder) => this.moveTab(tab, { folder }),
+    });
+    this.pins.addMenuItem({
+      id: "orbito-tab-menu-dock-out-of-folder",
+      label: t("orbito-dock-folder-take-out"),
+      shows: tab => this.canAdd && !!this.folderOf(tab),
+      run: tab => this.takeOutOfFolder(tab),
+    });
   }
 
-  /** Whether this window can change the Docks: not a private one. */
-  get canAdd() {
-    return !PrivateBrowsingUtils.isWindowPrivate(window);
-  }
-
-  /** The Dock list of a Space (the one shown by default). */
+  /** The Dock list of a Space (the one shown by default), folders and all. */
   listOf(space = this.spaces.current) {
     return dockList(this.lists, space);
+  }
+
+  /** A Space's Dock entries, those in folders too, in order. */
+  entriesOf(space = this.spaces.current) {
+    return dockEntries(this.listOf(space));
   }
 
   /** The Dock entry a tab is the tab of, or null. */
@@ -173,12 +185,45 @@ export class Docks {
     if (tab.pinned) {
       return null;
     }
-    let id = SessionStore.getCustomTabValue(tab, DOCK_VALUE);
+    let id = this.idOf(tab);
     if (!id) {
       return null;
     }
     let space = this.spaces.spaceOf(tab);
-    return this.listOf(space).find(entry => entry.id == id) ?? null;
+    return this.entriesOf(space).find(entry => entry.id == id) ?? null;
+  }
+
+  /** The folder a Dock tab is in, or null. */
+  folderOf(tab) {
+    let entry = this.dockOf(tab);
+    let found = entry && findDock(this.lists, entry.id);
+    return found?.folder ? this.folder(found.folder) : null;
+  }
+
+  /** A folder, by its id, in any Space; or null. */
+  folder(id) {
+    let entry = findDock(this.lists, id)?.entry;
+    return isDockFolder(entry) ? entry : null;
+  }
+
+  /** A folder's name as shown: its title, or "Folder" without one. */
+  folderName(folder) {
+    return folder.title || t("orbito-dock-folder-untitled");
+  }
+
+  /** The folders of a Dock tab's Space it is not in. */
+  #otherFolders(tab) {
+    if (!this.dockOf(tab)) {
+      return [];
+    }
+    let own = this.folderOf(tab);
+    return this.listOf(this.spaces.spaceOf(tab)).filter(
+      item => isDockFolder(item) && item != own
+    );
+  }
+
+  entryOf(tab) {
+    return this.dockOf(tab);
   }
 
   /**
@@ -206,29 +251,246 @@ export class Docks {
   }
 
   /**
-   * Adds a tab to its Space's Dock, at index in it (at the end without
-   * one), in every window; it leaves any tab group.
+   * Adds a tab to its Space's Dock, in every window; it leaves any tab
+   * group. Where: {folder, index} as addDock (shell/OrbitoDocks.sys.mjs)
+   * takes it, or an index at the top of the Dock; at the end without one.
    */
-  dockTab(tab, index = Infinity) {
+  dockTab(tab, where = {}) {
     if (!this.canDock(tab)) {
       return;
     }
+    if (typeof where == "number") {
+      where = { index: where };
+    }
     let space = this.spaces.spaceOf(tab);
-    let entry = this.#entryFrom(tab);
-    this.#quietly(() => {
+    let entry = this.entryFrom(tab);
+    this.quietly(() => {
       if (tab.group) {
         gBrowser.ungroupTab(tab);
       }
       SessionStore.setCustomTabValue(tab, DOCK_VALUE, entry.id);
     });
-    let list = this.listOf(space);
-    this.#save(
-      withDockList(
-        this.lists,
-        space,
-        addPin(list, entry, Math.min(index, list.length))
-      )
+    this.save(addDock(this.lists, space, entry, where));
+  }
+
+  /**
+   * Moves a Dock item of the Space shown (a Dock tab, or a folder by its
+   * id) to {folder, index} in its Dock, as moveDock takes it.
+   */
+  moveItem(item, where) {
+    let id = typeof item == "string" ? item : this.dockOf(item)?.id;
+    if (!id || !this.canAdd) {
+      return;
+    }
+    let next = moveDock(this.lists, id, where);
+    if (!sameDock(this.listOf(), dockList(next, this.spaces.current))) {
+      this.save(next);
+    }
+  }
+
+  /** Moves a Dock tab to {folder, index} in its Space's Dock. */
+  moveTab(tab, where) {
+    this.moveItem(tab, where);
+  }
+
+  /** Takes a Dock tab out of its folder: right after it in the Dock. */
+  takeOutOfFolder(tab) {
+    let folder = this.folderOf(tab);
+    if (!folder) {
+      return;
+    }
+    let list = this.listOf(this.spaces.spaceOf(tab));
+    this.moveItem(tab, { index: list.indexOf(folder) + 1 });
+  }
+
+  /**
+   * Makes a folder, open, at a Dock tab's place in its Space's Dock, with
+   * the tab in it; its id, or null. Not for a tab already in a folder.
+   */
+  newFolder(tab) {
+    let entry = this.dockOf(tab);
+    if (!entry || !this.canAdd || this.folderOf(tab)) {
+      return null;
+    }
+    let space = this.spaces.spaceOf(tab);
+    let folder = dockFolder(t("orbito-dock-folder-new-name"));
+    let index = this.listOf(space).indexOf(entry);
+    let next = addDock(this.lists, space, folder, { index });
+    this.save(addDock(next, space, entry, { folder: folder.id }));
+    return folder.id;
+  }
+
+  /**
+   * Puts a Dock tab in a folder with another Dock tab of its Space: in the
+   * other's folder, at its end (opened), or in a new folder of the two
+   * where the other is, the other first, named "New folder N". What it
+   * did: {id, fresh}, the folder's id and whether it is new; or null.
+   */
+  groupTabs(tab, target) {
+    let entry = this.dockOf(tab);
+    let other = this.dockOf(target);
+    let space = this.spaces.spaceOf(target);
+    if (
+      !entry ||
+      !other ||
+      entry == other ||
+      !this.canAdd ||
+      this.spaces.spaceOf(tab) != space
+    ) {
+      return null;
+    }
+    let folder = this.folderOf(target);
+    if (folder) {
+      this.setOpen(folder.id, true);
+      this.moveItem(tab, { folder: folder.id });
+      return { id: folder.id, fresh: false };
+    }
+    // Where the other is, counted without the two.
+    let index = this.listOf(space)
+      .filter(item => item != entry)
+      .indexOf(other);
+    let made = dockFolder(this.#newFolderName(), [other, entry]);
+    this.save(addDock(this.lists, space, made, { index }));
+    return { id: made.id, fresh: true };
+  }
+
+  // The name a folder made by a drag gets: "New folder N", N the lowest no
+  // folder in any Space's Dock is named with.
+  #newFolderName() {
+    let names = new Set(
+      Object.values(this.lists)
+        .flat()
+        .filter(isDockFolder)
+        .map(folder => folder.title)
     );
+    let name = number => t("orbito-dock-folder-new-numbered-name", { number });
+    let number = 1;
+    while (names.has(name(number))) {
+      number++;
+    }
+    return name(number);
+  }
+
+  /** Names a folder anew (a blank name keeps the old one). */
+  renameFolder(id, title) {
+    if (this.canAdd) {
+      let next = renameDockFolder(this.lists, id, title);
+      if (next != this.lists) {
+        this.save(next);
+      }
+    }
+  }
+
+  /** Unmakes a folder: its tabs stay in the Dock where it was. */
+  ungroupFolder(id) {
+    if (this.canAdd && this.folder(id)) {
+      this.save(ungroupDockFolder(this.lists, id));
+    }
+  }
+
+  /**
+   * Removes a folder and its entries: their tabs go as an undocked entry's
+   * do (a loaded one stays, as a plain tab).
+   */
+  deleteFolder(id) {
+    if (this.canAdd && this.folder(id)) {
+      this.save(removeDock(this.lists, id));
+    }
+  }
+
+  /** Whether a folder is open in this window. */
+  isOpen(id) {
+    return !this.#closed.has(id);
+  }
+
+  /** Opens or closes a folder in this window (toggles it without open). */
+  setOpen(id, open = !this.isOpen(id)) {
+    if (open == this.isOpen(id)) {
+      return;
+    }
+    if (open) {
+      this.#closed.delete(id);
+    } else {
+      this.#closed.add(id);
+    }
+    this.#writeClosed();
+    window.dispatchEvent(new CustomEvent("OrbitoDocksChange"));
+  }
+
+  #readClosed() {
+    try {
+      let ids = JSON.parse(
+        SessionStore.getCustomWindowValue(window, CLOSED_VALUE) || "[]"
+      );
+      this.#closed = new Set(Array.isArray(ids) ? ids : []);
+    } catch (e) {
+      this.#closed = new Set();
+    }
+  }
+
+  #writeClosed() {
+    // Only folders there still are.
+    for (let id of this.#closed) {
+      if (!this.folder(id)) {
+        this.#closed.delete(id);
+      }
+    }
+    SessionStore.setCustomWindowValue(
+      window,
+      CLOSED_VALUE,
+      JSON.stringify([...this.#closed])
+    );
+  }
+
+  /**
+   * The folder menu, made on first use: rename, ungroup, delete. Native on
+   * macOS, as other context menus.
+   */
+  get folderMenu() {
+    if (!this.#folderMenu) {
+      let menu = document.createXULElement("menupopup");
+      menu.id = "orbito-dock-folder-menu";
+      for (let [id, label, run] of [
+        [
+          "rename",
+          "orbito-dock-folder-rename",
+          folder => document.getElementById("orbito-dock")?.rename(folder),
+        ],
+        ["ungroup", "orbito-dock-folder-ungroup", folder => this.ungroupFolder(folder)],
+        ["delete", "orbito-dock-folder-delete", folder => this.deleteFolder(folder)],
+      ]) {
+        let item = document.createXULElement("menuitem");
+        item.id = `orbito-dock-folder-menu-${id}`;
+        item.setAttribute("label", t(label));
+        item.addEventListener("command", () => {
+          if (this.folder(this.#menuFolder)) {
+            run(this.#menuFolder);
+          }
+        });
+        menu.append(item);
+      }
+      document.getElementById("mainPopupSet").append(menu);
+      this.#folderMenu = menu;
+    }
+    return this.#folderMenu;
+  }
+
+  /**
+   * Opens the folder menu for a folder: at the pointer for a click, else
+   * under the element standing for it (a key press). None in a private
+   * window, which changes no Dock.
+   */
+  openFolderMenu(id, anchor, event = null) {
+    if (!this.canAdd || !this.folder(id)) {
+      return;
+    }
+    let menu = this.folderMenu;
+    this.#menuFolder = id;
+    if (event?.type == "contextmenu" && (event.screenX || event.screenY)) {
+      menu.openPopupAtScreen(event.screenX, event.screenY, true, event);
+    } else {
+      menu.openPopup(anchor, "after_start", 0, 0, true, false, event);
+    }
   }
 
   /**
@@ -240,8 +502,8 @@ export class Docks {
     if (!entry || !this.canAdd) {
       return;
     }
-    this.#quietly(() => SessionStore.deleteCustomTabValue(tab, DOCK_VALUE));
-    this.#save(removeDock(this.lists, entry.id));
+    this.quietly(() => SessionStore.deleteCustomTabValue(tab, DOCK_VALUE));
+    this.save(removeDock(this.lists, entry.id));
   }
 
   /**
@@ -253,7 +515,7 @@ export class Docks {
     if (!entry || !this.canAdd || !this.isResting(tab)) {
       return;
     }
-    this.#save(removeDock(this.lists, entry.id));
+    this.save(removeDock(this.lists, entry.id));
   }
 
   /** Docks a tab, or undocks it if it is a Dock tab (⌘D). */
@@ -266,80 +528,39 @@ export class Docks {
   }
 
   /**
-   * Brings the window's tabs in line with the lists: a tab for each entry,
-   * in its Space, in order, after the pinned tabs.
+   * Every Space's entries, those of a Space being removed too, which keeps
+   * its tabs until it goes.
    */
-  sync() {
-    if (
-      !this.#ready ||
-      this.#restore.restoring ||
-      this.#quiet ||
-      window.closed
-    ) {
-      return;
+  wanted() {
+    return this.spaces.all.flatMap(space =>
+      this.entriesOf(space.id).map(entry => ({ space: space.id, entry }))
+    );
+  }
+
+  isEligible(tab) {
+    return !tab.pinned;
+  }
+
+  /**
+   * An entry's tab goes in its Space, after the pinned tabs, outside tab
+   * groups, Space by Space in the Docks' order.
+   */
+  placeTab(tab, index, { space }) {
+    if (!isLoaded(tab) && !tab.selected) {
+      this.#asleep.add(tab);
     }
-    this.#quietly(() => {
-      // Those of a Space being removed too, which keeps its tabs until it
-      // goes.
-      let wanted = this.spaces.all.flatMap(space =>
-        this.listOf(space.id).map(entry => ({ space: space.id, entry }))
-      );
-      let ids = new Set(wanted.map(({ entry }) => entry.id));
-      let tabs = new Map();
-      for (let tab of gBrowser.tabs) {
-        let id = SessionStore.getCustomTabValue(tab, DOCK_VALUE);
-        if (!id || tab.closing || tab.pinned) {
-          continue;
-        }
-        if (!ids.has(id)) {
-          this.#letGo(tab);
-          continue;
-        }
-        // Two tabs for one entry (one closed and opened again): the one in
-        // use stays.
-        let other = tabs.get(id);
-        if (other) {
-          let [keep, drop] =
-            this.#use(tab) > this.#use(other) ? [tab, other] : [other, tab];
-          tabs.set(id, keep);
-          this.#letGo(drop);
-        } else {
-          tabs.set(id, tab);
-        }
-      }
-      let start = gBrowser.pinnedTabCount;
-      wanted.forEach(({ space, entry }, index) => {
-        let tab = tabs.get(entry.id) ?? this.#openTab(entry);
-        if (!isLoaded(tab) && !tab.selected) {
-          this.#asleep.add(tab);
-        }
-        if (this.spaces.spaceOf(tab) != space) {
-          this.spaces.moveTab(tab, space);
-        }
-        gBrowser.moveTabTo(tab, {
-          tabIndex: start + index,
-          forceUngrouped: true,
-        });
-      });
+    if (this.spaces.spaceOf(tab) != space) {
+      this.spaces.moveTab(tab, space);
+    }
+    gBrowser.moveTabTo(tab, {
+      tabIndex: gBrowser.pinnedTabCount + index,
+      forceUngrouped: true,
     });
-    window.dispatchEvent(new CustomEvent("OrbitoDocksChange"));
   }
 
-  #quietly(fn) {
-    let quiet = this.#quiet;
-    this.#quiet = true;
-    try {
-      fn();
-    } finally {
-      this.#quiet = quiet;
-    }
-  }
-
-  #save(lists) {
-    // Every window, this one too, follows from the store's notification.
+  save(lists) {
     // The Dock of a Space that is gone goes with it.
-    OrbitoShellStore.set(
-      LIST_KEY,
+    super.save(
       keepSpaces(
         lists,
         this.spaces.all.map(space => space.id)
@@ -347,66 +568,35 @@ export class Docks {
     );
   }
 
-  /** How much a tab is in use: selected, loaded, or not. */
-  #use(tab) {
-    return tab.selected ? 2 : Number(isLoaded(tab));
-  }
-
-  #entryFrom(tab) {
-    let url = tab.linkedBrowser.currentURI.spec;
-    let icon = gBrowser.getIcon(tab) ?? "";
-    return {
-      id: newId(),
-      url,
-      title: tab.label || url,
-      icon: LOCAL_ICON.test(icon) ? icon : "",
-    };
-  }
-
-  /** An unloaded tab for a Dock entry, at its URL. */
-  #openTab(entry) {
-    let tab = gBrowser.addTrustedTab(entry.url, {
-      createLazyBrowser: true,
-      lazyTabTitle: entry.title,
-      skipAnimation: true,
-    });
-    if (entry.icon) {
-      gBrowser.setIcon(tab, entry.icon);
-    }
-    SessionStore.setCustomTabValue(tab, DOCK_VALUE, entry.id);
-    return tab;
+  /** Once Session Restore is done with the window: its closed folders too. */
+  restored() {
+    this.#readClosed();
+    super.restored();
   }
 
   /**
-   * A tab whose entry is gone: kept as a plain tab if its page was loaded,
-   * else closed, as it has nothing to keep.
+   * A tab whose entry is gone stays as a plain tab if its page was loaded,
+   * else closes, as it has nothing to keep.
    */
-  #letGo(tab) {
-    SessionStore.deleteCustomTabValue(tab, DOCK_VALUE);
-    if (!isLoaded(tab) && !tab.selected) {
-      gBrowser.removeTab(tab, {
-        animate: false,
-        skipPermitUnload: true,
-        skipSessionStore: true,
-      });
-    }
+  keeps(tab) {
+    return isLoaded(tab) || tab.selected;
   }
 
   /** A Dock tab that left the Dock by other means: its entry goes. */
   #left(tab) {
-    let id = SessionStore.getCustomTabValue(tab, DOCK_VALUE);
+    let id = this.idOf(tab);
     if (!id) {
       return;
     }
     SessionStore.deleteCustomTabValue(tab, DOCK_VALUE);
     if (this.canAdd) {
-      this.#save(removeDock(this.lists, id));
+      this.save(removeDock(this.lists, id));
     }
   }
 
   handleEvent(event) {
     let tab = event.target;
-    let busy = this.#quiet || this.#restore.restoring || !this.#ready;
+    let busy = this.busy;
     switch (event.type) {
       case "TabSelect":
         // A Dock tab at rest wakes once selected. But Firefox selects one
@@ -439,8 +629,8 @@ export class Docks {
         }
         break;
       case "TabMove":
-        // Moved among its Space's Dock tabs (a drag in the Dock): the Dock
-        // takes the new order.
+        // Moved among its Space's Dock tabs (by gBrowser): the Dock takes
+        // the new order, as far as its folders allow.
         if (!busy && this.canAdd) {
           let entry = this.dockOf(tab);
           if (!entry) {
@@ -448,39 +638,23 @@ export class Docks {
           }
           let space = this.spaces.spaceOf(tab);
           let list = this.listOf(space);
-          let order = orderPins(
+          let order = orderDock(
             list,
             this.tabsIn(space).map(t => this.dockOf(t).id)
           );
-          if (!sameOrder(order, list)) {
-            this.#save(withDockList(this.lists, space, order));
+          if (!sameDock(order, list)) {
+            this.save(withDockList(this.lists, space, order));
           }
-        }
-        break;
-      case "TabClose":
-        // The place stays: an unloaded tab takes the closed one's.
-        if (!busy && this.dockOf(tab)) {
-          setTimeout(() => this.sync(), 0);
         }
         break;
       case "OrbitoSpacesChange":
         // A Space made elsewhere, or gone: its Dock comes or goes.
         this.sync();
         break;
-      // Session Restore marks the window busy around each tab it restores,
-      // the tabs made here for the Docks too: those are not waited for. A
-      // Dock tab reopened (undo close tab) is its entry's tab again: the
-      // sync after it keeps one of the two.
-      case "SSWindowStateBusy":
-        if (!this.#quiet) {
-          this.#restore.busy();
-        }
-        break;
-      case "SSWindowStateReady":
-        if (!this.#quiet) {
-          this.#restore.ready();
-        }
-        break;
+      // A Dock tab reopened (undo close tab) is its entry's tab again: the
+      // sync after Session Restore keeps one of the two.
+      default:
+        super.handleEvent(event);
     }
   }
 }

@@ -85,6 +85,42 @@ orbito-newtab-recent = Recent visits
 orbito-newtab-memory = From memory
 # Opens the timeline of every remembered page.
 orbito-newtab-memory-all = See all
+# The group of suggestions from the browsing history.
+orbito-newtab-history = History
+# The accessible name of the input's list of suggestions.
+orbito-newtab-suggestions = Suggestions
+# The key that takes the address completed in the input.
+orbito-newtab-key-tab = Tab
+# Said next to that key: it takes the completion.
+orbito-newtab-complete = Complete
+# The greeting above the input from 5:00 to 11:59.
+orbito-newtab-greeting-morning = Good morning
+# The greeting from 12:00 to 17:59.
+orbito-newtab-greeting-afternoon = Good afternoon
+# The greeting from 18:00 to 21:59.
+orbito-newtab-greeting-evening = Good evening
+# The greeting from 22:00 to 4:59.
+orbito-newtab-greeting-night = Hello, night owl
+# Under the greeting, after today's date.
+# Variables:
+#   $count (Number): how many pages Browsing recall remembered today
+orbito-newtab-pages-read =
+    { $count ->
+        [one] { $count } page read today
+       *[other] { $count } pages read today
+    }
+# Under the greeting, after the pages read.
+# Variables:
+#   $count (Number): how many scheduled task runs started today
+orbito-newtab-task-runs =
+    { $count ->
+        [one] { $count } scheduled task ran
+       *[other] { $count } scheduled tasks ran
+    }
+# The Space the window shows, at the page's top corner.
+# Variables:
+#   $name (String): the Space's name
+orbito-newtab-space = Space: { $name }
 
 ## Document page (about:orbito-doc)
 

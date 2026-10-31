@@ -13,7 +13,9 @@
  * A window reads a list as it starts, before it draws, so the file is read
  * at once on first use. Writes go to disk shortly after (and at the latest
  * at shutdown); every window hears of them at once, by the
- * "orbito-shell-store-changed" notification, its data being the key.
+ * "orbito-shell-store-changed" notification, its data being the key and
+ * its subject's wrappedJSObject what set() was told of the change: remote
+ * when another device made it (Firefox Sync, OrbitoShellSyncEngine).
  *
  * Load it with ChromeUtils.importESModule, not a static import from a
  * window's module, which would give that window a store of its own.
@@ -55,10 +57,17 @@ export const OrbitoShellStore = {
    *
    * @param {string} key
    * @param {any} value
+   * @param {object} [change] What windows are told of the change:
+   *   {remote: true} when another device made it, and for the Space list
+   *   moveTabs, {[from]: to}, the Spaces gone whose tabs go to another.
    */
-  set(key, value) {
+  set(key, value, change = {}) {
     data()[key] = structuredClone(value);
     file.saveSoon();
-    Services.obs.notifyObservers(null, STORE_CHANGED, key);
+    Services.obs.notifyObservers(
+      { wrappedJSObject: change },
+      STORE_CHANGED,
+      key
+    );
   },
 };

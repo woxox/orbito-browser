@@ -1,0 +1,20 @@
+diff --git a/browser/components/preferences/dialogs/syncChooseWhatToSync.js b/browser/components/preferences/dialogs/syncChooseWhatToSync.js
+index 64aa0d98a0622c01f3dcfff1a04bfcda368354d2..efd835bb94e02b741ff955ef4ae16f1ff27e9ae3 100644
+--- a/browser/components/preferences/dialogs/syncChooseWhatToSync.js
++++ b/browser/components/preferences/dialogs/syncChooseWhatToSync.js
+@@ -21,10 +21,15 @@ Preferences.addAll([
+   { id: "services.sync.engine.passwords", type: "bool" },
+   { id: "services.sync.engine.addresses", type: "bool" },
+   { id: "services.sync.engine.creditcards", type: "bool" },
++  { id: "services.sync.engine.orbito", type: "bool" },
+ ]);
+ 
+ let gSyncChooseWhatToSync = {
+   init() {
++    // Orbito's own string, not in the Firefox ones' localization.
++    document.getElementById("syncEngineOrbito").label = ChromeUtils.importESModule(
++      "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
++    ).t("orbito-sync-engine-shell");
+     this._setupEventListeners();
+     this._adjustForPrefs();
+     let options = window.arguments[0];

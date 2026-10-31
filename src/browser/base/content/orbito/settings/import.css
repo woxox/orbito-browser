@@ -1,0 +1,85 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* import.html: Firefox's migration wizard in the Shell's tone. The wizard
+ * draws from Firefox's in-content variables, which reach into its shadow
+ * tree, so they take Orbito's tokens (tokens.css), as the settings page's
+ * controls do (settings.css). */
+:root {
+  --color-accent-primary: var(--orbito-accent);
+  --color-accent-primary-hover: color-mix(in oklab, var(--orbito-accent) 88%, var(--orbito-page-text));
+  --color-accent-primary-active: color-mix(in oklab, var(--orbito-accent) 76%, var(--orbito-page-text));
+  --text-color-accent-primary-selected: var(--orbito-accent-ink);
+  --focus-outline-color: var(--orbito-accent);
+  --link-color: var(--orbito-accent);
+  --link-color-hover: var(--orbito-accent);
+  --link-color-active: var(--orbito-accent);
+  --text-color: var(--orbito-page-text);
+  --text-color-deemphasized: var(--orbito-page-text-muted);
+  --border-radius-small: 6px;
+  --border-radius-medium: 8px;
+  --panel-background-color: var(--orbito-popover-solid);
+  --panel-text-color: var(--orbito-popover-text);
+  --icon-color-success: var(--orbito-ok);
+  --icon-color-warning: var(--orbito-warn);
+  --icon-color-critical: var(--orbito-danger);
+
+  /* Buttons: one height and radius; secondary is raised paper, primary the
+   * accent fill. */
+  --button-min-height: 32px;
+  --button-padding: 0 12px;
+  --button-border-radius: 8px;
+  --button-font-weight: 600;
+  --button-border: 1px solid var(--button-border-color);
+  --button-border-color: var(--orbito-page-line-strong);
+  --button-border-color-hover: var(--orbito-page-line-strong);
+  --button-border-color-active: var(--orbito-page-line-strong);
+  --button-border-color-disabled: var(--orbito-page-line);
+  --button-background-color: var(--orbito-page);
+  --button-background-color-hover: var(--orbito-page-sunk);
+  --button-background-color-active: var(--orbito-page-line);
+  --button-background-color-disabled: var(--orbito-page-sunk);
+  --button-text-color: var(--orbito-page-text);
+  --button-text-color-hover: var(--orbito-page-text);
+  --button-text-color-active: var(--orbito-page-text);
+  --button-text-color-disabled: var(--orbito-page-faint);
+  --button-border-color-primary: transparent;
+  --button-border-color-primary-hover: transparent;
+  --button-border-color-primary-active: transparent;
+  --button-background-color-primary: var(--orbito-accent);
+  --button-background-color-primary-hover: color-mix(in oklab, var(--orbito-accent) 88%, var(--orbito-page-text));
+  --button-background-color-primary-active: color-mix(in oklab, var(--orbito-accent) 78%, var(--orbito-page-text));
+  --button-text-color-primary: var(--orbito-accent-ink);
+  --button-text-color-primary-hover: var(--orbito-accent-ink);
+  --button-text-color-primary-active: var(--orbito-accent-ink);
+
+  /* The settings page's pane heads. */
+  --embedded-wizard-header-font-size: 17px;
+  --embedded-wizard-header-font-weight: 650;
+  --embedded-wizard-header-margin-block: 0 12px;
+  --embedded-wizard-subheader-font-size: 13px;
+  --embedded-wizard-subheader-font-weight: 600;
+}
+
+:root,
+body {
+  background-color: var(--orbito-page);
+}
+
+body {
+  margin: 0;
+  /* The dialog takes the wizard's size (settings.js). */
+  width: max-content;
+  padding: 24px;
+  color: var(--orbito-page-text);
+  font: 14px/1.5 var(--orbito-font-ui);
+}
+
+migration-wizard {
+  font: inherit;
+}
+
+migration-wizard::part(buttons) {
+  margin-block-start: 24px;
+}

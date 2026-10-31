@@ -4,14 +4,16 @@
 
 @import url("chrome://browser/content/orbito/shell/motion.css");
 
-/* The new tab page: Orbito's mark, the input for a question or an address,
- * the recent visits and the remembered pages, centered on the page. */
+/* The new tab page: Orbito's mark, the greeting, the input for a question or
+ * an address with its suggestions, and the recent visits, in a column
+ * fixed from the top, so that nothing moves when the suggestions open over
+ * what is below the input. */
 :host {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: block;
   box-sizing: border-box;
   min-height: 100%;
-  padding: 40px 24px;
+  padding: clamp(56px, 17vh, 160px) 24px 40px;
   color: var(--orbito-page-text);
 }
 
@@ -19,8 +21,8 @@ main {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  width: min(580px, 100%);
+  width: min(640px, 100%);
+  margin: 0 auto;
 }
 
 input {
@@ -44,6 +46,38 @@ svg {
   }
 }
 
+kbd {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background-color: var(--orbito-page-sunk);
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line-strong);
+  font: 500 11px var(--orbito-font-ui);
+}
+
+/* The Space the window shows, in the page's top corner. */
+.space {
+  position: absolute;
+  top: 20px;
+  inset-inline-end: 24px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  margin: 0;
+  padding-inline: 9px 11px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+  font-size: 12px;
+  color: var(--orbito-page-text-muted);
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--orbito-accent);
+  }
+}
+
 /* Orbito's mark, no tile: large enough to show the slice below the ring in a lighter tone. */
 .mark {
   display: grid;
@@ -51,8 +85,8 @@ svg {
   color: var(--orbito-accent);
 
   svg {
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
   }
 
   .lg-bot {
@@ -60,24 +94,67 @@ svg {
   }
 }
 
-.ask {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background-color: var(--orbito-page-sunk);
-  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+.greeting {
+  margin: 18px 0 26px;
+  text-align: center;
 
-  > svg {
-    color: var(--orbito-accent);
+  h1 {
+    margin: 0 0 4px;
+    font-size: 26px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
   }
+
+  p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+/* The input's place: its box grows down from it, over the page, with the
+ * suggestions. */
+.ask-slot {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 56px;
+}
+
+.ask {
+  position: absolute;
+  inset: 0 0 auto;
+  overflow: hidden;
+  border-radius: 16px;
+  background-color: var(--orbito-popover-solid);
+  box-shadow: var(--orbito-shadow-card);
 
   /* The input's focus ring is the box's. */
   &:focus-within {
-    box-shadow: inset 0 0 0 1.5px var(--orbito-accent);
+    box-shadow:
+      0 0 0 1.5px var(--orbito-accent),
+      var(--orbito-shadow-card);
+  }
+
+  &[open] {
+    box-shadow:
+      0 0 0 1.5px var(--orbito-accent),
+      var(--orbito-shadow-pop);
+  }
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  height: 56px;
+  padding: 0 18px;
+
+  > svg {
+    width: 18px;
+    height: 18px;
+    color: var(--orbito-page-text-muted);
   }
 
   input {
@@ -85,12 +162,174 @@ svg {
     min-width: 0;
     border: 0;
     background: none;
-    font-size: 16px;
+    font-size: 17px;
     outline: none;
 
     &::placeholder {
       color: var(--orbito-page-text-muted);
     }
+
+    &::selection {
+      background-color: color-mix(in oklab, var(--orbito-accent) 26%, transparent);
+      color: inherit;
+    }
+  }
+
+  .complete {
+    flex: none;
+    font-size: 11.5px;
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+.suggestions {
+  border-top: 1px solid var(--orbito-page-line);
+  animation: orbito-fade-in var(--orbito-duration-short) var(--orbito-ease);
+
+  .groups {
+    max-height: min(52vh, 440px);
+    overflow-y: auto;
+    padding: 6px;
+  }
+
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--orbito-page-line);
+    font-size: 11.5px;
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+@keyframes orbito-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  padding: 8px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--orbito-page-text-muted);
+}
+
+.more {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  letter-spacing: normal;
+  color: var(--orbito-accent);
+
+  &:hover {
+    background-color: var(--orbito-accent-soft);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+  }
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 4px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  cursor: default;
+
+  &[aria-selected="true"] {
+    background-color: var(--orbito-accent-soft);
+
+    .hint {
+      color: var(--orbito-accent);
+      font-weight: 600;
+    }
+  }
+
+  .icon {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    color: var(--orbito-page-text-muted);
+
+    img {
+      width: 16px;
+      height: 16px;
+      -moz-context-properties: fill;
+      fill: currentColor;
+    }
+  }
+
+  &[data-kind="ask"] {
+    .icon {
+      color: var(--orbito-accent);
+    }
+
+    .title {
+      font-weight: 600;
+    }
+  }
+
+  .title,
+  .sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .title {
+    min-width: 0;
+  }
+
+  .sub {
+    flex: none;
+    max-width: 40%;
+    font-size: 12.5px;
+    color: var(--orbito-page-text-muted);
+  }
+
+  .hint {
+    flex: none;
+    margin-inline-start: auto;
+    padding-inline-start: 12px;
+    font-size: 12px;
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 30px;
+
+  h2 {
+    margin: 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--orbito-page-text-muted);
   }
 }
 
@@ -107,8 +346,10 @@ svg {
 .site {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 11px 6px 8px;
+  gap: 8px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 12px 0 7px;
   border-radius: 999px;
   background-color: var(--orbito-page-sunk);
   box-shadow: inset 0 0 0 1px var(--orbito-page-line);
@@ -117,7 +358,10 @@ svg {
   text-decoration: none;
 
   &:hover {
-    box-shadow: inset 0 0 0 1px var(--orbito-accent);
+    background-color: var(--orbito-popover-solid);
+    box-shadow:
+      inset 0 0 0 1px var(--orbito-page-line-strong),
+      var(--orbito-shadow-item);
   }
 
   &:focus-visible {
@@ -129,111 +373,11 @@ svg {
     width: 16px;
     height: 16px;
     flex: none;
+    padding: 2px;
+    border-radius: 6px;
+    background-color: var(--orbito-popover-solid);
     /* The default icon of a site without one follows the text. */
     -moz-context-properties: fill;
     fill: currentColor;
-  }
-}
-
-/* "From memory": a card of the remembered pages, as the design's new tab
- * cards. */
-.memory {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 12px 12px 10px;
-  border-radius: 14px;
-  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
-
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 24px;
-    margin: 0 4px 8px;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.02em;
-    color: var(--orbito-page-text-muted);
-  }
-
-  ul {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-}
-
-.more {
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  font-size: 12px;
-  color: var(--orbito-accent);
-
-  &:hover {
-    background-color: var(--orbito-accent-soft);
-  }
-
-  &:focus-visible {
-    outline: var(--orbito-focus-ring);
-  }
-}
-
-.memory-page {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 6px 8px;
-  border-radius: 9px;
-  color: inherit;
-  text-decoration: none;
-
-  &:hover {
-    background-color: var(--orbito-page-sunk);
-  }
-
-  &:focus-visible {
-    outline: var(--orbito-focus-ring);
-  }
-
-  img {
-    width: 16px;
-    height: 16px;
-    flex: none;
-    -moz-context-properties: fill;
-    fill: currentColor;
-  }
-
-  .text {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .title,
-  .sub {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .title {
-    font-size: 13px;
-  }
-
-  .sub {
-    font-size: 11.5px;
-    color: var(--orbito-page-text-muted);
   }
 }

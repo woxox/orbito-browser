@@ -147,7 +147,7 @@ export class Spaces {
   #observer = {
     observe: (subject, topic, key) => {
       if (key == LIST_KEY) {
-        this.#listChanged();
+        this.#listChanged(subject?.wrappedJSObject ?? {});
       }
     },
     QueryInterface: ChromeUtils.generateQI([
@@ -521,11 +521,17 @@ export class Spaces {
   }
 
   /**
-   * Another window (or this one) changed the list: a Space that is gone
-   * takes its tabs with it, and the window shows another if it showed it or
-   * the one being removed, the one before it if it can.
+   * Another window (or this one, or another device) changed the list: a
+   * Space that is gone takes its tabs with it, unless moveTabs gives it
+   * another Space for them, and the window shows another if it showed it or
+   * the one being removed: the one before it if it can, or the first one
+   * when another device removed it.
+   *
+   * @param {object} change What the store was told (OrbitoShellStore.set).
+   * @param {boolean} [change.remote]
+   * @param {{[from: string]: string}} [change.moveTabs]
    */
-  #listChanged() {
+  #listChanged({ remote = false, moveTabs = {} } = {}) {
     let next = checkSpaces(OrbitoShellStore.get(LIST_KEY), newId);
     let gone = removedSpaces(this.all, next);
     let all = this.all;
@@ -533,21 +539,34 @@ export class Spaces {
     // their Space (hidden, not selected) until they close.
     this.#setList(next);
     this.all = all;
+    let going = gBrowser.tabs.filter(
+      tab => !tab.pinned && gone.includes(this.spaceOf(tab))
+    );
+    for (let tab of going) {
+      let to = moveTabs[this.spaceOf(tab)];
+      if (next.some(space => space.id == to)) {
+        SessionStore.setCustomTabValue(tab, SPACE_VALUE, to);
+      }
+    }
     if (!this.list.some(space => space.id == this.current)) {
       let index = all.findIndex(space => space.id == this.current);
       let shown = new Set(this.list.map(space => space.id));
       let before = all
         .slice(0, Math.max(index, 0))
         .findLast(space => shown.has(space.id));
-      this.switchTo((before ?? this.list[0]).id);
+      let to = moveTabs[this.current];
+      if (!shown.has(to)) {
+        to = (!remote && before?.id) || this.list[0].id;
+      }
+      this.switchTo(to);
     }
-    if (gone.length) {
-      gBrowser.removeTabs(
-        gBrowser.tabs.filter(
-          tab => !tab.pinned && gone.includes(this.spaceOf(tab))
-        ),
-        { animate: false, skipPermitUnload: true, skipSessionStore: true }
-      );
+    going = going.filter(tab => gone.includes(this.spaceOf(tab)));
+    if (going.length) {
+      gBrowser.removeTabs(going, {
+        animate: false,
+        skipPermitUnload: true,
+        skipSessionStore: true,
+      });
     }
     // The Space that could be taken back is gone, or back from elsewhere.
     let undone = this.#undo?.space.id;

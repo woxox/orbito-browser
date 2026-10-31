@@ -99,6 +99,27 @@ orbito-dock-list = Dock
 orbito-dock-close-tab-title = Close tab (it keeps its place in the Dock)
 orbito-dock-add = Add to Dock
 orbito-dock-remove = Remove from Dock
+orbito-dock-folder-untitled = Folder
+orbito-dock-folder-new-name = New folder
+# The name a folder made by holding a dragged Dock tab over another gets;
+# $number is the lowest no folder is named with.
+orbito-dock-folder-new-numbered-name = New folder { $number }
+# Shown on a Dock tab another is held over while dragged: dropping puts the
+# two in a folder.
+orbito-dock-hold-new-folder = Create folder
+orbito-dock-hold-add-to-folder = Add to folder
+orbito-dock-folder-new-with-tab = Move to new folder
+orbito-dock-folder-move-to = Move to folder
+orbito-dock-folder-take-out = Remove from folder
+orbito-dock-folder-name = Folder name
+orbito-dock-folder-rename = Rename folder
+orbito-dock-folder-ungroup = Ungroup (keep tabs in the Dock)
+orbito-dock-folder-delete = Delete folder and its tabs
+orbito-dock-folder-title =
+    { $count ->
+        [one] { $name }: { $count } tab
+       *[other] { $name }: { $count } tabs
+    }
 
 ## Side panel
 

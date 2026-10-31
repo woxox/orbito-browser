@@ -663,6 +663,24 @@ export const OrbitoAssistantCore = {
     this._spacesChanged();
   },
 
+  /**
+   * A Space Firefox Sync took out of the list here (another device removed
+   * it, or it was past MAX_SPACES in a merge): what is kept in it goes to
+   * the Space to, or with to null is deleted, as when it is removed here
+   * (see _leaveSpace()). Its removal here, if one was waiting, is over.
+   *
+   * @param {string} space
+   * @param {?string} [to]
+   */
+  async spaceRemovedElsewhere(space, to = null) {
+    let removing = this._removing.get(space);
+    if (removing) {
+      lazy.clearTimeout(removing.timer);
+      this._removing.delete(space);
+    }
+    await this._leaveSpace(space, to);
+  },
+
   _spacesChanged() {
     Services.obs.notifyObservers(null, lazy.STORE_CHANGED, SPACES_KEY);
   },

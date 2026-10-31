@@ -1,0 +1,14 @@
+diff --git a/browser/components/migration/ChromeMigrationUtils.sys.mjs b/browser/components/migration/ChromeMigrationUtils.sys.mjs
+index 6725827d700c07c01abd39303903c4bd3ea025f3..58a81e10b814d17b4a710b99a48cbcd0b840999b 100644
+--- a/browser/components/migration/ChromeMigrationUtils.sys.mjs
++++ b/browser/components/migration/ChromeMigrationUtils.sys.mjs
+@@ -301,6 +301,9 @@ export var ChromeMigrationUtils = {
+         ],
+         Opera: [["ULibDir", "Application Support", "com.operasoftware.Opera"]],
+         Vivaldi: [["ULibDir", "Application Support", "Vivaldi"]],
++        // Orbito's migrators (OrbitoMigrators.sys.mjs).
++        Arc: [["ULibDir", "Application Support", "Arc", "User Data"]],
++        Dia: [["ULibDir", "Application Support", "Dia", "User Data"]],
+       },
+       linux: {
+         Brave: [["Home", ".config", "BraveSoftware", "Brave-Browser"]],

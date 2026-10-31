@@ -1009,6 +1009,28 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+/* The import dialog: a card over a scrim, as big as the wizard's page
+ * (import.html, which settings.js sizes). */
+#import-dialog {
+  padding: 0;
+  border: none;
+  border-radius: var(--orbito-radius-card);
+  background: var(--orbito-page);
+  box-shadow: var(--orbito-shadow-pop);
+  overflow: hidden;
+}
+
+#import-dialog::backdrop {
+  background: var(--orbito-scrim);
+}
+
+#import-dialog > iframe {
+  display: block;
+  max-width: calc(100vw - 64px);
+  max-height: calc(100vh - 64px);
+  border: none;
+}
+
 /* Narrow: the rail runs across the top. */
 @container (max-width: 640px) {
   .page {

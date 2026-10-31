@@ -15,7 +15,8 @@ function test(name, fn) {
 // OrbitoSchedule.sys.mjs, OrbitoContextUsage.sys.mjs,
 // OrbitoRecallSearch.sys.mjs), the Shell's Space, Pin and Dock lists
 // (shell/OrbitoSpaces.sys.mjs, shell/OrbitoPins.sys.mjs,
-// shell/OrbitoDocks.sys.mjs) and the tool registry.
+// shell/OrbitoDocks.sys.mjs), their Sync records
+// (shell/OrbitoShellSync.sys.mjs) and the tool registry.
 await (async () => {
   const {
     budgetHistory,
@@ -60,11 +61,14 @@ await (async () => {
   const { addPin, checkPins, movePin, orderPins, removePin, sameOrder } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/shell/OrbitoPins.sys.mjs"
   );
-  const { checkDocks, dockList, findDock, keepSpaces, moveDocks, removeDock, withDockList } = ChromeUtils.importESModule(
+  const { addDock, checkDocks, dockEntries, dockFolder, dockList, findDock, isDockFolder, keepSpaces, moveDock, moveDocks, orderDock, removeDock, renameDockFolder, sameDock, ungroupDockFolder, withDockList } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs"
   );
   const { addSpace, checkSpaces, defaultSpaceName, MAX_SPACES, removedSpaces, removeSpace, renameSpace, resolveSpace, spaceAt, stepSpace, switchDirection } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/shell/OrbitoSpaces.sys.mjs"
+  );
+  const { applyRecords, changedIds, firstMerge, ORDER_PINS, ORDER_SPACES, dockOrderId, folderOrderId, toRecords } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/shell/OrbitoShellSync.sys.mjs"
   );
 
   function assertEquals(actual, expected) {
@@ -1312,7 +1316,7 @@ import pdfplumber
     assertEquals(ids(next.s2), "d,c");
     assertEquals(next.s1, DOCKS.s1);
     assertEquals(Object.keys(withDockList(DOCKS, "s2", [])), ["s1"]);
-    assertEquals(findDock(DOCKS, "c"), { space: "s2", entry: PINS[2] });
+    assertEquals(findDock(DOCKS, "c"), { space: "s2", entry: PINS[2], folder: null });
     assertEquals(findDock(DOCKS, "zz"), null);
     assertEquals(ids(removeDock(DOCKS, "a").s1), "b");
     assertEquals(Object.keys(removeDock(DOCKS, "c")), ["s1"]);
@@ -1334,6 +1338,332 @@ import pdfplumber
     // A Space without a Dock moves nothing.
     assertEquals(moveDocks(docks, "s8", "s1"), docks);
     assertEquals(ids(docks.s2), "c,d");
+  });
+
+  // Dock folders: {id, title, children: [entry]} among a Dock's entries.
+  const folderOf = (id, children, title = id.toUpperCase()) => ({ id, title, children });
+  const shape = list => list.map(item => (isDockFolder(item) ? `${item.id}(${ids(item.children)})` : item.id)).join(" ");
+
+  test("checkDocks keeps folders of entries, empty ones too, and an id once across folders", () => {
+    let stored = {
+      s1: [PINS[0], folderOf("f", [PINS[1], { url: "https://x.test/" }]), { id: "e", title: " Empty ", children: [] }],
+      s2: [folderOf("g", [PINS[1], PINS[2]]), { children: [PINS[2]] }, folderOf("f", [])],
+    };
+    let docks = checkDocks(stored);
+    assertEquals(shape(docks.s1), "a f(b) e()");
+    assertEquals(docks.s1[2].title, "Empty");
+    // b is f's already; a folder without an id, or with one seen, goes.
+    assertEquals(shape(docks.s2), "g(c)");
+    // A folder in a folder is not one: its children are no URL.
+    assertEquals(shape(checkDocks({ s1: [folderOf("f", [folderOf("g", [PINS[0]])])] }).s1), "f()");
+    assertEquals(ids(dockEntries(docks.s1)), "a,b");
+  });
+
+  test("findDock finds folders and the folder of an entry; removeDock takes a folder with its entries", () => {
+    let docks = { s1: [PINS[0], folderOf("f", [PINS[1], PINS[2]])] };
+    assertEquals(findDock(docks, "c"), { space: "s1", entry: PINS[2], folder: "f" });
+    assertEquals(findDock(docks, "f").folder, null);
+    assertEquals(shape(removeDock(docks, "b").s1), "a f(c)");
+    assertEquals(shape(removeDock(docks, "f").s1), "a");
+    assertEquals(shape(docks.s1), "a f(b,c)");
+  });
+
+  test("addDock and moveDock put an item at the top or in a folder, out of where it was", () => {
+    let docks = { s1: [PINS[0], folderOf("f", [PINS[1]])], s2: [PINS[2]] };
+    assertEquals(shape(addDock(docks, "s1", pin("n"), { folder: "f", index: 0 }).s1), "a f(n,b)");
+    assertEquals(shape(addDock(docks, "s1", pin("n")).s1), "a f(b) n");
+    // A folder not there: at the top.
+    assertEquals(shape(addDock(docks, "s1", pin("n"), { folder: "zz", index: 0 }).s1), "n a f(b)");
+    // Into a folder, out of it, and to another Space.
+    assertEquals(shape(moveDock(docks, "a", { folder: "f" }).s1), "f(b,a)");
+    assertEquals(shape(moveDock(docks, "b", { index: 0 }).s1), "b a f()");
+    let moved = moveDock(docks, "c", { space: "s1", folder: "f", index: 0 });
+    assertEquals(shape(moved.s1), "a f(c,b)");
+    assertEquals(moved.s2, undefined);
+    // A folder moves at the top only, with its entries.
+    assertEquals(shape(moveDock(docks, "f", { folder: "f", index: 0 }).s1), "f(b) a");
+    assertEquals(shape(moveDock(docks, "f", { space: "s2" }).s2), "c f(b)");
+    assertEquals(moveDock(docks, "zz", { index: 0 }), docks);
+  });
+
+  test("dockFolder makes a folder to add whole, which takes its entries from where they were", () => {
+    let folder = dockFolder("  Work ", [{ url: "https://w.test/" }, PINS[0]]);
+    assertEquals(typeof folder.id, "string");
+    assertEquals(folder.title, "Work");
+    assertEquals(folder.children.map(e => e.url), ["https://w.test/", PINS[0].url]);
+    assertEquals(folder.children[0].title, "https://w.test/");
+    let docks = addDock({ s1: [PINS[0], PINS[1]] }, "s1", folder, { index: 1 });
+    assertEquals(docks.s1.length, 2);
+    assertEquals(docks.s1[0].id, "b");
+    assertEquals(dockEntries(docks.s1).map(e => e.id).slice(-1), ["a"]);
+    // A folder named in addDock's folder goes at the top all the same.
+    assertEquals(isDockFolder(addDock({}, "s1", folder, { folder: "x" }).s1[0]), true);
+  });
+
+  test("renameDockFolder and ungroupDockFolder", () => {
+    let docks = { s1: [PINS[0], folderOf("f", [PINS[1], PINS[2]])] };
+    assertEquals(renameDockFolder(docks, "f", " Read ").s1[1].title, "Read");
+    assertEquals(renameDockFolder(docks, "f", " "), docks);
+    assertEquals(renameDockFolder(docks, "a", "X"), docks);
+    assertEquals(shape(ungroupDockFolder(docks, "f").s1), "a b c");
+    assertEquals(ungroupDockFolder(docks, "a"), docks);
+  });
+
+  test("orderDock follows a window's tabs as far as folders allow, sameDock compares", () => {
+    let list = [PINS[0], folderOf("f", [PINS[1], PINS[2]]), folderOf("e", [])];
+    assertEquals(shape(orderDock(list, ["a", "c", "b"])), "a f(c,b) e()");
+    // A folder goes where its first entry is; an empty one stays after
+    // what it was after.
+    assertEquals(shape(orderDock(list, ["b", "c", "a"])), "f(b,c) e() a");
+    assertEquals(shape(orderDock(list, ["c", "a", "b"])), "f(c,b) e() a");
+    assertEquals(sameDock(list, orderDock(list, ["a", "b", "c"])), true);
+    assertEquals(sameDock(list, orderDock(list, ["b", "a"])), false);
+    assertEquals(sameDock(list, ungroupDockFolder({ s: list }, "f").s), false);
+  });
+
+  test("moveDocks takes folders along, without an entry of a URL the other Dock has", () => {
+    let same = { ...PINS[0], id: "z" };
+    let docks = { s1: [PINS[0]], s2: [folderOf("f", [same, PINS[1]])] };
+    assertEquals(shape(moveDocks(docks, "s2", "s1").s1), "a f(b)");
+  });
+
+  // Sync records (shell/OrbitoShellSync.sys.mjs): a state is the three
+  // lists as stored, {pins, docks, spaces}.
+  const pin = (id, url = `https://${id}.test/`) => ({ id, url, title: id.toUpperCase(), icon: "" });
+  const space = (id, name = id.toUpperCase()) => ({ id, name });
+  const state = ({ pins = [], docks = {}, spaces = [space("s1")] } = {}) => ({ pins, docks, spaces });
+  const order = (id, ids) => ({ id, kind: "order", ids });
+  const pinRecord = (id, url = `https://${id}.test/`) => ({ id, kind: "pin", url, title: id.toUpperCase(), icon: "" });
+  const dockRecord = (id, spaceId, url = `https://${id}.test/`) => ({ ...pinRecord(id, url), kind: "dock", space: spaceId });
+  const spaceRecord = (id, name = id.toUpperCase()) => ({ id, kind: "space", name });
+  const gone = id => ({ id, deleted: true });
+
+  test("toRecords makes a record per Pin, Dock entry and Space, and one per list's order", () => {
+    let local = state({
+      pins: [pin("a"), { ...pin("b"), icon: "data:image/png;base64,xx" }],
+      docks: { s1: [pin("d")] },
+      spaces: [{ id: "s1", name: "Work", backend: "claude", model: "opus" }, space("s2")],
+    });
+    assertEquals(toRecords(local), {
+      a: { kind: "pin", url: "https://a.test/", title: "A", icon: "" },
+      // A data: icon is too big to send: the page gives it again.
+      b: { kind: "pin", url: "https://b.test/", title: "B", icon: "" },
+      d: { kind: "dock", url: "https://d.test/", title: "D", icon: "", space: "s1" },
+      // Without the Space's backend and model, which stay on the device.
+      s1: { kind: "space", name: "Work" },
+      s2: { kind: "space", name: "S2" },
+      [ORDER_PINS]: { kind: "order", ids: ["a", "b"] },
+      [ORDER_SPACES]: { kind: "order", ids: ["s1", "s2"] },
+      [dockOrderId("s1")]: { kind: "order", ids: ["d"] },
+      [dockOrderId("s2")]: { kind: "order", ids: [] },
+    });
+    // A record id is at most 64 characters.
+    assertEquals(dockOrderId("s1".repeat(18)).length <= 64, true);
+  });
+
+  test("changedIds names the records a change adds, changes or removes", () => {
+    let before = state({ pins: [pin("a"), pin("b")], docks: { s1: [pin("d")] } });
+    let renamed = { ...before, pins: [pin("a"), { ...pin("b"), title: "New" }] };
+    assertEquals(changedIds(before, renamed), ["b"]);
+    let moved = { ...before, pins: [pin("b"), pin("a")] };
+    assertEquals(changedIds(before, moved), [ORDER_PINS]);
+    let removed = { ...before, docks: {} };
+    assertEquals(changedIds(before, removed).sort(), ["d", dockOrderId("s1")].sort());
+    assertEquals(changedIds(before, before), []);
+    // Applying another device's records changes nothing to upload.
+    assertEquals(changedIds(before, renamed, { applying: true }), []);
+  });
+
+  test("two Pins added on two devices at once both stay", () => {
+    let local = state({ pins: [pin("a"), pin("b")] });
+    let { state: next } = applyRecords(local, [pinRecord("c"), order(ORDER_PINS, ["a", "c"])]);
+    assertEquals(next.pins.map(p => p.id), ["a", "c", "b"]);
+  });
+
+  test("a Pin added here while another device reorders stays, at the end", () => {
+    let local = state({ pins: [pin("a"), pin("b"), pin("new")] });
+    let { state: next } = applyRecords(local, [order(ORDER_PINS, ["b", "a"])]);
+    assertEquals(next.pins.map(p => p.id), ["b", "a", "new"]);
+  });
+
+  test("records change, add and remove Pins, keeping a local icon the record lacks", () => {
+    let local = state({ pins: [{ ...pin("a"), icon: "data:image/png;base64,xx" }, pin("b")] });
+    let { state: next } = applyRecords(local, [{ ...pinRecord("a"), title: "Renamed" }, gone("b"), pinRecord("c")]);
+    assertEquals(next.pins, [{ ...pin("a"), title: "Renamed", icon: "data:image/png;base64,xx" }, pin("c")]);
+  });
+
+  test("a tombstone wins over a change to the same item in one batch", () => {
+    let local = state({ pins: [pin("a")] });
+    let { state: next } = applyRecords(local, [gone("a"), { ...pinRecord("a"), title: "Later" }]);
+    assertEquals(next.pins, []);
+  });
+
+  test("Spaces are renamed, added and ordered, keeping their backend here", () => {
+    let local = state({ spaces: [{ id: "s1", name: "One", backend: "claude" }] });
+    let { state: next } = applyRecords(local, [spaceRecord("s1", "Work"), spaceRecord("s2"), order(ORDER_SPACES, ["s2", "s1"])]);
+    assertEquals(next.spaces, [space("s2"), { id: "s1", name: "Work", backend: "claude" }]);
+  });
+
+  test("a Dock entry before its Space is held, then joins it", () => {
+    let local = state();
+    let first = applyRecords(local, [dockRecord("d", "s2")]);
+    assertEquals(first.state.docks, {});
+    let second = applyRecords(first.state, [spaceRecord("s2")], first.held);
+    assertEquals(second.state.docks, { s2: [pin("d")] });
+    assertEquals(second.held, {});
+  });
+
+  test("a held Dock entry goes with its Space's tombstone", () => {
+    let first = applyRecords(state(), [dockRecord("d", "s2")]);
+    let second = applyRecords(first.state, [gone("s2")], first.held);
+    assertEquals(second.held, {});
+    assertEquals(second.state.docks, {});
+  });
+
+  test("a Space's tombstone removes it and its Dock, and says it went", () => {
+    let local = state({ spaces: [space("s1"), space("s2")], docks: { s1: [pin("a")], s2: [pin("b")] } });
+    let result = applyRecords(local, [gone("s2")]);
+    assertEquals(result.state.spaces, [space("s1")]);
+    assertEquals(result.state.docks, { s1: [pin("a")] });
+    assertEquals(result.goneSpaces, ["s2"]);
+  });
+
+  test("a Dock entry moved to another Space, and Dock orders", () => {
+    let local = state({ spaces: [space("s1"), space("s2")], docks: { s1: [pin("a"), pin("b")], s2: [pin("c")] } });
+    let { state: next } = applyRecords(local, [dockRecord("a", "s2"), order(dockOrderId("s2"), ["a", "c"])]);
+    assertEquals(next.docks, { s1: [pin("b")], s2: [pin("a"), pin("c")] });
+  });
+
+  test("first merge keeps both sides, a Pin URL once (the server's id) and same-named Spaces apart", () => {
+    let local = state({
+      spaces: [space("l1", "Work")],
+      pins: [pin("la", "https://same.test/"), pin("lb")],
+      docks: { l1: [pin("ld")] },
+    });
+    let server = [
+      spaceRecord("r1", "Work"),
+      order(ORDER_SPACES, ["r1"]),
+      pinRecord("ra", "https://same.test/"),
+      pinRecord("rc"),
+      order(ORDER_PINS, ["rc", "ra"]),
+      dockRecord("rd", "r1"),
+    ];
+    let { state: next } = firstMerge(local, server);
+    assertEquals(next.spaces, [space("r1", "Work"), space("l1", "Work")]);
+    assertEquals(next.pins.map(p => p.id), ["rc", "ra", "lb"]);
+    assertEquals(next.docks, { r1: [pin("rd")], l1: [pin("ld")] });
+  });
+
+  test("first merge keeps a Dock URL once within a Space only", () => {
+    let local = state({ docks: { s1: [pin("la", "https://same.test/"), pin("lb")] } });
+    let server = [spaceRecord("s1"), dockRecord("ra", "s1", "https://same.test/"), dockRecord("rb", "s1", "https://lb.test/")];
+    let { state: next } = firstMerge(local, server);
+    assertEquals(next.docks.s1.map(e => e.id), ["ra", "rb"]);
+    // Another Space's Dock may have the URL too.
+    local = state({ spaces: [space("l1")], docks: { l1: [pin("la", "https://same.test/")] } });
+    ({ state: next } = firstMerge(local, [spaceRecord("r1"), dockRecord("ra", "r1", "https://same.test/")]));
+    assertEquals(next.docks, { r1: [pin("ra", "https://same.test/")], l1: [pin("la", "https://same.test/")] });
+  });
+
+  test("first merge past MAX_SPACES puts the extra Spaces' Docks in the last one, without a URL twice", () => {
+    let serverSpaces = Array.from({ length: 8 }, (_, i) => `r${i}`);
+    let server = [...serverSpaces.map(id => spaceRecord(id)), order(ORDER_SPACES, serverSpaces)];
+    let local = state({
+      spaces: [space("l1"), space("l2"), space("l3")],
+      docks: {
+        l1: [pin("le", "https://same.test/")],
+        l2: [pin("la", "https://same.test/"), pin("lb")],
+        l3: [pin("lc")],
+      },
+    });
+    let { state: next, overflow, changed } = firstMerge(local, server);
+    assertEquals(next.spaces.length, MAX_SPACES);
+    assertEquals(next.spaces.map(s => s.id), [...serverSpaces, "l1"]);
+    assertEquals(next.docks.l1.map(e => e.id), ["le", "lb", "lc"]);
+    // The extra Spaces go to the server as gone, their Dock entries as moved.
+    for (let id of ["l2", "l3", "la", "lb", "lc"]) {
+      assertEquals(changed.includes(id), true);
+    }
+    assertEquals(next.docks.l2, undefined);
+    assertEquals(overflow, { l2: "l1", l3: "l1" });
+  });
+
+  test("first merge with nothing on the server keeps the local lists", () => {
+    let local = state({ pins: [pin("a")], docks: { s1: [pin("d")] } });
+    assertEquals(firstMerge(local, []).state, local);
+  });
+
+  const folderRecord = (id, spaceId, title = id.toUpperCase()) => ({ id, kind: "dock-folder", title, space: spaceId });
+  const inFolder = (record, folder) => ({ ...record, folder });
+
+  test("toRecords makes a record per Dock folder, its entries naming it, and an order per folder", () => {
+    let local = state({ docks: { s1: [pin("a"), folderOf("f", [pin("b")])] } });
+    let records = toRecords(local);
+    assertEquals(records.f, { kind: "dock-folder", title: "F", space: "s1" });
+    assertEquals(records.b, { kind: "dock", url: "https://b.test/", title: "B", icon: "", space: "s1", folder: "f" });
+    assertEquals(records.a.folder, undefined);
+    assertEquals(records[dockOrderId("s1")].ids, ["a", "f"]);
+    assertEquals(records[folderOrderId("f")], { kind: "order", ids: ["b"] });
+    assertEquals(folderOrderId("f".repeat(36)).length <= 64, true);
+    // Into a folder: the entry, both orders.
+    let moved = state({ docks: { s1: [folderOf("f", [pin("b"), pin("a")])] } });
+    assertEquals(changedIds(local, moved).sort(), ["a", dockOrderId("s1"), folderOrderId("f")].sort());
+  });
+
+  test("Dock folder records: a folder, its entries in it and their order, renamed", () => {
+    let local = state({ docks: { s1: [pin("a")] } });
+    let { state: next } = applyRecords(local, [
+      inFolder(dockRecord("c", "s1"), "f"),
+      inFolder(dockRecord("b", "s1"), "f"),
+      folderRecord("f", "s1"),
+      inFolder(dockRecord("a", "s1"), "f"),
+      order(dockOrderId("s1"), ["f"]),
+      order(folderOrderId("f"), ["a", "b", "c"]),
+    ]);
+    assertEquals(shape(next.docks.s1), "f(a,b,c)");
+    ({ state: next } = applyRecords(next, [folderRecord("f", "s1", "Read"), dockRecord("b", "s1")]));
+    assertEquals(next.docks.s1[0].title, "Read");
+    // Out of the folder: at the end of the Dock.
+    assertEquals(shape(next.docks.s1), "f(a,c) b");
+  });
+
+  test("a Dock entry before its folder is held, then joins it; it goes with the folder's tombstone", () => {
+    let local = state({ docks: { s1: [pin("a")] } });
+    let first = applyRecords(local, [inFolder(dockRecord("a", "s1"), "f")]);
+    assertEquals(first.state.docks, {});
+    assertEquals(Object.keys(first.held), ["a"]);
+    let second = applyRecords(first.state, [folderRecord("f", "s1")], first.held);
+    assertEquals(shape(second.state.docks.s1), "f(a)");
+    assertEquals(second.held, {});
+    let dropped = applyRecords(first.state, [gone("f")], first.held);
+    assertEquals(dropped.held, {});
+  });
+
+  test("a Dock folder's tombstone leaves its entries in the Dock, theirs take them", () => {
+    let local = state({ docks: { s1: [pin("a"), folderOf("f", [pin("b"), pin("c")])] } });
+    assertEquals(shape(applyRecords(local, [gone("f")]).state.docks.s1), "a b c");
+    assertEquals(shape(applyRecords(local, [gone("f"), gone("b"), gone("c")]).state.docks.s1), "a");
+  });
+
+  test("a Dock folder moved to another Space takes its entries", () => {
+    let local = state({ spaces: [space("s1"), space("s2")], docks: { s1: [folderOf("f", [pin("b")])] } });
+    let { state: next } = applyRecords(local, [folderRecord("f", "s2"), inFolder(dockRecord("b", "s2"), "f")]);
+    assertEquals(next.docks.s1, undefined);
+    assertEquals(shape(next.docks.s2), "f(b)");
+  });
+
+  test("first merge keeps a Dock URL once within a Space, in folders too, server's folders first", () => {
+    let local = state({ docks: { s1: [pin("la", "https://same.test/"), folderOf("lf", [pin("lb", "https://same2.test/"), pin("lc")])] } });
+    let server = [
+      spaceRecord("s1"),
+      folderRecord("rf", "s1"),
+      inFolder(dockRecord("ra", "s1", "https://same.test/"), "rf"),
+      dockRecord("rb", "s1", "https://same2.test/"),
+      order(dockOrderId("s1"), ["rf", "rb"]),
+    ];
+    let { state: next, changed } = firstMerge(local, server);
+    assertEquals(shape(next.docks.s1), "rf(ra) rb lf(lc)");
+    assertEquals(changed.includes("lf") && changed.includes(folderOrderId("lf")), true);
   });
 
   test("estimateTokens counts four ASCII characters a token and one for each other", () => {
@@ -3245,6 +3575,309 @@ await (async () => {
 
   test("no calls give no results", async () => {
     assertEquals(await runToolCalls([], concurrent, () => check(false, "ran")), []);
+  });
+})();
+
+// Arc's sidebar as bookmarks (OrbitoMigrators.sys.mjs), and the migrators
+// the import wizard lists besides Firefox's.
+await (async () => {
+  const { arcShellLists, arcSidebarBookmarks } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/OrbitoMigrators.sys.mjs"
+  );
+  const { MigrationUtils } = ChromeUtils.importESModule(
+    "resource:///modules/MigrationUtils.sys.mjs"
+  );
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
+  );
+
+  function assertEquals(actual, expected) {
+    let a = JSON.stringify(actual, null, 2);
+    let e = JSON.stringify(expected, null, 2);
+    if (a != e) {
+      throw new Error(`Expected:\n${e}\nActual:\n${a}`);
+    }
+  }
+
+  // A sidebar as Arc writes it: flat [key, value, ...] lists of items,
+  // Spaces and each profile's Favorites container.
+  const tab = (id, parentID, url, title = "") => [
+    id,
+    { id, parentID, title, childrenIds: [], data: { tab: { savedURL: url, savedTitle: `saved ${id}` } } },
+  ];
+  const box = (id, childrenIds, title = null, data = { list: {} }) => [
+    id,
+    { id, title, childrenIds, data },
+  ];
+  const space = (id, title, profile, pinned) => [
+    id,
+    { id, title, profile, containerIDs: ["pinned", pinned, "unpinned", `${id}-unpinned`] },
+  ];
+  const work = { default: true };
+  const other = { custom: { _0: { directoryBasename: "Profile 1" } } };
+  const sidebar = {
+    sidebar: {
+      containers: [
+        // Arc may write an all but empty container of Spaces before the one in use.
+        { littleBrowser: {} },
+        { spaces: [...space("s0", "", work, "x")], items: ["x", { id: "x", childrenIds: [], data: { itemContainer: {} } }], topAppsContainerIDs: [] },
+        { global: {} },
+        {
+          topAppsContainerIDs: [work, "fav", other, "fav1"],
+          spaces: [
+            ...space("s1", "Work", work, "p1"),
+            ...space("s2", "Life", other, "p2"),
+            ...space("s3", "Empty", work, "p3"),
+          ],
+          items: [
+            ...box("fav", ["f1"], null, { itemContainer: {} }),
+            ...tab("f1", "fav", "https://mail.example/", "Mail"),
+            ...box("fav1", ["f2"], null, { itemContainer: {} }),
+            ...tab("f2", "fav1", "https://other.example/"),
+            ...box("p1", ["t1", "l1", "g1", "a1"], null, { itemContainer: {} }),
+            ...tab("t1", "p1", "https://docs.example/a"),
+            ...box("l1", ["t2", "l2"], "Reading"),
+            ...tab("t2", "l1", "https://blog.example/", "Blog"),
+            ...box("l2", ["t6", "l3"], "Deeper"),
+            ...tab("t6", "l2", "https://deep.example/"),
+            ...box("l3", [], "Nothing yet"),
+            ...box("g1", ["t3"], null, { tabGroup: {} }),
+            ...tab("t3", "g1", "https://grouped.example/"),
+            ...tab("a1", "p1", "arc://boosts"),
+            ...box("p2", ["t4"], null, { itemContainer: {} }),
+            ...tab("t4", "p2", "https://life.example/"),
+            ...box("p3", [], null, { itemContainer: {} }),
+            ...box("s1-unpinned", ["t5"], null, { itemContainer: {} }),
+            ...tab("t5", "s1-unpinned", "https://today.example/"),
+          ],
+        },
+      ],
+    },
+  };
+
+  test("Arc's Favorites and pinned tabs come as a profile's bookmark folders, in Arc's order", () => {
+    assertEquals(arcSidebarBookmarks(sidebar, "Default"), [
+      { title: "Favorites", children: [{ title: "Mail", url: "https://mail.example/" }] },
+      {
+        title: "Work",
+        children: [
+          { title: "saved t1", url: "https://docs.example/a" },
+          {
+            title: "Reading",
+            children: [
+              { title: "Blog", url: "https://blog.example/" },
+              { title: "Deeper", children: [{ title: "saved t6", url: "https://deep.example/" }] },
+            ],
+          },
+          { title: "saved t3", url: "https://grouped.example/" },
+        ],
+      },
+    ]);
+    assertEquals(arcSidebarBookmarks(sidebar, "Profile 1"), [
+      { title: "Favorites", children: [{ title: "saved f2", url: "https://other.example/" }] },
+      { title: "Life", children: [{ title: "saved t4", url: "https://life.example/" }] },
+    ]);
+  });
+
+  // Ids in the order they are made.
+  function ids() {
+    let n = 0;
+    return () => `id${++n}`;
+  }
+
+  test("Arc's Favorites become Pins, its Spaces Spaces, and their pinned tabs and folders their Docks", () => {
+    let lists = arcShellLists(sidebar, "Default", { pins: [], spaces: [{ id: "a", name: "Space 1" }], docks: {} }, ids());
+    assertEquals(lists, {
+      pins: [{ id: "id1", url: "https://mail.example/", title: "Mail", icon: "" }],
+      spaces: [
+        { id: "a", name: "Space 1" },
+        { id: "id2", name: "Work" },
+        { id: "id8", name: "Empty" },
+      ],
+      // A folder in a folder gives its tabs to the outer one; a tab group's
+      // tabs stand on their own.
+      docks: {
+        id2: [
+          { id: "id3", url: "https://docs.example/a", title: "saved t1", icon: "" },
+          {
+            id: "id6",
+            title: "Reading",
+            children: [
+              { id: "id4", url: "https://blog.example/", title: "Blog", icon: "" },
+              { id: "id5", url: "https://deep.example/", title: "saved t6", icon: "" },
+            ],
+          },
+          { id: "id7", url: "https://grouped.example/", title: "saved t3", icon: "" },
+        ],
+      },
+    });
+  });
+
+  test("a Space or Dock folder of the same name takes Arc's, and a URL already pinned or docked is not added again", () => {
+    let blog = { id: "b", url: "https://blog.example/", title: "Blog", icon: "" };
+    let lists = arcShellLists(
+      sidebar,
+      "Default",
+      {
+        pins: [{ id: "p", url: "https://mail.example/", title: "Mail", icon: "" }],
+        spaces: [{ id: "w", name: "Work" }],
+        docks: {
+          w: [
+            { id: "d", url: "https://docs.example/a", title: "Docs", icon: "" },
+            { id: "r", title: "Reading", children: [blog] },
+          ],
+        },
+      },
+      ids()
+    );
+    assertEquals(lists.pins.map(p => p.id), ["p"]);
+    assertEquals(lists.spaces.map(s => s.name), ["Work", "Empty"]);
+    let shape = item => (item.children ? { [item.title]: item.children.map(shape) } : item.url);
+    assertEquals(lists.docks.w.map(shape), [
+      "https://docs.example/a",
+      { Reading: ["https://blog.example/", "https://deep.example/"] },
+      "https://grouped.example/",
+    ]);
+    // All of a folder's tabs docked already: no new folder.
+    let again = arcShellLists(sidebar, "Default", lists, ids());
+    assertEquals(again.docks, lists.docks);
+  });
+
+  test("Spaces past the ninth are left out, and an untitled one gets a new Space's name", () => {
+    let nine = Array.from({ length: 9 }, (_, i) => ({ id: `s${i}`, name: `Space ${i + 1}` }));
+    let full = arcShellLists(sidebar, "Default", { pins: [], spaces: nine, docks: {} }, ids());
+    assertEquals([full.spaces.length, full.docks], [9, {}]);
+    let untitled = structuredClone(sidebar);
+    untitled.sidebar.containers[3].spaces[1].title = "";
+    let lists = arcShellLists(untitled, "Default", { pins: [], spaces: [{ id: "a", name: "Space 1" }], docks: {} }, ids());
+    assertEquals(lists.spaces.map(s => s.name), ["Space 1", "Space 2", "Empty"]);
+  });
+
+  test("a sidebar with nothing for the profile, or none at all, gives no bookmarks", () => {
+    assertEquals(arcSidebarBookmarks(sidebar, "Profile 9"), []);
+    assertEquals(arcSidebarBookmarks(null, "Default"), []);
+    assertEquals(arcSidebarBookmarks({ sidebar: { containers: [{ global: {} }] } }, "Default"), []);
+  });
+
+  test("the wizard lists Arc and Dia on macOS", async () => {
+    let keys = MigrationUtils.availableMigratorKeys;
+    let expected = AppConstants.platform == "macosx";
+    assertEquals([keys.includes("arc"), keys.includes("dia")], [expected, expected]);
+    if (expected) {
+      // Turned on, as the wizard lists only migrators that are.
+      let { ArcProfileMigrator, DiaProfileMigrator } = ChromeUtils.importESModule(
+        "chrome://browser/content/orbito/OrbitoMigrators.sys.mjs"
+      );
+      assertEquals([new ArcProfileMigrator().enabled, new DiaProfileMigrator().enabled], [true, true]);
+    }
+  });
+})();
+
+// The new tab page's suggestions, inline completion and greeting
+// (newtab/OrbitoNewTabSuggest.sys.mjs).
+await (async () => {
+  const { autofilled, greetingId, rowsOf, summaryParts } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs"
+  );
+  const { UrlbarShared } = ChromeUtils.importESModule(
+    "chrome://browser/content/urlbar/UrlbarShared.mjs"
+  );
+  const TYPE = UrlbarShared.RESULT_TYPE;
+
+  function assertEquals(actual, expected) {
+    let a = JSON.stringify(actual, null, 2);
+    let e = JSON.stringify(expected, null, 2);
+    if (a != e) {
+      throw new Error(`Expected:\n${e}\nActual:\n${a}`);
+    }
+  }
+
+  // What a row shows, without the result it stands for.
+  const shown = rows => rows.map(({ result, ...row }) => row);
+
+  test("rowsOf gives each kind of result its row and section", () => {
+    let results = [
+      { type: TYPE.URL, heuristic: true, payload: { url: "https://github.com/" } },
+      { type: TYPE.SEARCH, payload: { engine: "Google", query: "github", suggestion: "github copilot" } },
+      { type: TYPE.DYNAMIC, payload: { dynamicType: "orbitoAsk", query: "github" } },
+      { type: TYPE.TAB_SWITCH, payload: { url: "https://github.com/woxox/orbito/pulls", title: "Pull requests" } },
+      { type: TYPE.URL, payload: { url: "https://www.github.com/orgs/woxox", title: "" } },
+      { type: TYPE.URL, providerName: "OrbitoRecall", payload: { url: "https://github.blog/cache", title: "Caching" } },
+    ];
+    assertEquals(shown(rowsOf(results)), [
+      { kind: "go", group: "", section: "", title: "github.com", sub: "", url: "https://github.com/" },
+      { kind: "search", group: "", section: "", title: "github copilot", sub: "", url: "" },
+      { kind: "ask", group: "", section: "", title: "github", sub: "Ask Orbito", url: "" },
+      { kind: "switch-tab", group: "tabs", section: "Open tabs", title: "Pull requests", sub: "github.com", url: "https://github.com/woxox/orbito/pulls" },
+      { kind: "open", group: "history", section: "History", title: "github.com/orgs/woxox", sub: "github.com", url: "https://www.github.com/orgs/woxox" },
+      { kind: "open", group: "memory", section: "From memory", title: "Caching", sub: "github.blog", url: "https://github.blog/cache" },
+    ]);
+    assertEquals(rowsOf(results).map(row => row.result), results);
+  });
+
+  test("rowsOf shows a Command bar command as its view does", () => {
+    let result = {
+      type: TYPE.DYNAMIC,
+      payload: {
+        dynamicType: "orbitoCommand",
+        command: "settings",
+        viewUpdate: {
+          icon: { attributes: { src: "chrome://global/skin/icons/settings.svg" } },
+          title: { textContent: "Open settings" },
+          action: { textContent: "about:orbito-settings" },
+        },
+      },
+    };
+    assertEquals(shown(rowsOf([result])), [
+      { kind: "command", group: "", section: "", title: "Open settings", sub: "about:orbito-settings", url: "", icon: "chrome://global/skin/icons/settings.svg" },
+    ]);
+  });
+
+  test("rowsOf names the engine of a heuristic search and leaves out what it cannot show", () => {
+    let results = [
+      { type: TYPE.SEARCH, heuristic: true, payload: { engine: "Google", query: "zebra stripes" } },
+      { type: TYPE.DYNAMIC, payload: { dynamicType: "aiChat" } },
+      { type: TYPE.TIP, payload: {} },
+      { type: TYPE.RESTRICT, payload: {} },
+    ];
+    assertEquals(shown(rowsOf(results)), [
+      { kind: "search", group: "", section: "", title: "zebra stripes", sub: "Google", url: "" },
+    ]);
+  });
+
+  test("autofilled completes what is typed with the first result's autofill", () => {
+    let result = { heuristic: true, autofill: { value: "github.com/" }, payload: {} };
+    assertEquals(autofilled("git", result), "github.com/");
+    // What is typed keeps its case.
+    assertEquals(autofilled("GitH", result), "GitHub.com/");
+    assertEquals(autofilled("github.com/", result), null);
+    assertEquals(autofilled("gitlab", result), null);
+    assertEquals(autofilled("git", { heuristic: true, payload: {} }), null);
+    assertEquals(autofilled("git", { autofill: { value: "github.com/" }, payload: {} }), null);
+    assertEquals(autofilled("git", undefined), null);
+  });
+
+  test("greetingId follows the hour", () => {
+    assertEquals([5, 11, 12, 17, 18, 21, 22, 0, 4].map(greetingId), [
+      "orbito-newtab-greeting-morning",
+      "orbito-newtab-greeting-morning",
+      "orbito-newtab-greeting-afternoon",
+      "orbito-newtab-greeting-afternoon",
+      "orbito-newtab-greeting-evening",
+      "orbito-newtab-greeting-evening",
+      "orbito-newtab-greeting-night",
+      "orbito-newtab-greeting-night",
+      "orbito-newtab-greeting-night",
+    ]);
+  });
+
+  test("summaryParts gives the date and only the counts there are", () => {
+    let now = new Date(2026, 9, 31, 14).getTime();
+    let date = new Date(now).toLocaleDateString("en-US", { month: "long", day: "numeric", weekday: "long" });
+    assertEquals(summaryParts({ now, pagesRead: 14, taskRuns: 1 }, "en-US"), [date, "14 pages read today", "1 scheduled task ran"]);
+    assertEquals(summaryParts({ now, pagesRead: 1, taskRuns: 3 }, "en-US"), [date, "1 page read today", "3 scheduled tasks ran"]);
+    assertEquals(summaryParts({ now, pagesRead: 0, taskRuns: 0 }, "en-US"), [date]);
+    assertEquals(summaryParts({ now }, "en-US"), [date]);
   });
 })();
 

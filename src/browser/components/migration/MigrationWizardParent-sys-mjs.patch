@@ -1,0 +1,14 @@
+diff --git a/browser/components/migration/MigrationWizardParent.sys.mjs b/browser/components/migration/MigrationWizardParent.sys.mjs
+index 0a4b1a0191f3cfaec41f6597fa9be4d576145739..b56bf97b7a190c5d2c458918eb040fb770d2f32e 100644
+--- a/browser/components/migration/MigrationWizardParent.sys.mjs
++++ b/browser/components/migration/MigrationWizardParent.sys.mjs
+@@ -706,6 +706,9 @@ export class MigrationWizardParent extends JSWindowActorParent {
+       // by users outside of testing, we don't make our localization community
+       // localize it's display name, and just display the ID instead.
+       displayName = migrator.constructor.displayNameL10nID;
++    } else if (migrator.constructor.displayName) {
++      // Orbito's migrators: a browser's name, not a Firefox string.
++      displayName = migrator.constructor.displayName;
+     } else {
+       displayName = await lazy.gFluentStrings.formatValue(
+         migrator.constructor.displayNameL10nID

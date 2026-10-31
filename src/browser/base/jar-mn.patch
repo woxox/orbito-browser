@@ -1,8 +1,8 @@
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040bfa4b0a6923b49669238191fcee1c4..da5f2a34936327146661285e63e289227f663890 100644
+index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7ac4d2d22 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -5,6 +5,165 @@ browser.jar:
+@@ -5,6 +5,173 @@ browser.jar:
  %  content browser %content/browser/ contentaccessible=yes
  
          content/browser/aboutDialog-appUpdater.js     (content/aboutDialog-appUpdater.js)
@@ -43,11 +43,14 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..da5f2a34936327146661285e63e28922
 +        content/browser/orbito/OrbitoMCPProtocol.sys.mjs (content/orbito/OrbitoMCPProtocol.sys.mjs)
 +        content/browser/orbito/OrbitoMCP.sys.mjs (content/orbito/OrbitoMCP.sys.mjs)
 +        content/browser/orbito/OrbitoPages.sys.mjs (content/orbito/OrbitoPages.sys.mjs)
++        content/browser/orbito/OrbitoMigrators.sys.mjs (content/orbito/OrbitoMigrators.sys.mjs)
 +        content/browser/orbito/settings/settings.html (content/orbito/settings/settings.html)
 +        content/browser/orbito/settings/settings.js (content/orbito/settings/settings.js)
 +        content/browser/orbito/settings/settings.css (content/orbito/settings/settings.css)
 +        content/browser/orbito/settings/firefox-settings.css (content/orbito/settings/firefox-settings.css)
 +        content/browser/orbito/settings/firefox-addons.css (content/orbito/settings/firefox-addons.css)
++        content/browser/orbito/settings/import.html (content/orbito/settings/import.html)
++        content/browser/orbito/settings/import.css (content/orbito/settings/import.css)
 +        content/browser/orbito/tools/search_history.sys.mjs (content/orbito/tools/search_history.sys.mjs)
 +        content/browser/orbito/tools/search_bookmarks.sys.mjs (content/orbito/tools/search_bookmarks.sys.mjs)
 +        content/browser/orbito/tools/search_browsing.sys.mjs (content/orbito/tools/search_browsing.sys.mjs)
@@ -145,6 +148,9 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..da5f2a34936327146661285e63e28922
 +        content/browser/orbito/shell/orbito-logo.mjs (content/orbito/shell/orbito-logo.mjs)
 +        content/browser/orbito/shell/OrbitoDocks.sys.mjs (content/orbito/shell/OrbitoDocks.sys.mjs)
 +        content/browser/orbito/shell/docks.mjs (content/orbito/shell/docks.mjs)
++        content/browser/orbito/shell/list-tabs.mjs (content/orbito/shell/list-tabs.mjs)
++        content/browser/orbito/shell/OrbitoShellSync.sys.mjs (content/orbito/shell/OrbitoShellSync.sys.mjs)
++        content/browser/orbito/shell/OrbitoShellSyncEngine.sys.mjs (content/orbito/shell/OrbitoShellSyncEngine.sys.mjs)
 +        content/browser/orbito/shell/orbito-dock.mjs (content/orbito/shell/orbito-dock.mjs)
 +        content/browser/orbito/shell/orbito-dock.css (content/orbito/shell/orbito-dock.css)
 +        content/browser/orbito/shell/orbito-assistant-panel.mjs (content/orbito/shell/orbito-assistant-panel.mjs)
@@ -155,11 +161,13 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..da5f2a34936327146661285e63e28922
 +        content/browser/orbito/shell/orbito-side-panel.mjs (content/orbito/shell/orbito-side-panel.mjs)
 +        content/browser/orbito/shell/orbito-side-panel.css (content/orbito/shell/orbito-side-panel.css)
 +        content/browser/orbito/shell/motion.css (content/orbito/shell/motion.css)
++        content/browser/orbito/shell/group.css (content/orbito/shell/group.css)
 +        content/browser/orbito/shell/motion.mjs (content/orbito/shell/motion.mjs)
 +        content/browser/orbito/newtab/newtab.html (content/orbito/newtab/newtab.html)
 +        content/browser/orbito/newtab/newtab.css (content/orbito/newtab/newtab.css)
 +        content/browser/orbito/newtab/orbito-new-tab.mjs (content/orbito/newtab/orbito-new-tab.mjs)
 +        content/browser/orbito/newtab/orbito-new-tab.css (content/orbito/newtab/orbito-new-tab.css)
++        content/browser/orbito/newtab/OrbitoNewTabSuggest.sys.mjs (content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs)
 +        content/browser/orbito/OrbitoL10n.sys.mjs (content/orbito/OrbitoL10n.sys.mjs)
 +# One wildcard, not a line per file: Firefox's langpack staging treats a section
 +# whose sources contain /locales/en-US/ as localized and chokes on its content

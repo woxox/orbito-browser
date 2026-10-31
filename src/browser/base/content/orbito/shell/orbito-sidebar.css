@@ -118,9 +118,10 @@
   }
 }
 
+/* A long Dock (orbito-dock.css) leaves the tab list a few rows. */
 orbito-tab-list {
   flex: 1;
-  min-height: 0;
+  min-height: min(120px, 35%);
 }
 
 /* The resize handle: an 8px strip on the edge; a pill grows and takes the
