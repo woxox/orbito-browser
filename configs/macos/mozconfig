@@ -11,6 +11,9 @@ if test "$ORBITO_CROSS_COMPILING"; then
   export MKFSHFS=$ORBITO_MAC_CROSS/hfsplus/newfs_hfs
   export DMG_TOOL=$ORBITO_MAC_CROSS/dmg/dmg
   export HFS_TOOL=$ORBITO_MAC_CROSS/dmg/hfsplus
+  # Dev builds (--disable-release) package as a tar by default; artifact
+  # builds fetch the server's dmg.
+  export MOZ_PKG_FORMAT=DMG
 fi
 
 # Use builds produced by the remote server instead of compiling C++/Rust locally.

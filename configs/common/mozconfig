@@ -45,6 +45,10 @@ else
   # The release tarball defaults to --enable-release, which builds Rust with
   # codegen-units=1 (gkrust alone takes 15+ min single-threaded).
   ac_add_options --disable-release
+  # Keep dev builds' profiles apart from the release app's: application.ini's
+  # Profile puts them under "Orbito Dev" instead of "Orbito" (e.g.
+  # ~/Library/Application Support/Orbito Dev on macOS).
+  export ORBITO_APP_PROFILE="Orbito Dev"
 fi
 
 ac_add_options --with-unsigned-addon-scopes=app,system

@@ -1,0 +1,16 @@
+diff --git a/browser/moz.configure b/browser/moz.configure
+index ef7de8397fa9e2dbdf5256e025a947eadbef779d..36f8072dca4f59573f012e6e1ba801df39413e4f 100644
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -17,6 +17,11 @@ imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
+ imply_option("MOZ_DEVTOOLS", "all")
+ imply_option("BROWSER_CHROME_URL", "chrome://browser/content/browser.xhtml")
+ 
++# Orbito: dev builds set this in the mozconfig to keep their profiles apart
++# from the release app's (MOZ_APP_PROFILE only takes implied values).
++option(env="ORBITO_APP_PROFILE", nargs=1, help="Profile folder name, if not the app's")
++imply_option("MOZ_APP_PROFILE", depends_if("ORBITO_APP_PROFILE")(lambda v: v[0]))
++
+ 
+ with only_when(target_has_linux_kernel & compile_environment):
+     option(env="MOZ_NO_PIE_COMPAT", help="Enable non-PIE wrapper")
