@@ -7,7 +7,11 @@ export MOZ_USER_DIR="${name}"
 export MOZ_BRANDING_DIRECTORY=${brandingDir}
 export MOZ_OFFICIAL_BRANDING_DIRECTORY=${brandingDir}
 
-ac_add_options --with-distribution-id=${appId}
+# Reverse-DNS prefix of the macOS bundle IDs: dev.woxox.orbito for the app,
+# dev.woxox.plugincontainer for its helper. Changing it after a release breaks
+# updates, keychain items and TCC grants, and the passkey entitlement is
+# granted to this App ID.
+ac_add_options --with-distribution-id=dev.woxox
 
 # Uncomment if builds are too resource hungry
 # mk_add_options MOZ_MAKE_FLAGS="-j4"
