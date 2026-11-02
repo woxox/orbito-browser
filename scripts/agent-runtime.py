@@ -179,7 +179,9 @@ def main(args):
     if args == ["all"]:
         targets = list(CLAUDE)
     else:
-        targets = args or [host_target()]
+        # Linux objdirs are named for the GNU triple (obj-x86_64-pc-linux-gnu),
+        # which release builds pass; the runtime goes by Rust's.
+        targets = [t.replace("-pc-linux-gnu", "-unknown-linux-gnu") for t in args] or [host_target()]
     for target in targets:
         if target not in CLAUDE:
             sys.exit(f"Unknown target {target}; one of: {', '.join(CLAUDE)}, all")

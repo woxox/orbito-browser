@@ -14,11 +14,14 @@ AI 에이전트가 들어 있는 브라우저. Firefox(Gecko) 위에 만들었�
 | macOS (Apple silicon) | `Orbito-<버전>-macos-aarch64.dmg` |
 | Windows (x86_64) | `Orbito-<버전>-windows-x86_64-setup.exe` (설치 프로그램) |
 | Windows (x86_64, 포터블) | `Orbito-<버전>-windows-x86_64.zip` |
+| Linux (x86_64) | `Orbito-<버전>-linux-x86_64.tar.xz` |
 
 - macOS 패키지는 Developer ID로 서명하고 Apple 공증을 받았다. Windows 패키지는 서명하지 않아 처음 실행할 때
   SmartScreen 경고가 뜰 수 있다.
 - Windows 설치 프로그램은 시작 메뉴 바로가기와 제거 항목을 만들고, 업데이트를 관리자 확인 없이 적용하는
   서비스를 함께 설치한다. zip은 압축을 푼 폴더에서 바로 실행하며, 업데이트하려면 그 폴더에 쓰기 권한이 있어야 한다.
+- Linux 패키지는 압축을 푼 `orbito/` 폴더의 `orbito`를 실행한다. zip과 같이 업데이트하려면 그 폴더에 쓰기 권한이
+  있어야 한다.
 - 설치한 뒤에는 앱이 새 릴리즈를 확인해 받아 두고, 다시 시작하면 적용한다. 설정의 업데이트 항목에서 직접 확인할
   수도 있다.
 
