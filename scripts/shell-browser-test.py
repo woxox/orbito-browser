@@ -1932,6 +1932,15 @@ def the_command_bar_rows_look_like_the_design(b):
     // The popover's shadow, all of it.
     let shadow = win.getComputedStyle(win.gURLBar.querySelector(".urlbar-background")).boxShadow;
     check(shadow.includes("24px 60px"), shadow);
+    // With no results the view closes, and the card keeps its size.
+    let card = () => win.gURLBar.querySelector(".urlbar-background").getBoundingClientRect();
+    let open = card();
+    win.gURLBar.view.close();
+    await wait(() => !win.gURLBar.hasAttribute("popover-open"), "the results to close");
+    let closed = card();
+    check(commandBarShown() && closed.left == open.left && closed.right == open.right &&
+      closed.top == open.top,
+      `the card from ${open.left} ${open.right} ${open.top} to ${closed.left} ${closed.right} ${closed.top}`);
     closeCommandBar();
     """)
     # Without motion it just shows.
@@ -6724,8 +6733,8 @@ def shortcuts_go_to_the_nth_previous_and_next_space(b):
         b.js(f'await sleep(200); check(spaces().current == "{ids[1]}", "a missing Space was shown");')
         b.keys(space_keys(1))
         b.js(f'await wait(() => spaces().current == "{ids[0]}", "the first Space");')
-        # Next and previous, going round; Firefox's own use of these keys on
-        # macOS (the next tab) does not happen.
+        # Next and previous, stopping at either end; Firefox's own use of
+        # these keys on macOS (the next tab) does not happen.
         b.js("win.gBrowser.selectedBrowser.focus();")
         b.keys(space_keys(arrow=1))
         b.js(f"""
@@ -6737,7 +6746,11 @@ def shortcuts_go_to_the_nth_previous_and_next_space(b):
         check(win.gBrowser.selectedTab == byLabel("Shortcut one"), `selected ${{win.gBrowser.selectedTab.label}}`);
         """)
         b.keys(space_keys(arrow=-1))
-        b.js(f'await wait(() => spaces().current == "{ids[2]}", "round to the last Space");')
+        b.js(f'await sleep(200); check(spaces().current == "{ids[0]}", "went past the first Space");')
+        b.keys(space_keys(3))
+        b.js(f'await wait(() => spaces().current == "{ids[2]}", "the last Space");')
+        b.keys(space_keys(arrow=1))
+        b.js(f'await sleep(200); check(spaces().current == "{ids[2]}", "went past the last Space");')
     finally:
         b.js("await resetSpaces();")
 
@@ -6747,6 +6760,7 @@ def a_sideways_scroll_on_the_sidebar_goes_to_the_next_or_previous_space(b):
     b.js("""
     await resetSpaces();
     await onlyBlankTab();
+    await newSpace();
     await newSpace();
     await newSpace();
     await spaces().switchTo(spaces().list[0].id);
@@ -6771,9 +6785,9 @@ def a_sideways_scroll_on_the_sidebar_goes_to_the_next_or_previous_space(b):
         check(spaces().current == ids[1], "one swipe goes one Space on");
         await swipe(shell.sidebar, -15);
         check(spaces().current == ids[0], "back to the previous Space");
-        // Going round, like the shortcuts.
-        await swipe(list, -15);
-        check(spaces().current == ids[2], "round to the last Space");
+        await swipe(list, 15);
+        await swipe(list, 15);
+        check(spaces().current == ids[2], "two swipes go two Spaces on");
         // Scrolls one after another, without the pause that ends a swipe.
         async function scrolls(target, deltas) {
           for (let deltaX of deltas) {
@@ -6788,7 +6802,15 @@ def a_sideways_scroll_on_the_sidebar_goes_to_the_next_or_previous_space(b):
         let fingers = [4, 10, 20, 30, 30];
         let momentum = [40, 36, 33, 30, 27, 24, 22, 20, 18];
         await scrolls(list, [...fingers, ...momentum]);
-        check(spaces().current == ids[0], "a swipe and its momentum went one Space");
+        check(spaces().current == ids[3], "a swipe and its momentum went one Space");
+        // Not past the last Space, like the shortcuts.
+        await sleep(400);
+        await swipe(list, 15);
+        check(spaces().current == ids[3], "a swipe went past the last Space");
+        await swipe(list, -15);
+        check(spaces().current == ids[2], "back from the last Space");
+        await scrolls(list, [...fingers, ...momentum]);
+        check(spaces().current == ids[3], "a second swipe and its momentum went one Space");
         // A swipe back while the momentum still runs.
         await swipe(list, -15);
         check(spaces().current == ids[2], "a swipe back during momentum switched back");
@@ -6798,17 +6820,18 @@ def a_sideways_scroll_on_the_sidebar_goes_to_the_next_or_previous_space(b):
         await scrolls(list, [-2, -6, -12, -20, -25, -30]);
         await sleep(400);
         check(spaces().current == ids[0], "a swipe again during momentum switched again");
+        // Nor before the first.
         await swipe(list, -15);
-        check(spaces().current == ids[2], "round to the last Space again");
+        check(spaces().current == ids[0], "a swipe went past the first Space");
         // A scroll mostly up or down is the tab list's.
         await swipe(list, 6, 40);
-        check(spaces().current == ids[2], "a vertical scroll switched the Space");
+        check(spaces().current == ids[0], "a vertical scroll switched the Space");
         // A nudge is not a swipe.
         await swipe(list, 4, 0, 3);
-        check(spaces().current == ids[2], "a nudge switched the Space");
+        check(spaces().current == ids[0], "a nudge switched the Space");
         // Not over the page.
         await swipe(win.gBrowser.selectedBrowser, 15);
-        check(spaces().current == ids[2], "a swipe over the page switched the Space");
+        check(spaces().current == ids[0], "a swipe over the page switched the Space");
         """)
     finally:
         b.js("await resetSpaces();")
@@ -10106,6 +10129,11 @@ def dock_folders_look_as_gray_tab_groups_and_are_made_by_holding_a_tab(b):
     folderHead().click();
     await wait(() => ours.hasAttribute("collapsed"), "the folder to close");
     await wait(() => style(pick(ours, ".chevron")).transform != "none", "the chevron to turn");
+    // Closed, it is a row as a tab's, as a collapsed group: no box, its tab
+    // count at its end.
+    await wait(() => style(ours).backgroundColor == "rgba(0, 0, 0, 0)", "a closed folder's box to go");
+    let count = pick(ours, ".count");
+    check(count.checkVisibility() && count.textContent == "3", "a closed folder's tab count is not shown");
     folderHead().click();
     await wait(() => !ours.hasAttribute("collapsed"), "the folder to open");
     // The header's × button, always shown, deletes the folder with its

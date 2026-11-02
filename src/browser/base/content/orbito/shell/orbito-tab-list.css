@@ -202,49 +202,6 @@
   }
 }
 
-/* A collapsed group showing no tab: no box, a row as a tab's, its color
- * on its dot alone and its tab count at its end. One still showing the
- * selected tab keeps its box (group.css). */
-.group .count {
-  display: none;
-}
-
-.group[collapsed]:not(:has(> .group-body)) {
-  --group-box: transparent;
-  --group-box-hover: transparent;
-  --group-edge: transparent;
-  margin-block: 0;
-  padding: 0;
-
-  & > .group-head {
-    height: 32px;
-    border-radius: var(--orbito-radius-item);
-    transition: background-color var(--orbito-duration-short) var(--orbito-ease);
-
-    &:hover {
-      background-color: var(--orbito-surface-hover);
-    }
-  }
-
-  & .group-toggle {
-    height: 32px;
-    padding-inline-start: 10px;
-  }
-
-  & .count {
-    display: block;
-    flex: none;
-    margin-inline-start: auto;
-    padding: 1px 6px;
-    border-radius: 999px;
-    background-color: color-mix(in oklab, var(--orbito-text) 8%, transparent);
-    color: var(--orbito-text-muted);
-    font-size: 11px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-}
-
 /* An Orbit: the tabs one assistant task opened, in an accent box. Its
  * header has no text: one row of the icon, a bar that runs while the task
  * works and the stop button; the edge turns amber (breathing twice) while

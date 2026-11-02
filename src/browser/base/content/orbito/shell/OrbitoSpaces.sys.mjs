@@ -110,12 +110,11 @@ export function spaceAt(spaces, n) {
 
 /**
  * The id of the Space step places after (1) or before (-1) the Space id,
- * going round from the last to the first and back.
+ * staying on the first or the last Space at either end.
  */
 export function stepSpace(spaces, id, step) {
   let index = spaces.findIndex(space => space.id == id);
-  let count = spaces.length;
-  return spaces[(((index + step) % count) + count) % count].id;
+  return spaces[Math.min(Math.max(index + step, 0), spaces.length - 1)].id;
 }
 
 /**

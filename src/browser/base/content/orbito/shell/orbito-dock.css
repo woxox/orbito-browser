@@ -137,6 +137,12 @@
     box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--orbito-accent) 60%, transparent);
   }
 
+  /* A collapsed one has no box to darken (group.css): a row's under the
+   * pointer. */
+  &[drop-into][collapsed] {
+    background-color: var(--orbito-surface-hover);
+  }
+
   /* Where a dragged folder would land: a see-through copy of its box. */
   &[preview] {
     opacity: 0.45;

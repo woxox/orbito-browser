@@ -441,7 +441,7 @@ export class Spaces {
     }
   }
 
-  /** Shows the next Space (step 1) or the previous one (-1), going round. */
+  /** Shows the next Space (step 1) or the previous one (-1), stopping at either end. */
   step(step) {
     this.switchTo(stepSpace(this.list, this.current, step));
   }

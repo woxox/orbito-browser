@@ -181,3 +181,47 @@
   gap: 2px;
   padding-inline-start: 9px;
 }
+
+/* A collapsed group showing no row: no box, a row as a tab's, its color
+ * on its dot alone and its tab count at its end. One still showing a row
+ * (the tab list's selected tab, a Dock tab's copy where it would land)
+ * keeps its box. */
+.group .count {
+  display: none;
+}
+
+.group[collapsed]:not(:has(> .group-body)) {
+  --group-box: transparent;
+  --group-box-hover: transparent;
+  --group-edge: transparent;
+  margin-block: 0;
+  padding: 0;
+
+  & > .group-head {
+    height: 32px;
+    border-radius: var(--orbito-radius-item);
+    transition: background-color var(--orbito-duration-short) var(--orbito-ease);
+
+    &:hover {
+      background-color: var(--orbito-surface-hover);
+    }
+  }
+
+  & .group-toggle {
+    height: 32px;
+    padding-inline-start: 10px;
+  }
+
+  & .count {
+    display: block;
+    flex: none;
+    margin-inline-start: auto;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background-color: color-mix(in oklab, var(--orbito-text) 8%, transparent);
+    color: var(--orbito-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}

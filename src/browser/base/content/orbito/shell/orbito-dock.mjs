@@ -797,6 +797,7 @@ export class OrbitoDock extends MozLitElement {
               />`
             : html`<span class="label">${name}</span>`}
           <span class="chevron"></span>
+          <span class="count" aria-hidden="true">${count}</span>
         </div>
         <button
           class="close"

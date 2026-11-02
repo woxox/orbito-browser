@@ -103,8 +103,13 @@
     }
   }
 
+  /* With no results the view closes, and the background would shrink back
+   * to the input; it keeps the open card's size and corners instead. */
   #urlbar:not([popover-open]) > .urlbar-background {
     box-shadow: var(--urlbar-background-box-shadow-open);
+    inset-inline: calc(-1 * (var(--urlbar-background-overhang-open) + var(--urlbar-input-growth-open-inline)));
+    inset-block: calc(-1 * (var(--urlbar-background-overhang-open) + var(--urlbar-input-growth-open-block)));
+    border-radius: var(--urlbar-background-border-top-radius-open);
   }
 
   #urlbar > .urlbar-background {

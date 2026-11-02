@@ -1242,7 +1242,7 @@ import pdfplumber
     assertEquals(resolveSpace(SPACES, "gone"), "a");
     assertEquals(resolveSpace(SPACES, ""), "a");
     assertEquals([spaceAt(SPACES, 1), spaceAt(SPACES, 3), spaceAt(SPACES, 4)], ["a", "c", null]);
-    assertEquals([stepSpace(SPACES, "a", 1), stepSpace(SPACES, "c", 1), stepSpace(SPACES, "a", -1), stepSpace(SPACES, "b", -1)], ["b", "a", "c", "a"]);
+    assertEquals([stepSpace(SPACES, "a", 1), stepSpace(SPACES, "c", 1), stepSpace(SPACES, "a", -1), stepSpace(SPACES, "b", -1)], ["b", "c", "a", "a"]);
     assertEquals(stepSpace([SPACES[0]], "a", 1), "a");
     assertEquals([switchDirection(SPACES, "a", "c"), switchDirection(SPACES, "c", "b"), switchDirection(SPACES, "b", "b")], [1, -1, 0]);
   });

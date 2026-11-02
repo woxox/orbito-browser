@@ -251,8 +251,8 @@ export class OrbitoSidebar extends MozLitElement {
 
   /**
    * A sideways scroll (a trackpad swipe) goes to the next Space or the
-   * previous one, once per swipe, going round like the shortcuts. A scroll
-   * mostly up or down is the tab list's. After a switch the swipe's
+   * previous one, once per swipe, stopping at either end like the
+   * shortcuts. A scroll mostly up or down is the tab list's. After a switch the swipe's
    * momentum is ignored; a scroll the other way, or one the same way that
    * grows again once the momentum has begun, is a new swipe.
    */
