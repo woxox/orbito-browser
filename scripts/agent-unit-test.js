@@ -3773,10 +3773,119 @@ await (async () => {
   });
 })();
 
+// The new tab page's "From other devices" (newtab/OrbitoRemoteTabs.sys.mjs).
+await (async () => {
+  const { agoMessage, pickedDevice, remoteDevices } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/newtab/OrbitoRemoteTabs.sys.mjs"
+  );
+
+  function assertEquals(actual, expected) {
+    let a = JSON.stringify(actual, null, 2);
+    let e = JSON.stringify(expected, null, 2);
+    if (a != e) {
+      throw new Error(`Expected:\n${e}\nActual:\n${a}`);
+    }
+  }
+
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.UTC(2026, 10, 2, 12);
+  // A client as SyncedTabs.getTabClients() gives it: lastModified in ms,
+  // each tab's lastUsed in seconds.
+  function client(id, daysAgo, tabs, clientType = "desktop") {
+    return {
+      id,
+      type: "client",
+      name: `Device ${id}`,
+      clientType,
+      lastModified: now - daysAgo * DAY,
+      tabs: tabs.map(([url, minutesAgo, title = url]) => ({
+        type: "tab", url, title, icon: `page-icon:${url}`, client: id,
+        lastUsed: Math.floor((now - minutesAgo * 60000) / 1000),
+      })),
+    };
+  }
+  const urls = devices => devices.map(d => [d.id, d.tabs.map(t => t.url)]);
+
+  test("remoteDevices orders devices and their tabs by last use", () => {
+    let devices = remoteDevices([
+      client("old", 3, [["https://a.example/", 10]]),
+      client("new", 0.5, [["https://b.example/", 30], ["https://c.example/", 5]], "phone"),
+    ], { now });
+    assertEquals(urls(devices), [
+      ["new", ["https://c.example/", "https://b.example/"]],
+      ["old", ["https://a.example/"]],
+    ]);
+    let [tab] = devices[0].tabs;
+    assertEquals([devices[0].name, devices[0].type, devices[0].lastUsed], ["Device new", "phone", now - 0.5 * DAY]);
+    assertEquals([tab.title, tab.host, tab.icon, tab.lastUsed], [
+      "https://c.example/", "c.example", "page-icon:https://c.example/", Math.floor((now - 5 * 60000) / 1000) * 1000,
+    ]);
+  });
+
+  test("remoteDevices leaves out devices not used in 14 days", () => {
+    let devices = remoteDevices([
+      client("stale", 14.01, [["https://a.example/", 1]]),
+      client("fresh", 13.99, [["https://b.example/", 1]]),
+    ], { now });
+    assertEquals(urls(devices), [["fresh", ["https://b.example/"]]]);
+  });
+
+  test("remoteDevices leaves out excluded domains, open URLs and non-web tabs", () => {
+    let devices = remoteDevices([
+      client("d", 0, [
+        ["https://mail.google.com/mail/u/0/", 1],
+        ["https://www.chase.com/", 2],
+        ["https://notchase.com/", 3],
+        ["https://open.example/", 4],
+        ["about:preferences", 5],
+        ["file:///tmp/a.txt", 6],
+        ["https://www.keep.example/page", 7, ""],
+      ]),
+      // Left with no tab, the device goes.
+      client("empty", 0, [["https://open.example/", 1]]),
+    ], {
+      now,
+      excluded: ["mail.google.com", "chase.com"],
+      openURLs: new Set(["https://open.example/"]),
+    });
+    assertEquals(urls(devices), [["d", ["https://notchase.com/", "https://www.keep.example/page"]]]);
+    // No title: the host, without "www.".
+    assertEquals([devices[0].tabs[1].title, devices[0].tabs[1].host], ["keep.example", "keep.example"]);
+    assertEquals(remoteDevices([], { now }), []);
+    assertEquals(remoteDevices(null, { now }), []);
+  });
+
+  test("pickedDevice takes the one picked while it is there, else the latest", () => {
+    let devices = remoteDevices([
+      client("a", 1, [["https://a.example/", 1]]),
+      client("b", 0, [["https://b.example/", 1]]),
+    ], { now });
+    assertEquals(pickedDevice(devices, undefined)?.id, "b");
+    assertEquals(pickedDevice(devices, "a")?.id, "a");
+    assertEquals(pickedDevice(devices, "gone")?.id, "b");
+    assertEquals(pickedDevice([], "a"), null);
+  });
+
+  test("agoMessage says minutes, hours or days", () => {
+    let min = 60000;
+    assertEquals([30 * 1000, 5 * min, 59 * min, 60 * min, 23 * 60 * min, DAY, 3 * DAY].map(ago => agoMessage(now - ago, now)), [
+      ["orbito-newtab-remote-just-now"],
+      ["orbito-newtab-remote-minutes-ago", { count: 5 }],
+      ["orbito-newtab-remote-minutes-ago", { count: 59 }],
+      ["orbito-newtab-remote-hours-ago", { count: 1 }],
+      ["orbito-newtab-remote-hours-ago", { count: 23 }],
+      ["orbito-newtab-remote-days-ago", { count: 1 }],
+      ["orbito-newtab-remote-days-ago", { count: 3 }],
+    ]);
+    // A clock ahead of this one's.
+    assertEquals(agoMessage(now + 5 * min, now), ["orbito-newtab-remote-just-now"]);
+  });
+})();
+
 // The new tab page's suggestions, inline completion and greeting
 // (newtab/OrbitoNewTabSuggest.sys.mjs).
 await (async () => {
-  const { autofilled, greetingId, rowsOf, summaryParts } = ChromeUtils.importESModule(
+  const { agoText, autofilled, deviceIcon, greetingId, remoteTabSub, rowsOf, summaryParts, trimRemoteTabs } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs"
   );
   const { UrlbarShared } = ChromeUtils.importESModule(
@@ -3830,6 +3939,69 @@ await (async () => {
     };
     assertEquals(shown(rowsOf([result])), [
       { kind: "command", group: "", section: "", title: "Open settings", sub: "about:orbito-settings", url: "", icon: "chrome://global/skin/icons/settings.svg" },
+    ]);
+  });
+
+  // A tab of another device, as Firefox's RemoteTabs provider makes it:
+  // lastUsed in milliseconds.
+  const NOW = new Date(2026, 10, 2, 15).getTime();
+  const remote = (url, device, minutesAgo, title = "") => ({
+    type: TYPE.REMOTE_TAB,
+    payload: { url, title, device, icon: "", lastUsed: minutesAgo == null ? 0 : NOW - minutesAgo * 60000 },
+  });
+
+  test("rowsOf puts the tabs of other devices in their own group, with the device and when", () => {
+    let results = [
+      { type: TYPE.URL, heuristic: true, payload: { url: "https://quokka.example/" } },
+      { type: TYPE.URL, payload: { url: "https://quokka.example/history", title: "Seen here" } },
+      remote("https://quokka.example/a", "Pixel 9", 5, "On the phone"),
+      remote("https://www.quokka.example/b", "Work Mac", 3 * 60),
+      remote("https://quokka.example/c", "iPad", null, "Unknown time"),
+    ];
+    let devices = new Map([["Pixel 9", "phone"], ["Work Mac", "desktop"], ["iPad", "tablet"]]);
+    assertEquals(shown(rowsOf(results, { devices, now: NOW, language: "en-US" })), [
+      { kind: "go", group: "", section: "", title: "quokka.example", sub: "", url: "https://quokka.example/" },
+      { kind: "open", group: "history", section: "History", title: "Seen here", sub: "quokka.example", url: "https://quokka.example/history" },
+      { kind: "open", group: "remote", section: "Other devices", title: "On the phone", sub: "Pixel 9 · 5 minutes ago", url: "https://quokka.example/a", deviceIcon: "chrome://browser/skin/device-phone.svg" },
+      { kind: "open", group: "remote", section: "Other devices", title: "quokka.example/b", sub: "Work Mac · 3 hours ago", url: "https://www.quokka.example/b", deviceIcon: "chrome://browser/skin/device-desktop.svg" },
+      { kind: "open", group: "remote", section: "Other devices", title: "Unknown time", sub: "iPad", url: "https://quokka.example/c", deviceIcon: "chrome://browser/skin/device-tablet.svg" },
+    ]);
+    // A device Sync does not know yet gets a desktop's icon.
+    assertEquals(rowsOf([results[2]], { now: NOW, language: "en-US" })[0].deviceIcon, "chrome://browser/skin/device-desktop.svg");
+    // In Korean.
+    assertEquals(rowsOf([results[2]], { devices, now: NOW, language: "ko" })[0].sub, "Pixel 9 · 5분 전");
+  });
+
+  test("trimRemoteTabs keeps three tabs of other devices, none open here", () => {
+    let open = { type: TYPE.TAB_SWITCH, payload: { url: "https://quokka.example/open", title: "Open here" } };
+    let history = { type: TYPE.URL, payload: { url: "https://quokka.example/h" } };
+    let tabs = ["open", "1", "2", "3", "4"].map(path => remote(`https://quokka.example/${path}`, "Pixel 9", 1));
+    let trimmed = trimRemoteTabs([open, history, ...tabs]);
+    assertEquals(trimmed, [open, history, tabs[1], tabs[2], tabs[3]]);
+    // The urlbar's order stays, and so do results that are not remote tabs.
+    assertEquals(trimRemoteTabs([tabs[4], history, tabs[1]]), [tabs[4], history, tabs[1]]);
+    assertEquals(trimRemoteTabs([]), []);
+    // The rows are trimmed alike.
+    assertEquals(rowsOf([open, ...tabs], { now: NOW, language: "en-US" }).map(row => row.url), [
+      "https://quokka.example/open", "https://quokka.example/1", "https://quokka.example/2", "https://quokka.example/3",
+    ]);
+  });
+
+  test("agoText and remoteTabSub say how long ago a tab was used", () => {
+    let ago = minutes => agoText(NOW - minutes * 60000, NOW, "en-US");
+    assertEquals([0, 0.5, 1, 59, 60, 23 * 60, 24 * 60, 3 * 24 * 60].map(ago), [
+      "now", "now", "1 minute ago", "59 minutes ago", "1 hour ago", "23 hours ago", "yesterday", "3 days ago",
+    ]);
+    // A clock a little behind another device's is now.
+    assertEquals(agoText(NOW + 60000, NOW, "en-US"), "now");
+    assertEquals(remoteTabSub({ device: "Work Mac", lastUsed: NOW - 120000 }, NOW, "en-US"), "Work Mac · 2 minutes ago");
+    assertEquals(remoteTabSub({ device: "Work Mac", lastUsed: 0 }, NOW, "en-US"), "Work Mac");
+    assertEquals(remoteTabSub({ lastUsed: NOW }, NOW, "en-US"), "now");
+    assertEquals([deviceIcon("phone"), deviceIcon("tablet"), deviceIcon("desktop"), deviceIcon(undefined)], [
+      "chrome://browser/skin/device-phone.svg",
+      "chrome://browser/skin/device-tablet.svg",
+      "chrome://browser/skin/device-desktop.svg",
+      "chrome://browser/skin/device-desktop.svg",
     ]);
   });
 

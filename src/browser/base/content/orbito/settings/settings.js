@@ -74,6 +74,7 @@ OrbitoAppearance.follow(document);
 const MEMORY_PREF = "orbito.assistant.memory.enabled";
 const SIDEBAR_COLLAPSED_PREF = "orbito.sidebar.collapsed";
 const ASSISTANT_AUTO_OPEN_PREF = "orbito.assistant.autoOpen";
+const NEWTAB_REMOTE_TABS_PREF = "orbito.newtab.remoteTabs";
 // Where Sync's pages are opened from, for Mozilla's account server.
 const SYNC_ENTRY_POINT = "orbito-settings";
 const IMPORT_URL = "chrome://browser/content/orbito/settings/import.html";
@@ -853,7 +854,8 @@ const OrbitoSettings = {
     show();
   },
 
-  /* Layout: the Sidebar and the Assistant panel, in every window */
+  /* Layout: the Sidebar and the Assistant panel, in every window; and the
+     new tab page's "From other devices", under Account */
 
   _initLayout() {
     let mac = AppConstants.platform == "macosx";
@@ -862,13 +864,15 @@ const OrbitoSettings = {
       "orbito-settings-sidebar-collapsed-hint",
       { shortcut: mac ? "⌘S" : "Ctrl+S" }
     );
+    // [checkbox, pref, the pref's default]
     let boxes = [
-      [document.getElementById("sidebar-collapsed"), SIDEBAR_COLLAPSED_PREF],
-      [document.getElementById("assistant-auto-open"), ASSISTANT_AUTO_OPEN_PREF],
+      [document.getElementById("sidebar-collapsed"), SIDEBAR_COLLAPSED_PREF, false],
+      [document.getElementById("assistant-auto-open"), ASSISTANT_AUTO_OPEN_PREF, false],
+      [document.getElementById("newtab-remote-tabs"), NEWTAB_REMOTE_TABS_PREF, true],
     ];
     let sync = () => {
-      for (let [box, pref] of boxes) {
-        box.checked = Services.prefs.getBoolPref(pref, false);
+      for (let [box, pref, fallback] of boxes) {
+        box.checked = Services.prefs.getBoolPref(pref, fallback);
       }
     };
     sync();

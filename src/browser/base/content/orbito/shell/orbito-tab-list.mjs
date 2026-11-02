@@ -995,6 +995,7 @@ export class OrbitoTabList extends MozLitElement {
           <span class="dot"></span>
           <span class="label">${group.label}</span>
           <span class="chevron"></span>
+          <span class="count" aria-hidden="true">${count}</span>
         </div>
         <button
           class="close"

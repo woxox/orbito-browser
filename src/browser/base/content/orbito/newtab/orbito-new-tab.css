@@ -129,17 +129,17 @@ kbd {
   background-color: var(--orbito-popover-solid);
   box-shadow: var(--orbito-shadow-card);
 
-  /* The input's focus ring is the box's. */
-  &:focus-within {
-    box-shadow:
-      0 0 0 1.5px var(--orbito-accent),
-      var(--orbito-shadow-card);
+  /* The input's focus ring is the box's: an outline, not a shadow's spread,
+   * so that it snaps to device pixels with the box, which the page's
+   * layout often puts at a fractional offset; a spread there draws thinner
+   * on one edge than on the other. */
+  &:focus-within,
+  &[open] {
+    outline: 1.5px solid var(--orbito-accent);
   }
 
   &[open] {
-    box-shadow:
-      0 0 0 1.5px var(--orbito-accent),
-      var(--orbito-shadow-pop);
+    box-shadow: var(--orbito-shadow-pop);
   }
 }
 
@@ -306,6 +306,16 @@ kbd {
     max-width: 40%;
     font-size: 12.5px;
     color: var(--orbito-page-text-muted);
+
+    /* A tab of another device: its device's icon before its name. */
+    .device {
+      width: 12px;
+      height: 12px;
+      margin-inline-end: 5px;
+      vertical-align: -1px;
+      -moz-context-properties: fill;
+      fill: currentColor;
+    }
   }
 
   .hint {
@@ -380,4 +390,165 @@ nav {
     -moz-context-properties: fill;
     fill: currentColor;
   }
+}
+
+/* From other devices, under the recent visits and as wide as the input: the
+ * device (or buttons to pick one), then its tabs in a sunk card, one row
+ * each. */
+.remote {
+  align-items: stretch;
+  width: 100%;
+
+  h2 {
+    align-self: center;
+  }
+
+  .time {
+    flex: none;
+    font-size: 12px;
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+.device,
+.device-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+
+  > svg {
+    color: var(--orbito-page-text-muted);
+  }
+
+  .name {
+    font-weight: 600;
+  }
+}
+
+.device {
+  align-self: center;
+  margin: 0;
+}
+
+.devices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.device-chip {
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--orbito-page-sunk);
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+  font-family: inherit;
+  color: inherit;
+
+  .name {
+    font-weight: 500;
+  }
+
+  &:hover {
+    background-color: var(--orbito-popover-solid);
+    box-shadow:
+      inset 0 0 0 1px var(--orbito-page-line-strong),
+      var(--orbito-shadow-item);
+  }
+
+  &[aria-pressed="true"] {
+    background-color: var(--orbito-accent-soft);
+    box-shadow: inset 0 0 0 1px var(--orbito-accent);
+
+    > svg,
+    .name {
+      color: var(--orbito-accent);
+    }
+
+    .name {
+      font-weight: 600;
+    }
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+.remote-tabs {
+  margin: 0;
+  padding: 6px;
+  border-radius: 14px;
+  background-color: var(--orbito-page-sunk);
+  box-shadow: inset 0 0 0 1px var(--orbito-page-line);
+  list-style: none;
+}
+
+.remote-tab,
+.remote-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: inherit;
+  text-decoration: none;
+
+  &:hover {
+    background-color: var(--orbito-popover-solid);
+    box-shadow: var(--orbito-shadow-item);
+  }
+
+  &:focus-visible {
+    outline: var(--orbito-focus-ring);
+  }
+}
+
+.remote-tab {
+  img {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    /* The default icon of a site without one follows the text. */
+    -moz-context-properties: fill;
+    fill: currentColor;
+  }
+
+  .title,
+  .host {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .title {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .host {
+    flex: none;
+    max-width: 35%;
+    font-size: 12.5px;
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+/* The rest of the tabs, its words where the titles start. */
+.remote-more {
+  border: 0;
+  padding-inline-start: 38px;
+  background: none;
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--orbito-accent);
+  text-align: start;
 }

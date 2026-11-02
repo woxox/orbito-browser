@@ -13,9 +13,13 @@
  * suggestions, Ask Orbito, the Command bar's commands, open tabs, history
  * and "From memory". Each is
  * shown as a row (rowsOf()).
+ *
+ * The tabs of the user's other devices (Firefox's RemoteTabs provider) are
+ * trimmed and described here for the Command bar too (trimRemoteTabs(),
+ * remoteTabSub(), deviceIcon()), so the two inputs show them alike.
  */
 
-const { t } = ChromeUtils.importESModule(
+const { t, OrbitoL10n } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
 );
 
@@ -23,12 +27,23 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ProvidersManager:
     "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+  SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
   UrlbarQueryContext: "chrome://browser/content/urlbar/UrlbarQueryContext.mjs",
   UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /** How many suggestions the page shows at most, as the urlbar does. */
 const MAX_RESULTS = 10;
+
+/** How many tabs of other devices the suggestions show at most. */
+export const MAX_REMOTE_TABS = 3;
+
+/** The icon of each kind of device Sync knows, by its client type. */
+const DEVICE_ICONS = {
+  desktop: "chrome://browser/skin/device-desktop.svg",
+  phone: "chrome://browser/skin/device-phone.svg",
+  tablet: "chrome://browser/skin/device-tablet.svg",
+};
 
 /** A web address as the page shows it: no scheme, "www." or end slash. */
 function shortURL(url) {
@@ -44,18 +59,112 @@ export function hostOf(url) {
 }
 
 /**
+ * The icon of a kind of device ("desktop", "phone" or "tablet", as Sync
+ * says), a desktop's when it is not known.
+ *
+ * @param {?string} type
+ */
+export function deviceIcon(type) {
+  return DEVICE_ICONS[type] ?? DEVICE_ICONS.desktop;
+}
+
+/**
+ * How long ago a time was, in words: "now", "5 minutes ago", "yesterday".
+ *
+ * @param {number} time In milliseconds.
+ * @param {number} now In milliseconds.
+ * @param {string} language
+ */
+export function agoText(time, now, language) {
+  let format = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  let minutes = Math.floor(Math.max(0, now - time) / 60000);
+  if (minutes < 1) {
+    return format.format(0, "second");
+  }
+  if (minutes < 60) {
+    return format.format(-minutes, "minute");
+  }
+  let hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return format.format(-hours, "hour");
+  }
+  return format.format(-Math.floor(hours / 24), "day");
+}
+
+/**
+ * The line under a tab of another device: the device's name, then how long
+ * ago the tab was last used there, when Sync knows.
+ *
+ * @param {{device?: string, lastUsed?: number}} payload
+ *   A remote tab result's: lastUsed is in milliseconds, 0 when not known.
+ * @param {number} now
+ * @param {string} language
+ */
+export function remoteTabSub({ device, lastUsed }, now, language) {
+  return [device, lastUsed ? agoText(lastUsed, now, language) : ""]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * The results with no more than MAX_REMOTE_TABS tabs of other devices, and
+ * none that is open here already: a switch-to-tab result for the same
+ * address is the one kept. The order stays the urlbar's (with Firefox's
+ * own: the tabs used in the last 72 hours first).
+ *
+ * @param {Array<object>} results
+ * @returns {Array<object>}
+ */
+export function trimRemoteTabs(results) {
+  let { RESULT_TYPE } = lazy.UrlbarShared;
+  let open = new Set(
+    results
+      .filter(result => result.type == RESULT_TYPE.TAB_SWITCH)
+      .map(result => result.payload.url)
+  );
+  let remote = 0;
+  return results.filter(
+    result =>
+      result.type != RESULT_TYPE.REMOTE_TAB ||
+      result.heuristic ||
+      (!open.has(result.payload.url) && ++remote <= MAX_REMOTE_TABS)
+  );
+}
+
+/**
+ * The kind of each of the user's other devices by its name, as remote tab
+ * results name their device; empty when Sync is not set up or not ready.
+ *
+ * @returns {Promise<Map<string, string>>}
+ */
+export async function deviceTypes() {
+  try {
+    let clients = await lazy.SyncedTabs.getTabClients();
+    return new Map(clients.map(client => [client.name, client.clientType]));
+  } catch (e) {
+    console.error(e);
+    return new Map();
+  }
+}
+
+/**
  * What a urlbar result is as a row, or null for a kind the page does not
  * show (a tip, a restrict keyword, a Command bar command).
  *
  * kind is what picking it does, as the Command bar's hints say: "go",
  * "search", "ask", "switch-tab", "open" or "command" (with its icon);
  * group the group it is in,
- * "tabs", "history" or "memory", "" for the results at the top, and
- * section that group's heading.
+ * "tabs", "remote", "history" or "memory", "" for the results at the top,
+ * and section that group's heading. A tab of another device also has its
+ * device's icon (deviceIcon).
  *
+ * @param {object} result
+ * @param {{devices: Map<string, string>, now: number, language: string}} context
+ *   Each device's kind by its name (deviceTypes()), and the time and
+ *   language to say how long ago a remote tab was used in.
  * @returns {?{kind: string, group: string, section: string, title: string, sub: string, url: string}}
  */
-function rowOf(result) {
+function rowOf(result, { devices, now, language }) {
   let { RESULT_TYPE } = lazy.UrlbarShared;
   let { payload } = result;
   // A page's row: its title (or address) over its host.
@@ -68,9 +177,18 @@ function rowOf(result) {
     url: payload.url,
   });
   switch (result.type) {
+    case RESULT_TYPE.REMOTE_TAB:
+      if (!result.heuristic) {
+        return {
+          ...page("open", "remote", t("orbito-newtab-section-remote")),
+          sub: remoteTabSub(payload, now, language),
+          deviceIcon: deviceIcon(devices.get(payload.device)),
+        };
+      }
+    // A heuristic one is where Enter goes, as an address's.
+    // falls through
     case RESULT_TYPE.URL:
     case RESULT_TYPE.KEYWORD:
-    case RESULT_TYPE.REMOTE_TAB:
       if (result.heuristic) {
         return {
           kind: "go",
@@ -126,15 +244,22 @@ function rowOf(result) {
 
 /**
  * The rows for urlbar results, in their order, each with the result it
- * stands for.
+ * stands for. The tabs of other devices are trimmed (trimRemoteTabs()).
  *
  * @param {Array<object>} results
+ * @param {object} [context]
+ * @param {Map<string, string>} [context.devices] Each device's kind by its name.
+ * @param {number} [context.now]
+ * @param {string} [context.language]
  * @returns {Array<{kind: string, group: string, section: string, title: string, sub: string, url: string, result: object}>}
  */
-export function rowsOf(results) {
+export function rowsOf(
+  results,
+  { devices = new Map(), now = Date.now(), language = OrbitoL10n.language } = {}
+) {
   let rows = [];
-  for (let result of results) {
-    let row = rowOf(result);
+  for (let result of trimRemoteTabs(results)) {
+    let row = rowOf(result, { devices, now, language });
     if (row) {
       rows.push({ ...row, result });
     }
@@ -170,10 +295,33 @@ export function autofilled(typed, result) {
 export class NewTabSuggester {
   #window;
   #context = null;
+  /** When devices was last asked for, 0 before. */
+  #devicesTime = 0;
+
+  /**
+   * The kind of each of the user's other devices by its name (deviceTypes()),
+   * for rowsOf(); asked for once made, and again as queries start, at most
+   * once a minute.
+   *
+   * @type {Map<string, string>}
+   */
+  devices = new Map();
 
   /** @param {Window} window The page's browser window, which providers ask for its Space. */
   constructor(window) {
     this.#window = window;
+    // Before anything is typed, so the first suggestions have them.
+    this.#askForDevices();
+  }
+
+  #askForDevices() {
+    if (Date.now() - this.#devicesTime < 60000) {
+      return;
+    }
+    this.#devicesTime = Date.now();
+    deviceTypes().then(devices => {
+      this.devices = devices;
+    });
   }
 
   get #manager() {
@@ -191,6 +339,7 @@ export class NewTabSuggester {
    */
   start(text, { isPrivate, userContextId }, onResults) {
     this.cancel();
+    this.#askForDevices();
     let context = new lazy.UrlbarQueryContext({
       sapName: "urlbar",
       searchString: text,

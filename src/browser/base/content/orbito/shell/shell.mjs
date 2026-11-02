@@ -39,6 +39,9 @@ const { OrbitoAppearance } = ChromeUtils.importESModule(
 const { OrbitoUpdates } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoUpdates.sys.mjs"
 );
+const { OrbitoPages } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoPages.sys.mjs"
+);
 
 // Before the first paint, so the window never shows another look.
 OrbitoAppearance.init();
@@ -160,6 +163,25 @@ function anchorWidgetPopups(topBar) {
 }
 
 /**
+ * The menu bar's Settings item (on macOS the application menu's
+ * "Settings…", ⌘,) opens Orbito's settings: Firefox's are reached from
+ * there (ADR 0001). browser-menubar.js opens Firefox's as the command
+ * bubbles up to the menu bar, so this takes it while it is captured.
+ */
+function openOrbitoSettingsFromMenu() {
+  document.getElementById("main-menubar").addEventListener(
+    "command",
+    event => {
+      if (["menu_preferences", "menu_settings"].includes(event.target.id)) {
+        event.stopPropagation();
+        OrbitoPages.openSettings(window);
+      }
+    },
+    true
+  );
+}
+
+/**
  * The first notification bar shown in Firefox's notification strip (the
  * window's own ones, then the selected tab's), or null.
  *
@@ -230,6 +252,7 @@ const OrbitoShell = {
 
   init() {
     removeFirefoxFeatures(window);
+    openOrbitoSettingsFromMenu();
 
     // Popups (no Sidebar) have no Spaces, Pins or Docks.
     this.spaces = null;

@@ -77,12 +77,33 @@ orbito-newtab-page-title = 새 탭
 orbito-newtab-ask = 묻거나 주소 입력
 orbito-newtab-ask-placeholder = 무엇이든 묻거나 주소를 입력하세요
 orbito-newtab-recent = 최근 방문
+# The heading of the tabs open on another device, under the recent visits.
+orbito-newtab-remote = 다른 기기에서
+# The accessible name of the buttons that pick the device.
+orbito-newtab-remote-devices = 기기
+# The row that shows the rest of the device's tabs.
+# Variables:
+#   $count (Number): how many more tabs the device has open
+orbito-newtab-remote-more = 탭 { $count }개 더
+# When a device or its tab was used last, less than a minute ago.
+orbito-newtab-remote-just-now = 방금
+# Variables:
+#   $count (Number): how many minutes ago
+orbito-newtab-remote-minutes-ago = { $count }분 전
+# Variables:
+#   $count (Number): how many hours ago
+orbito-newtab-remote-hours-ago = { $count }시간 전
+# Variables:
+#   $count (Number): how many days ago
+orbito-newtab-remote-days-ago = { $count }일 전
 # The remembered pages related to what is typed.
 orbito-newtab-memory = 기억에서
 # Opens the timeline of every remembered page.
 orbito-newtab-memory-all = 모두 보기
 # The group of suggestions from the browsing history.
 orbito-newtab-history = 방문 기록
+# The group of suggestions from the tabs open on the user's other devices.
+orbito-newtab-section-remote = 다른 기기
 # The accessible name of the input's list of suggestions.
 orbito-newtab-suggestions = 제안
 # The key that takes the address completed in the input.

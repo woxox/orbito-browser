@@ -250,6 +250,55 @@
       }
     }
 
+    /* A tab of another device: after its title, the device's icon and
+     * name (Firefox's action, a chip it hides on the picked row) and how
+     * long ago it was used there, in small muted type, picked or not.
+     * command-bar.mjs gives the row the device's kind and the action the
+     * time. Its address, which Firefox shows on the picked row, is in the
+     * input then. */
+    &[type="remotetab"] {
+      .urlbarView-title-separator,
+      .urlbarView-url {
+        display: none;
+      }
+
+      .urlbarView-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        visibility: visible;
+        width: auto;
+        margin: 0 0 0 10px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--orbito-page-text-muted);
+        font-size: 12px;
+
+        &::before {
+          content: "";
+          flex: none;
+          width: 12px;
+          height: 12px;
+          background: url("chrome://browser/skin/device-desktop.svg") center / contain no-repeat;
+          -moz-context-properties: fill;
+          fill: currentColor;
+        }
+
+        &[orbito-ago]::after {
+          content: "· " attr(orbito-ago);
+        }
+      }
+
+      &[orbito-device="phone"] .urlbarView-action::before {
+        background-image: url("chrome://browser/skin/device-phone.svg");
+      }
+
+      &[orbito-device="tablet"] .urlbarView-action::before {
+        background-image: url("chrome://browser/skin/device-tablet.svg");
+      }
+    }
+
     &[dynamicType="orbitoAsk"] {
       .urlbarView-favicon {
         fill: var(--orbito-accent);

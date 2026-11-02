@@ -82,6 +82,11 @@ pref("browser.compactmode.show", true);
 pref("browser.newtab.preload", false);
 pref("browser.startup.homepage.abouthome_cache.enabled", false);
 
+// Whether the new tab page shows "From other devices" (newtab/
+// orbito-new-tab.mjs): the tabs Firefox Sync brings from the device used
+// last. Open new tab pages follow it.
+pref("orbito.newtab.remoteTabs", true);
+
 // Grouping by dropping a tab onto another needs a deliberate hold, so a quick
 // reorder drag never creates a group by accident.
 pref("browser.tabs.dragDrop.createGroup.enabled", true);

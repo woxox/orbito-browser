@@ -31,6 +31,10 @@ const NARROW_QUERY = "(max-width: 760px)";
 // how long without one ends it (a swipe's momentum keeps it going), in ms.
 const SWIPE_DISTANCE = 60;
 const SWIPE_END = 200;
+// Momentum shrinks smoothly, each delta this share of the one before; this
+// many such deltas in a row, below the recent peak, are the momentum.
+const MOMENTUM_RATIO = { min: 0.8, max: 1 };
+const MOMENTUM_RUN = 3;
 
 const BOOKMARK_ICON = html`<svg viewBox="0 0 16 16" aria-hidden="true">
   <path d="M4.5 2.5h7v11L8 11l-3.5 2.5z" />
@@ -82,9 +86,12 @@ export class OrbitoSidebar extends MozLitElement {
   #narrowQuery = window.matchMedia(NARROW_QUERY);
   // The animations of a collapse or a comeback still playing.
   #toggleMotion = [];
-  // A sideways scroll: how far it went, whether it switched the Space
-  // already, and when it last moved.
-  #swipe = { distance: 0, switched: false, at: -Infinity };
+  // A sideways scroll: how far it went, which way it switched the Space
+  // already (0 until it has), and when it last moved. After a switch, what
+  // tells the momentum from fingers back on: the last delta and the recent
+  // ones, how many in a row shrank like momentum or grew, and whether the
+  // momentum has begun.
+  #swipe = { distance: 0, switched: 0, at: -Infinity };
 
   constructor() {
     super();
@@ -245,7 +252,9 @@ export class OrbitoSidebar extends MozLitElement {
   /**
    * A sideways scroll (a trackpad swipe) goes to the next Space or the
    * previous one, once per swipe, going round like the shortcuts. A scroll
-   * mostly up or down is the tab list's.
+   * mostly up or down is the tab list's. After a switch the swipe's
+   * momentum is ignored; a scroll the other way, or one the same way that
+   * grows again once the momentum has begun, is a new swipe.
    */
   #onWheel(event) {
     let { deltaX, deltaY } = event;
@@ -253,22 +262,61 @@ export class OrbitoSidebar extends MozLitElement {
       deltaX *= 16;
     }
     let now = performance.now();
-    if (now - this.#swipe.at > SWIPE_END) {
-      this.#swipe = { distance: 0, switched: false, at: now };
+    let delta = deltaX * this.#direction;
+    if (
+      now - this.#swipe.at > SWIPE_END ||
+      (this.#swipe.switched && Math.sign(delta) == -this.#swipe.switched)
+    ) {
+      this.#swipe = { distance: 0, switched: 0, at: now };
     }
     if (Math.abs(deltaX) <= Math.abs(deltaY)) {
       return;
     }
     event.preventDefault();
     this.#swipe.at = now;
-    if (this.#swipe.switched) {
+    if (this.#swipe.switched && !this.#fingersBack(Math.abs(delta))) {
       return;
     }
-    this.#swipe.distance += deltaX * this.#direction;
-    if (Math.abs(this.#swipe.distance) >= SWIPE_DISTANCE) {
-      this.#swipe.switched = true;
-      window.OrbitoShell?.spaces?.step(Math.sign(this.#swipe.distance));
+    if (this.#swipe.switched) {
+      this.#swipe = { distance: 0, switched: 0, at: now };
     }
+    this.#swipe.distance += delta;
+    if (Math.abs(this.#swipe.distance) >= SWIPE_DISTANCE) {
+      Object.assign(this.#swipe, {
+        switched: Math.sign(this.#swipe.distance),
+        last: Math.abs(delta),
+        recent: [],
+        shrinking: 0,
+        growing: 0,
+        coasting: false,
+      });
+      window.OrbitoShell?.spaces?.step(this.#swipe.switched);
+    }
+  }
+
+  /**
+   * Whether a scroll the same way after a switch is fingers on the trackpad
+   * again rather than the swipe's momentum. Momentum only shrinks, smoothly;
+   * it may jump once as it begins, while fingers grow on and on.
+   */
+  #fingersBack(size) {
+    let swipe = this.#swipe;
+    let ratio = swipe.last ? size / swipe.last : 0;
+    let grew = size > swipe.last;
+    swipe.last = size;
+    swipe.recent = [...swipe.recent, size].slice(-5);
+    if (!swipe.coasting) {
+      swipe.shrinking =
+        ratio >= MOMENTUM_RATIO.min && ratio <= MOMENTUM_RATIO.max
+          ? swipe.shrinking + 1
+          : 0;
+      swipe.coasting =
+        swipe.shrinking >= MOMENTUM_RUN &&
+        size < Math.max(...swipe.recent) * 0.9;
+      return false;
+    }
+    swipe.growing = grew ? swipe.growing + 1 : 0;
+    return swipe.growing >= 2;
   }
 
   async focusRegion() {

@@ -81,12 +81,45 @@ orbito-newtab-page-title = New Tab
 orbito-newtab-ask = Ask or enter address
 orbito-newtab-ask-placeholder = Ask anything or enter an address
 orbito-newtab-recent = Recent visits
+# The heading of the tabs open on another device, under the recent visits.
+orbito-newtab-remote = From other devices
+# The accessible name of the buttons that pick the device.
+orbito-newtab-remote-devices = Devices
+# The row that shows the rest of the device's tabs.
+# Variables:
+#   $count (Number): how many more tabs the device has open
+orbito-newtab-remote-more =
+    { $count ->
+        [one] { $count } more tab
+       *[other] { $count } more tabs
+    }
+# When a device or its tab was used last, less than a minute ago.
+orbito-newtab-remote-just-now = Just now
+# Variables:
+#   $count (Number): how many minutes ago
+orbito-newtab-remote-minutes-ago = { $count } min ago
+# Variables:
+#   $count (Number): how many hours ago
+orbito-newtab-remote-hours-ago =
+    { $count ->
+        [one] { $count } hour ago
+       *[other] { $count } hours ago
+    }
+# Variables:
+#   $count (Number): how many days ago
+orbito-newtab-remote-days-ago =
+    { $count ->
+        [one] { $count } day ago
+       *[other] { $count } days ago
+    }
 # The remembered pages related to what is typed.
 orbito-newtab-memory = From memory
 # Opens the timeline of every remembered page.
 orbito-newtab-memory-all = See all
 # The group of suggestions from the browsing history.
 orbito-newtab-history = History
+# The group of suggestions from the tabs open on the user's other devices.
+orbito-newtab-section-remote = Other devices
 # The accessible name of the input's list of suggestions.
 orbito-newtab-suggestions = Suggestions
 # The key that takes the address completed in the input.

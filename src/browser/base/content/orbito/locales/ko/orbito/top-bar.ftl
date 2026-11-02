@@ -154,6 +154,7 @@ orbito-command-bar-hint-switch-tab = 탭으로 전환
 orbito-command-bar-hint-open = 열기
 orbito-command-bar-hint-command = 명령
 orbito-command-bar-section-tabs = 열린 탭
+orbito-command-bar-section-remote = 다른 기기
 orbito-commands-settings = 설정 열기
 orbito-commands-history = 기록 보기
 orbito-commands-history-description = 타임라인

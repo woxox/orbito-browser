@@ -1951,6 +1951,137 @@ def the_command_bar_rows_look_like_the_design(b):
         b.js('Services.prefs.clearUserPref("ui.prefersReducedMotion");')
 
 
+@test
+def the_command_bar_and_the_new_tab_page_group_the_tabs_of_other_devices(b):
+    # Sync's tabs of other devices stand in for a provider like Firefox's
+    # RemoteTabs, five of them, one open here too: three show, under
+    # "Other devices", each with its device's icon, name and when it was
+    # used there.
+    b.js("""
+    await onlyBlankTab();
+    await openPage("Quokka open");
+    // The selected tab is not one to switch to.
+    await openPage("Rows");
+    let { UrlbarProvider } = ChromeUtils.importESModule("moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs");
+    let { UrlbarShared } = ChromeUtils.importESModule("chrome://browser/content/urlbar/UrlbarShared.mjs");
+    let { UrlbarResult } = ChromeUtils.importESModule("chrome://browser/content/urlbar/UrlbarResult.mjs");
+    let { ProvidersManager } = ChromeUtils.importESModule("moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs");
+    let { SyncedTabs } = ChromeUtils.importESModule("resource://services-sync/SyncedTabs.sys.mjs");
+    let tabs = [
+      ["Quokka open", "Pixel 9", 1],
+      ["Quokka one", "Pixel 9", 5],
+      ["Quokka two", "Work Mac", 3 * 60],
+      ["Quokka three", "iPad", 2 * 24 * 60],
+      ["Quokka four", "Work Mac", 3 * 24 * 60],
+    ];
+    class TestRemoteTabs extends UrlbarProvider {
+      get name() { return "TestRemoteTabs"; }
+      get type() { return UrlbarShared.PROVIDER_TYPE.PROFILE; }
+      async isActive(queryContext) { return queryContext.searchString.includes("quokka"); }
+      async startQuery(queryContext, add) {
+        for (let [title, device, minutes] of tabs) {
+          add(this, new UrlbarResult({
+            type: UrlbarShared.RESULT_TYPE.REMOTE_TAB,
+            source: UrlbarShared.RESULT_SOURCE.TABS,
+            payload: { url: pageURL(title), title, device, icon: "", lastUsed: Date.now() - minutes * 60000 },
+          }));
+        }
+      }
+    }
+    let provider = new TestRemoteTabs();
+    let manager = ProvidersManager.getInstanceForSap("urlbar");
+    manager.registerProvider(provider);
+    let getTabClients = SyncedTabs.getTabClients;
+    SyncedTabs.getTabClients = async () => [
+      { name: "Pixel 9", clientType: "phone", tabs: [] },
+      { name: "Work Mac", clientType: "desktop", tabs: [] },
+      { name: "iPad", clientType: "tablet", tabs: [] },
+    ];
+    win.testState = { manager, provider, SyncedTabs, getTabClients };
+    // Search suggestions would take the rows the tabs flex into.
+    Services.prefs.setBoolPref("browser.urlbar.suggest.searches", false);
+    win.gBrowser.selectedBrowser.focus();
+    """)
+    try:
+        b.keys((ACCEL, "l"))
+        b.js('await wait(() => commandBarShown(), "the Command bar");')
+        b.keys(*"quokka")
+        b.js("""
+        await resultWhere(r => r.row.getAttribute("type") == "switchtab", "the open tab");
+        let seen = "";
+        let remote = await wait(async () => {
+          let results = await commandBarResults();
+          seen = results.map(r => `${r.row.getAttribute("type")}:${r.row.getAttribute("orbito-device")}:${r.result.payload.title}`).join();
+          let rows = results.filter(r => r.row.getAttribute("type") == "remotetab").map(r => r.row);
+          return rows.length == 3 && rows[2].hasAttribute("orbito-device") && rows;
+        }, "three tabs of other devices", 10000).catch(() => { throw new Error(`three tabs of other devices: ${seen}`); });
+        let urls = remote.map(row => row.result.payload.url);
+        check(JSON.stringify(urls) == JSON.stringify(["Quokka one", "Quokka two", "Quokka three"].map(pageURL)), JSON.stringify(urls));
+        // Under their own label, which the first one shows.
+        check(remote[0].getAttribute("label") == "Other devices", `the label: ${remote[0].getAttribute("label")}`);
+        check(!remote[1].hasAttribute("label"), remote[1].getAttribute("label"));
+        // The device's kind, name and when, shown whether picked or not.
+        check(JSON.stringify(remote.map(row => row.getAttribute("orbito-device"))) == '["phone","desktop","tablet"]',
+          JSON.stringify(remote.map(row => row.getAttribute("orbito-device"))));
+        let action = row => row.querySelector(".urlbarView-action");
+        let describe = row => [
+          action(row).textContent,
+          win.getComputedStyle(action(row), "::after").content,
+          win.getComputedStyle(action(row), "::before").backgroundImage,
+          shown(action(row)),
+        ].join(" | ");
+        check(describe(remote[0]) == 'Pixel 9 | "· " "5 minutes ago" | url("chrome://browser/skin/device-phone.svg") | true', describe(remote[0]));
+        check(action(remote[0]).getAttribute("orbito-ago") == "5 minutes ago", action(remote[0]).getAttribute("orbito-ago"));
+        check(action(remote[1]).getAttribute("orbito-ago") == "3 hours ago", action(remote[1]).getAttribute("orbito-ago"));
+        check(describe(remote[2]).endsWith('url("chrome://browser/skin/device-tablet.svg") | true'), describe(remote[2]));
+        check(win.getComputedStyle(action(remote[0])).backgroundColor == "rgba(0, 0, 0, 0)", "a chip");
+        // Picked, it still says where it is.
+        win.gURLBar.view.selectedRowIndex = remote[0].result.rowIndex;
+        await wait(() => remote[0].hasAttribute("selected"), "the remote tab picked");
+        check(shown(action(remote[0])), "the device hides when picked");
+        check(!shown(remote[0].querySelector(".urlbarView-url")), "the address shows when picked");
+        closeCommandBar();
+        """)
+
+        # The new tab page: the same three, in their own group.
+        b.js("""
+        let { page } = await openNewTabPage();
+        win.gBrowser.selectedBrowser.focus();
+        await wait(() => page.shadowRoot.activeElement == page.input, "the input to take focus");
+        """)
+        b.keys(*"quokka")
+        b.js("""
+        let page = newTabPageOf(win.gBrowser.selectedTab);
+        let rows = await wait(() => {
+          let rows = page.rows.filter(row => row.group == "remote");
+          return rows.length == 3 && rows;
+        }, "three tabs of other devices", 5000);
+        check(JSON.stringify(rows.map(row => row.url)) == JSON.stringify(["Quokka one", "Quokka two", "Quokka three"].map(pageURL)),
+          JSON.stringify(rows.map(row => row.url)));
+        check(page.rows.some(row => row.kind == "switch-tab" && row.url == pageURL("Quokka open")), "the open tab");
+        await page.updateComplete;
+        let shownRows = [...page.suggestionRows].filter(row => row.querySelector(".sub img.device"));
+        check(shownRows.length == 3, `${shownRows.length} rows with a device`);
+        let group = shownRows[0].closest("[role=group]");
+        check(group.querySelector(".section").textContent.trim() == "Other devices", group.querySelector(".section").textContent);
+        check(shownRows[0].querySelector(".sub").textContent == "Pixel 9 · 5 minutes ago", shownRows[0].querySelector(".sub").textContent);
+        check(JSON.stringify(shownRows.map(row => row.querySelector("img.device").getAttribute("src"))) ==
+          JSON.stringify(["phone", "desktop", "tablet"].map(kind => `chrome://browser/skin/device-${kind}.svg`)),
+          shownRows.map(row => row.querySelector("img.device").getAttribute("src")).join());
+        check(shownRows.every(row => row.dataset.kind == "open" && row.querySelector(".hint").textContent == "Open"), "the hint");
+        """)
+    finally:
+        b.js("""
+        closeCommandBar();
+        let { manager, provider, SyncedTabs, getTabClients } = win.testState;
+        manager.unregisterProvider(provider);
+        SyncedTabs.getTabClients = getTabClients;
+        delete win.testState;
+        Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
+        await onlyBlankTab();
+        """)
+
+
 def pick_command(b, name):
     """Types the command's name into an open Command bar, arrows down to
     its result and presses Enter."""
@@ -6003,15 +6134,22 @@ def tab_groups_show_as_boxes_in_their_color_and_collapse(b):
     await listMatchesGBrowser();
     check(!rowFor(a) && !rowFor(b2) && headerFor(blue), "a collapsed group still shows its tabs");
     check(headerFor(blue).getAttribute("aria-expanded") == "false", "aria-expanded");
+    // Collapsed, it is a row as a tab's: no box, its tab count at its end.
+    await wait(() => tint(blue) == "rgba(0, 0, 0, 0)", "a collapsed group's box to go");
+    let count = headerFor(blue).querySelector(".count");
+    check(count.checkVisibility() && count.textContent == "2", "a collapsed group's tab count is not shown");
     headerFor(blue).querySelector(".chevron").click();
     await wait(() => !blue.collapsed, "the group to expand");
     await listMatchesGBrowser();
+    await sleep(200);
+    let expanded = tint(blue);
 
     // A collapsed group still shows its selected tab, as Firefox does.
     win.gBrowser.selectedTab = a;
     blue.collapsed = true;
     await listMatchesGBrowser();
     check(rowFor(a) && !rowFor(b2), "the selected tab is not shown in its collapsed group");
+    check(tint(blue) == expanded, "a collapsed group showing its selected tab lost its box");
     blue.collapsed = false;
 
     // Closing the group closes its tabs.
@@ -6636,6 +6774,32 @@ def a_sideways_scroll_on_the_sidebar_goes_to_the_next_or_previous_space(b):
         // Going round, like the shortcuts.
         await swipe(list, -15);
         check(spaces().current == ids[2], "round to the last Space");
+        // Scrolls one after another, without the pause that ends a swipe.
+        async function scrolls(target, deltas) {
+          for (let deltaX of deltas) {
+            target.dispatchEvent(new win.WheelEvent("wheel", {
+              deltaX: rtl * deltaX, bubbles: true, composed: true, cancelable: true,
+            }));
+            await sleep(16);
+          }
+        }
+        // Fingers speed up, then the momentum: once a little higher, then
+        // ever smaller.
+        let fingers = [4, 10, 20, 30, 30];
+        let momentum = [40, 36, 33, 30, 27, 24, 22, 20, 18];
+        await scrolls(list, [...fingers, ...momentum]);
+        check(spaces().current == ids[0], "a swipe and its momentum went one Space");
+        // A swipe back while the momentum still runs.
+        await swipe(list, -15);
+        check(spaces().current == ids[2], "a swipe back during momentum switched back");
+        // A swipe the same way while the momentum still runs.
+        await scrolls(list, [...fingers, ...momentum].map(d => -d));
+        check(spaces().current == ids[1], "the swipe back's own swipe went one Space");
+        await scrolls(list, [-2, -6, -12, -20, -25, -30]);
+        await sleep(400);
+        check(spaces().current == ids[0], "a swipe again during momentum switched again");
+        await swipe(list, -15);
+        check(spaces().current == ids[2], "round to the last Space again");
         // A scroll mostly up or down is the tab list's.
         await swipe(list, 6, 40);
         check(spaces().current == ids[2], "a vertical scroll switched the Space");
@@ -10851,6 +11015,245 @@ def a_recent_visit_opens_its_page(b):
     """)
 
 
+# What every "From other devices" test starts with: Sync faked with
+# SyncedTabs' mock point (no Firefox Account), its clients made of
+# [url, minutes since used] tabs.
+REMOTE_PRELUDE = r"""
+const { SyncedTabs } = ChromeUtils.importESModule(
+  "resource://services-sync/SyncedTabs.sys.mjs"
+);
+const MINUTE = 60000;
+function syncClient(id, minutesAgo, tabs, clientType = "desktop") {
+  let now = Date.now();
+  return {
+    id, type: "client", name: `Device ${id}`, clientType,
+    lastModified: now - minutesAgo * MINUTE,
+    tabs: tabs.map(([url, used]) => ({
+      type: "tab", url, title: `Title of ${decodeURIComponent(url.split("/").pop())}`, icon: `page-icon:${url}`, client: id,
+      lastUsed: Math.floor((now - used * MINUTE) / 1000),
+    })),
+  };
+}
+// Sync with tab sync on and these clients; counts the syncs asked for.
+function fakeSync(clients) {
+  let fake = {
+    clients, configured: true, syncs: 0,
+    get isConfiguredToSyncTabs() { return this.configured; },
+    async getTabClients() { return JSON.parse(JSON.stringify(this.clients)); },
+    async syncTabs() { this.syncs++; return true; },
+    _getClientFxaDeviceId() { return null; },
+  };
+  SyncedTabs._internal = fake;
+  return fake;
+}
+// The clients changed: the pages show them anew.
+function tabsChanged() {
+  Services.obs.notifyObservers(null, SyncedTabs.TOPIC_TABS_CHANGED);
+}
+function remoteURLs(page) {
+  return [...page.remoteLinks].map(a => a.href).join();
+}
+function remoteURL(n) {
+  return pageURL(`Remote ${n}`);
+}
+"""
+
+def keep_synced_tabs(b):
+    """Keeps SyncedTabs' own internal object in the window, to put back."""
+    b.js("""
+    const { SyncedTabs } = ChromeUtils.importESModule(
+      "resource://services-sync/SyncedTabs.sys.mjs"
+    );
+    win.orbitoTestSyncedTabs ??= SyncedTabs._internal;
+    """)
+
+
+def restore_synced_tabs(b):
+    b.js("""
+    const { SyncedTabs } = ChromeUtils.importESModule(
+      "resource://services-sync/SyncedTabs.sys.mjs"
+    );
+    SyncedTabs._internal = win.orbitoTestSyncedTabs;
+    delete win.orbitoTestSyncedTabs;
+    Services.prefs.clearUserPref("orbito.newtab.remoteTabs");
+    Services.prefs.clearUserPref("services.sync.lastTabFetch");
+    delete win.orbitoRemoteDevice;
+    await onlyBlankTab();
+    """)
+
+
+@test
+def the_new_tab_page_shows_the_tabs_of_the_device_used_last(b):
+    keep_synced_tabs(b)
+    try:
+        b.js(REMOTE_PRELUDE + """
+        await onlyBlankTab();
+        // Old tabs: the page asks Sync for them again.
+        Services.prefs.setIntPref("services.sync.lastTabFetch", Math.floor((Date.now() - 2 * MINUTE) / 1000));
+        let open = await openPage("Remote open");
+        let fake = fakeSync([
+          // Six tabs, one open here, one on an excluded domain and one not
+          // a web page: four rows and "1 more tab".
+          syncClient("a", 5, [
+            [remoteURL(1), 3], [remoteURL(2), 1], [pageURL("Remote open"), 0],
+            ["https://mail.google.com/mail/u/0/", 0], ["about:preferences", 0],
+            [remoteURL(3), 10], [remoteURL(4), 20], [remoteURL(5), 30],
+          ], "phone"),
+          // Not used for 15 days: left out.
+          syncClient("stale", 15 * 24 * 60, [[remoteURL(9), 1]]),
+        ]);
+        let { tab, page } = await openNewTabPage();
+        let root = page.shadowRoot;
+        await wait(() => page.remoteBlock, "From other devices");
+        check(fake.syncs == 1, `${fake.syncs} syncs`);
+        let parts = [...root.querySelector("main").children].map(el => el.className || el.localName).join();
+        check(parts.endsWith(",remote"), parts);
+        check(root.querySelector("#remote-heading").textContent == "From other devices", root.querySelector("#remote-heading").textContent);
+        // One device: named over its tabs, no buttons to pick one.
+        check(!page.deviceButtons.length, "device buttons for one device");
+        let device = page.remoteBlock.querySelector(".device");
+        check(device.querySelector(".name").textContent == "Device a" && device.querySelector(".time").textContent == "5 min ago",
+          device.textContent);
+        check(remoteURLs(page) == [2, 1, 3, 4].map(remoteURL).join(), remoteURLs(page));
+        let [first] = page.remoteLinks;
+        check(first.querySelector(".title").textContent == "Title of Remote 2", first.querySelector(".title").textContent);
+        check(first.querySelector(".host").textContent == new URL(PAGES).host, first.querySelector(".host").textContent);
+        check(first.querySelector(".time").textContent == "1 min ago", first.querySelector(".time").textContent);
+        check(first.querySelector("img").src == `page-icon:${remoteURL(2)}`, first.querySelector("img").src);
+        // The rest in its place.
+        check(page.remoteMore.textContent.trim() == "1 more tab", page.remoteMore.textContent);
+        page.remoteMore.click();
+        await wait(() => page.remoteLinks.length == 5, "the rest of the tabs");
+        check(!page.remoteMore, "the row for the rest stays");
+        check(page.remoteLinks[4].href == remoteURL(5), page.remoteLinks[4].href);
+
+        // Two devices: buttons, the one used last picked; the window keeps
+        // the one picked for its new tab pages.
+        fake.clients.push(syncClient("b", 1, [[remoteURL(6), 2]], "desktop"));
+        tabsChanged();
+        await wait(() => page.deviceButtons.length == 2, "a button per device");
+        let pressed = () => [...page.deviceButtons].map(b => `${b.querySelector(".name").textContent}:${b.getAttribute("aria-pressed")}`).join();
+        check(pressed() == "Device b:true,Device a:false", pressed());
+        check(remoteURLs(page) == remoteURL(6), remoteURLs(page));
+        page.deviceButtons[1].click();
+        await wait(() => remoteURLs(page) == [2, 1, 3, 4].map(remoteURL).join(), "Device a's tabs");
+        check(pressed() == "Device b:false,Device a:true", pressed());
+        check(win.orbitoRemoteDevice == "a", win.orbitoRemoteDevice);
+        let other = await openNewTabPage();
+        await wait(() => other.page.deviceButtons.length == 2, "the buttons on another page");
+        check(remoteURLs(other.page).startsWith(remoteURL(2)), remoteURLs(other.page));
+        check(fake.syncs == 2, `the second page synced: ${fake.syncs}`);
+        win.gBrowser.removeTab(other.tab);
+
+        // The pref takes it away and brings it back, live.
+        Services.prefs.setBoolPref("orbito.newtab.remoteTabs", false);
+        await wait(() => !page.remoteBlock, "the block to go with the pref off");
+        Services.prefs.setBoolPref("orbito.newtab.remoteTabs", true);
+        await wait(() => page.remoteBlock, "the block back with the pref on");
+
+        // Without tab sync, or with only devices left out, there is none.
+        fake.configured = false;
+        tabsChanged();
+        await wait(() => !page.remoteBlock, "the block to go without tab sync");
+        fake.configured = true;
+        fake.clients = [syncClient("stale", 15 * 24 * 60, [[remoteURL(9), 1]]), syncClient("c", 1, [[pageURL("Remote open"), 1]])];
+        tabsChanged();
+        await sleep(200);
+        check(!page.remoteBlock, "a block for a stale device or open tabs only");
+        fake.clients = [];
+        tabsChanged();
+        await sleep(200);
+        check(!page.remoteBlock, "a block without devices");
+
+        // Fresh tabs: no sync.
+        Services.prefs.setIntPref("services.sync.lastTabFetch", Math.floor(Date.now() / 1000));
+        let syncs = fake.syncs;
+        let fresh = await openNewTabPage();
+        await sleep(200);
+        check(fake.syncs == syncs, "a sync for fresh tabs");
+        win.gBrowser.removeTab(fresh.tab);
+        win.gBrowser.removeTab(tab);
+        win.gBrowser.removeTab(open);
+
+        // None in a private window.
+        fake.clients = [syncClient("a", 1, [[remoteURL(1), 1]])];
+        let priv = win.OpenBrowserWindow({ private: true });
+        try {
+          await wait(() => priv.gBrowserInit?.delayedStartupFinished && priv.OrbitoShell?.topBar, "the private window");
+          let { page: privPage } = await openNewTabPage("about:newtab", priv);
+          await sleep(300);
+          check(!privPage.remoteBlock, "From other devices in a private window");
+        } finally {
+          await new Promise(resolve => {
+            priv.addEventListener("unload", resolve, { once: true });
+            priv.close();
+          });
+        }
+        """)
+    finally:
+        restore_synced_tabs(b)
+
+
+@test
+def the_settings_switch_takes_other_devices_off_the_new_tab_page(b):
+    keep_synced_tabs(b)
+    try:
+        b.js(REMOTE_PRELUDE + """
+        await onlyBlankTab();
+        Services.prefs.setIntPref("services.sync.lastTabFetch", Math.floor(Date.now() / 1000));
+        fakeSync([syncClient("a", 1, [[remoteURL(1), 1]])]);
+        // The settings first: they take the place of a selected new tab page.
+        let settings = await openOrbitoSettings();
+        let { tab, page } = await openNewTabPage();
+        await wait(() => page.remoteBlock, "From other devices");
+        let box = settings.getElementById("newtab-remote-tabs");
+        check(box.checked, "the switch is off by default");
+        check(await named(box) == "Show tabs from other devices on new tabs", await named(box));
+        box.click();
+        check(!Services.prefs.getBoolPref("orbito.newtab.remoteTabs"), "the pref stays on");
+        // The open new tab page drops the block without a reload.
+        await wait(() => !page.remoteBlock, "the block to go with the switch off");
+        box.click();
+        check(Services.prefs.getBoolPref("orbito.newtab.remoteTabs"), "the pref stays off");
+        await wait(() => page.remoteBlock, "the block back with the switch on");
+        // The switch follows the pref changed elsewhere.
+        Services.prefs.setBoolPref("orbito.newtab.remoteTabs", false);
+        check(!box.checked, "the switch stays on after the pref");
+        win.gBrowser.removeTab(tab);
+        """)
+    finally:
+        restore_synced_tabs(b)
+
+
+@test
+def a_tab_of_another_device_opens_its_page(b):
+    keep_synced_tabs(b)
+    try:
+        b.js(REMOTE_PRELUDE + """
+        await onlyBlankTab();
+        Services.prefs.setIntPref("services.sync.lastTabFetch", Math.floor(Date.now() / 1000));
+        fakeSync([syncClient("a", 1, [[remoteURL(1), 1], [remoteURL(2), 2]])]);
+        let { tab, page } = await openNewTabPage();
+        await wait(() => page.remoteLinks.length == 2, "the other device's tabs");
+        let count = win.gBrowser.tabs.length;
+        // A middle click opens it in a new tab.
+        let [one, two] = page.remoteLinks;
+        let rect = two.getBoundingClientRect();
+        two.dispatchEvent(new page.ownerDocument.defaultView.MouseEvent("auxclick",
+          { bubbles: true, cancelable: true, button: 1, clientX: rect.left + 4, clientY: rect.top + 4 }));
+        await wait(() => win.gBrowser.tabs.length == count + 1, "a new tab");
+        await wait(() => byLabel("Remote 2"), "Remote 2 to load");
+        check(tab.linkedBrowser.currentURI.spec == "about:newtab", "the page navigated");
+        win.gBrowser.selectedTab = tab;
+        // A click opens it in this tab.
+        one.click();
+        await wait(() => tab.linkedBrowser.currentURI.spec == remoteURL(1) && tab.label == "Remote 1", "Remote 1 in the tab");
+        check(win.gBrowser.tabs.length == count + 1, "the click opened a tab");
+        """)
+    finally:
+        restore_synced_tabs(b)
+
+
 @test
 def the_new_tab_page_follows_the_keyboard_rules(b):
     b.js("""
@@ -11069,6 +11472,38 @@ def the_advanced_link_opens_firefox_settings_without_the_shells_sections(b):
     // Language: the app's is picked in Orbito's settings; the pages' stays.
     page = await firefoxSettingsAt("paneLanguages", "websiteLanguage");
     check(!page.querySelector('setting-group[groupid="browserLanguage"]').checkVisibility(), "Firefox's language picker shows");
+    await onlyBlankTab();
+    """)
+
+
+@test
+def settings_entry_points_open_orbitos_settings(b):
+    b.js("""
+    await onlyBlankTab();
+    // The menu bar's Settings items (macOS: the application menu, ⌘,).
+    for (let id of ["menu_preferences", "menu_settings"]) {
+      let item = doc.getElementById(id);
+      if (!item) {
+        continue;
+      }
+      item.doCommand();
+      await wait(() => win.gBrowser.currentURI.spec == "about:orbito-settings", `Orbito's settings from ${id}`);
+      check(!win.gBrowser.tabs.some(t => t.linkedBrowser.currentURI.spec.startsWith("about:preferences")), `${id} opened Firefox's settings`);
+      await onlyBlankTab();
+    }
+    // The add-ons manager's Settings button.
+    let addons = await openAddons();
+    let button = addons.getElementById("preferencesButton");
+    await wait(() => {
+      if (win.gBrowser.currentURI.spec == "about:orbito-settings") {
+        return true;
+      }
+      // A page that just loaded (about:addons) can take the selection back
+      // when it focuses itself; the second click selects the open tab.
+      button.click();
+      return false;
+    }, "Orbito's settings from about:addons");
+    check(!win.gBrowser.tabs.some(t => t.linkedBrowser.currentURI.spec.startsWith("about:preferences")), "about:addons opened Firefox's settings");
     await onlyBlankTab();
     """)
 
@@ -11301,6 +11736,7 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
             (Keys.TAB, "accent coral"),
             (Keys.TAB, "language en-US"),
             (Keys.TAB, "Sign in"),
+            (Keys.TAB, "newtab-remote-tabs"),
             (Keys.TAB, "Import…"),
             (Keys.TAB, "sidebar-collapsed"),
             (Keys.TAB, "assistant-auto-open"),
@@ -11312,8 +11748,9 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
         picked = b.js("return [Services.prefs.getStringPref(THEME_PREF), Services.prefs.getStringPref(ACCENT_PREF)];")
         assert picked == ["light", "coral"], picked
 
-        # Back over the Layout switches, the import, the account and the language to the accent.
-        for _ in range(5):
+        # Back over the Layout switches, the import, the new tab switch, the
+        # account and the language to the accent.
+        for _ in range(6):
             b.keys((Keys.SHIFT, Keys.TAB))
         assert b.js(state + "return focusedOn;") == "accent coral"
         ring = b.js(state + """

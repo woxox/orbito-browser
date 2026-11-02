@@ -78,6 +78,8 @@ orbito-settings-choose-what-to-sync = Choose what to sync
 # The item for the Shell's lists in Firefox's "Choose what to sync".
 orbito-sync-engine-shell = Orbito Pins, Spaces and Docks
 orbito-settings-sync-now = Sync now
+orbito-settings-newtab-remote-tabs = Show tabs from other devices on new tabs
+orbito-settings-newtab-remote-tabs-hint = Shows the tabs open on your other devices below recent visits on new tabs.
 
 ## Import
 

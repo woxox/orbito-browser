@@ -15,13 +15,16 @@
  * closing it leaves no tab behind.
  */
 
-const { t } = ChromeUtils.importESModule(
+const { t, OrbitoL10n } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
 );
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  agoText: "chrome://browser/content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs",
+  deviceTypes: "chrome://browser/content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs",
   groupLabel: "chrome://browser/content/orbito/OrbitoRecallUrlbarProvider.sys.mjs",
+  trimRemoteTabs: "chrome://browser/content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs",
   UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
@@ -67,6 +70,13 @@ export class CommandBar {
    * type over the empty input, the mode chip and the footer's last line.
    */
   #parts = null;
+  /**
+   * The kind of each of the user's other devices by its name, asked for
+   * each time the Command bar opens (deviceTypes()).
+   *
+   * @type {Map<string, string>}
+   */
+  #devices = new Map();
 
   /** The element behind the Command bar; pressing it closes the bar. */
   scrim = null;
@@ -199,8 +209,12 @@ export class CommandBar {
       this.#returnFocus = deepActiveElement();
       this.#browser = gBrowser.selectedBrowser;
       this.#overrideWhereToOpen();
-      this.#labelOpenTabs();
+      this.#labelGroups();
       this.#addParts();
+      lazy.deviceTypes().then(devices => {
+        this.#devices = devices;
+        this.#describeRemoteTabs();
+      });
     }
     document.documentElement.setAttribute("orbito-command-bar", mode);
     if (opening) {
@@ -291,32 +305,73 @@ export class CommandBar {
   }
 
   /**
-   * Puts the open tabs among the results under their own label, as the
-   * urlbar labels groups: each run of switch-to-tab results gets it, and
-   * the result after a run gets its own group's label again. Only the
-   * label changes; the results and their order stay the urlbar's.
+   * Puts the open tabs and the tabs of other devices among the results
+   * under their own labels, as the urlbar labels groups: each run of
+   * switch-to-tab or remote tab results gets its label, and the result
+   * after a run gets its own group's label again. The tabs of other devices
+   * are trimmed as the new tab page trims them (trimRemoteTabs()) and say
+   * their device and when they were used there (#describeRemoteTabs());
+   * the other results and their order stay the urlbar's.
    */
-  #labelOpenTabs() {
+  #labelGroups() {
     let { view } = gURLBar;
     if (this.#view == view) {
       return;
     }
     this.#view = view;
+    let { RESULT_TYPE } = lazy.UrlbarShared;
+    let labels = {
+      [RESULT_TYPE.TAB_SWITCH]: "orbito-command-bar-section-tabs",
+      [RESULT_TYPE.REMOTE_TAB]: "orbito-command-bar-section-remote",
+    };
     let onQueryResults = view.onQueryResults.bind(view);
     view.onQueryResults = queryContext => {
+      queryContext.results = lazy.trimRemoteTabs(queryContext.results);
       for (let result of queryContext.results) {
-        if (
-          result.type == lazy.UrlbarShared.RESULT_TYPE.TAB_SWITCH &&
-          !result.heuristic &&
-          !result.rowLabel
-        ) {
+        let label = labels[result.type];
+        if (label && !result.heuristic && !result.rowLabel) {
           Object.defineProperty(result, "rowLabel", {
-            value: lazy.groupLabel(t("orbito-command-bar-section-tabs")),
+            value: lazy.groupLabel(t(label)),
           });
         }
       }
       onQueryResults(queryContext);
+      this.#describeRemoteTabs();
     };
+    let onQueryResultRemoved = view.onQueryResultRemoved.bind(view);
+    view.onQueryResultRemoved = (...args) => {
+      onQueryResultRemoved(...args);
+      this.#describeRemoteTabs();
+    };
+  }
+
+  /**
+   * Gives each row of another device's tab its device's kind and how long
+   * ago the tab was used there, which command-bar.css shows around the
+   * device's name that Firefox puts in the row's action. Rows are reused
+   * for other results, so every row is gone over.
+   */
+  #describeRemoteTabs() {
+    let now = Date.now();
+    for (let row of gURLBar.view.panel.querySelectorAll(".urlbarView-row")) {
+      let { result } = row;
+      let action = row.querySelector(".urlbarView-action");
+      if (result?.type != lazy.UrlbarShared.RESULT_TYPE.REMOTE_TAB) {
+        row.removeAttribute("orbito-device");
+        action?.removeAttribute("orbito-ago");
+        continue;
+      }
+      let { device, lastUsed } = result.payload;
+      row.setAttribute("orbito-device", this.#devices.get(device) ?? "desktop");
+      if (lastUsed) {
+        action?.setAttribute(
+          "orbito-ago",
+          lazy.agoText(lastUsed, now, OrbitoL10n.language)
+        );
+      } else {
+        action?.removeAttribute("orbito-ago");
+      }
+    }
   }
 
   handleEvent(event) {

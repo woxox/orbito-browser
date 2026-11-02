@@ -2,7 +2,7 @@ diff --git a/browser/base/jar.mn b/browser/base/jar.mn
 index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7ac4d2d22 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -5,6 +5,173 @@ browser.jar:
+@@ -5,6 +5,174 @@ browser.jar:
  %  content browser %content/browser/ contentaccessible=yes
  
          content/browser/aboutDialog-appUpdater.js     (content/aboutDialog-appUpdater.js)
@@ -168,6 +168,7 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7
 +        content/browser/orbito/newtab/orbito-new-tab.mjs (content/orbito/newtab/orbito-new-tab.mjs)
 +        content/browser/orbito/newtab/orbito-new-tab.css (content/orbito/newtab/orbito-new-tab.css)
 +        content/browser/orbito/newtab/OrbitoNewTabSuggest.sys.mjs (content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs)
++        content/browser/orbito/newtab/OrbitoRemoteTabs.sys.mjs (content/orbito/newtab/OrbitoRemoteTabs.sys.mjs)
 +        content/browser/orbito/OrbitoL10n.sys.mjs (content/orbito/OrbitoL10n.sys.mjs)
 +# One wildcard, not a line per file: Firefox's langpack staging treats a section
 +# whose sources contain /locales/en-US/ as localized and chokes on its content

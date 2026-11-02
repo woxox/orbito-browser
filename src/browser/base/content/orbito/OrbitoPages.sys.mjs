@@ -15,7 +15,8 @@
  *     instead of Firefox's.
  * Firefox's settings (about:preferences, reached from Orbito's settings)
  * and add-ons manager (about:addons) get a sheet that hides the sections
- * the Shell replaced.
+ * the Shell replaced; the add-ons manager's Settings button opens Orbito's
+ * settings.
  * Content processes need the about module of a page they load too (for its
  * flags; without them the load is dropped), so a process script registers
  * those pages in every content process as well.
@@ -209,7 +210,10 @@ export const OrbitoPages = {
     }
   },
 
-  /** Gives Firefox's settings and add-ons pages their sheet as they load. */
+  /**
+   * Gives Firefox's settings and add-ons pages their sheet as they load,
+   * and points the add-ons manager's Settings button at Orbito's settings.
+   */
   observe(doc, topic) {
     if (
       topic != "document-element-inserted" ||
@@ -224,6 +228,21 @@ export const OrbitoPages = {
       doc.defaultView?.windowUtils.loadSheetUsingURIString(
         page.sheet,
         Ci.nsIDOMWindowUtils.AUTHOR_SHEET
+      );
+    }
+    if (doc.documentURI.startsWith("about:addons")) {
+      // Its own click handler opens Firefox's settings: this runs first,
+      // while the click is captured.
+      doc.defaultView?.addEventListener(
+        "click",
+        event => {
+          if (event.target.closest?.("#preferencesButton")) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.openSettings(doc.defaultView.browsingContext.topChromeWindow);
+          }
+        },
+        true
       );
     }
   },

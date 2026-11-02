@@ -181,6 +181,8 @@ orbito-command-bar-hint-open = Open
 orbito-command-bar-hint-command = Command
 # The label above the open tabs among the results.
 orbito-command-bar-section-tabs = Open tabs
+# The label above the tabs open on the user's other devices among the results.
+orbito-command-bar-section-remote = Other devices
 orbito-commands-settings = Open settings
 orbito-commands-history = Show history
 orbito-commands-history-description = Timeline

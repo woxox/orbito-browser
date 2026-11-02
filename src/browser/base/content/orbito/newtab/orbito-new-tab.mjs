@@ -23,6 +23,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   routeQuery: "chrome://browser/content/orbito/OrbitoUrlbarProvider.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   startOfDay: "chrome://browser/content/orbito/OrbitoSchedule.sys.mjs",
+  SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
 });
 const { OrbitoAppearance } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/shell/OrbitoAppearance.sys.mjs"
@@ -40,6 +41,10 @@ const {
 } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/newtab/OrbitoNewTabSuggest.sys.mjs"
 );
+const { agoMessage, pickedDevice, REMOTE_LIMIT, remoteDevices } =
+  ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/newtab/OrbitoRemoteTabs.sys.mjs"
+  );
 
 // The page takes Orbito's light, dark and accent, as the window does.
 OrbitoAppearance.follow(document);
@@ -48,6 +53,11 @@ OrbitoAppearance.follow(document);
 export const RECENT_LIMIT = 6;
 // How many of the latest visited pages are looked through for them.
 const HISTORY_LIMIT = 100;
+// Whether the page shows "From other devices".
+const REMOTE_PREF = "orbito.newtab.remoteTabs";
+// The other devices' tabs are synced again when the page opens if they are
+// older than this.
+const REMOTE_FRESH_MS = 60 * 1000;
 
 /** The words at the end of a suggestion: what Enter does with it. */
 const ROW_HINTS = {
@@ -67,6 +77,38 @@ const SEARCH = html`<svg viewBox="0 0 16 16" aria-hidden="true">
   <circle cx="7" cy="7" r="4.5" />
   <path d="M10.5 10.5 14 14" />
 </svg>`;
+
+/** A device's icon by its Sync client type; a computer for the others. */
+const DEVICE_ICONS = {
+  desktop: html`<svg viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="2.5" y="3" width="11" height="7.5" rx="1.25" />
+    <path d="M1 13h14" />
+  </svg>`,
+  phone: html`<svg viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="4.5" y="1.5" width="7" height="13" rx="1.75" />
+    <path d="M7 12.25h2" />
+  </svg>`,
+  tablet: html`<svg viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="2.5" y="1.5" width="11" height="13" rx="1.75" />
+    <path d="M7 12.25h2" />
+  </svg>`,
+};
+
+/** How long ago a time was, see agoMessage(). */
+function ago(time, now) {
+  return t(...agoMessage(time, now));
+}
+
+/** The URLs of the tabs of this browser's windows. */
+function openURLs() {
+  let urls = new Set();
+  for (let win of Services.wm.getEnumerator("navigator:browser")) {
+    for (let tab of win.gBrowser?.tabs ?? []) {
+      urls.add(tab.linkedBrowser.currentURI.spec);
+    }
+  }
+  return urls;
+}
 
 /**
  * The recent visits to show, from history visits newest first: the latest
@@ -126,6 +168,17 @@ export function recentSites(visits, limit = RECENT_LIMIT) {
  * A recent visit opens its page in this tab (or where a modifier or the
  * middle button says).
  *
+ * Under the recent visits, "From other devices" shows the tabs Firefox
+ * Sync brings from another device (OrbitoRemoteTabs.sys.mjs): the
+ * REMOTE_LIMIT used last of the device used last, and a row for the rest
+ * that shows them in its place. With more than one device, buttons above
+ * them pick the device, which the window remembers for its new tab pages.
+ * A tab opens as a recent visit does. The block is not there in private
+ * windows, without tab sync, with no device used in the last two weeks
+ * with a tab this browser has not open, or with orbito.newtab.remoteTabs
+ * off. The page asks Sync for the tabs again as it opens when they are
+ * more than a minute old, and shows them anew when they come.
+ *
  * A privileged page in the parent process: it talks to its window
  * (OrbitoAssistant), to Places and to the urlbar's providers directly. It
  * takes focus only when its tab's page does (never from the Command bar):
@@ -133,7 +186,8 @@ export function recentSites(visits, limit = RECENT_LIMIT) {
  *
  * Keyboard: the input, with its suggestions as a combobox's list, then the
  * recent visits as one tab stop, where the arrow keys move and Home and End
- * go to the ends.
+ * go to the ends, then the device buttons, the other devices' tabs and the
+ * row for the rest, a tab stop each.
  */
 export class OrbitoNewTab extends MozLitElement {
   static properties = {
@@ -153,12 +207,20 @@ export class OrbitoNewTab extends MozLitElement {
     summary: { type: Array },
     /** The name of the Space the window shows, or "" with one Space. */
     space: { type: String },
+    /** The other devices shown, see remoteDevices(). */
+    devices: { type: Array },
+    /** Whether the device's tabs past REMOTE_LIMIT show. */
+    remoteExpanded: { type: Boolean },
   };
 
   static queries = {
     input: ".ask input",
     recentList: ".recent",
     siteLinks: { all: ".site" },
+    remoteBlock: ".remote",
+    deviceButtons: { all: ".device-chip" },
+    remoteLinks: { all: ".remote-tab" },
+    remoteMore: ".remote-more",
     suggestionList: ".suggestions",
     suggestionRows: { all: ".suggestion" },
   };
@@ -175,6 +237,11 @@ export class OrbitoNewTab extends MozLitElement {
   #dismissed = false;
   // The recent visit the keyboard is on, by URL; the first when unset.
   #focusedURL = null;
+  // Whether the page follows the other devices' tabs and its pref.
+  #watchingRemote = false;
+  // Counts the reads of the other devices' tabs, so that only the last
+  // one shows.
+  #remoteReads = 0;
 
   constructor() {
     super();
@@ -186,6 +253,8 @@ export class OrbitoNewTab extends MozLitElement {
     this.greeting = greetingId(new Date().getHours());
     this.summary = summaryParts({ now: Date.now() }, OrbitoL10n.language);
     this.space = "";
+    this.devices = [];
+    this.remoteExpanded = false;
   }
 
   /** The window the page is in. */
@@ -217,6 +286,7 @@ export class OrbitoNewTab extends MozLitElement {
       .getHistory({ sortBy: "lastvisited", limit: HISTORY_LIMIT })
       .then(visits => this.#showHistory(visits), console.error);
     this.#refreshGreeting();
+    this.#watchRemote();
   }
 
   disconnectedCallback() {
@@ -225,6 +295,7 @@ export class OrbitoNewTab extends MozLitElement {
     this.#close();
     this.#history?.close();
     this.#history = null;
+    this.#unwatchRemote();
   }
 
   handleEvent(event) {
@@ -232,12 +303,105 @@ export class OrbitoNewTab extends MozLitElement {
       case "focus":
         this.#takeFocus();
         this.#refreshGreeting();
+        this.#showRemote();
         break;
       case "unload":
         this.#close();
         this.#history?.close();
         this.#history = null;
+        this.#unwatchRemote();
         break;
+    }
+  }
+
+  // Shows the other devices' tabs and follows them and the pref; asks
+  // Sync for them again when they are old. Not in private windows.
+  #watchRemote() {
+    if (this.#watchingRemote || this.#isPrivate) {
+      return;
+    }
+    this.#watchingRemote = true;
+    Services.prefs.addObserver(REMOTE_PREF, this.#onRemoteChange);
+    Services.obs.addObserver(
+      this.#onRemoteChange,
+      lazy.SyncedTabs.TOPIC_TABS_CHANGED
+    );
+    this.#showRemote();
+    let fetched =
+      Services.prefs.getIntPref("services.sync.lastTabFetch", 0) * 1000;
+    if (this.#remoteShown && Date.now() - fetched > REMOTE_FRESH_MS) {
+      lazy.SyncedTabs.syncTabs().catch(console.error);
+    }
+  }
+
+  #unwatchRemote() {
+    if (!this.#watchingRemote) {
+      return;
+    }
+    this.#watchingRemote = false;
+    Services.prefs.removeObserver(REMOTE_PREF, this.#onRemoteChange);
+    Services.obs.removeObserver(
+      this.#onRemoteChange,
+      lazy.SyncedTabs.TOPIC_TABS_CHANGED
+    );
+  }
+
+  #onRemoteChange = () => this.#showRemote();
+
+  // Whether the block may show at all.
+  get #remoteShown() {
+    return (
+      !this.#isPrivate &&
+      Services.prefs.getBoolPref(REMOTE_PREF, true) &&
+      lazy.SyncedTabs.isConfiguredToSyncTabs
+    );
+  }
+
+  /** Reads the other devices' tabs and shows them. */
+  async #showRemote() {
+    let read = ++this.#remoteReads;
+    if (!this.#watchingRemote || !this.#remoteShown) {
+      this.devices = [];
+      return;
+    }
+    let clients = await lazy.SyncedTabs.getTabClients().catch(e => {
+      console.error(e);
+      return [];
+    });
+    if (read != this.#remoteReads || !this.#watchingRemote) {
+      return;
+    }
+    this.devices = remoteDevices(clients, {
+      now: Date.now(),
+      excluded: lazy.OrbitoRecall.excludedDomains,
+      openURLs: openURLs(),
+    });
+  }
+
+  /**
+   * The device whose tabs show: the one picked in this window, or the one
+   * used last.
+   */
+  get device() {
+    return pickedDevice(this.devices, this.chromeWindow?.orbitoRemoteDevice);
+  }
+
+  #pickDevice(device) {
+    if (this.chromeWindow) {
+      this.chromeWindow.orbitoRemoteDevice = device.id;
+    }
+    this.remoteExpanded = false;
+    this.requestUpdate();
+  }
+
+  // Shows the rest of the device's tabs, with the keyboard on the first of
+  // them if it was on the row.
+  async #expandRemote() {
+    let focused = this.shadowRoot.activeElement == this.remoteMore;
+    this.remoteExpanded = true;
+    await this.updateComplete;
+    if (focused) {
+      this.remoteLinks[REMOTE_LIMIT]?.focus();
     }
   }
 
@@ -435,7 +599,7 @@ export class OrbitoNewTab extends MozLitElement {
     // The suggestion picked stays picked as more come.
     let picked = this.#rowsText == text && this.rows[this.selected]?.result;
     this.#rowsText = text;
-    this.rows = rowsOf(results);
+    this.rows = rowsOf(results, { devices: this.#suggester.devices });
     this.selected = Math.max(
       0,
       this.rows.findIndex(row => row.result == picked)
@@ -570,7 +734,10 @@ export class OrbitoNewTab extends MozLitElement {
     }
   }
 
-  /** Opens a recent visit, in this tab unless the click says otherwise. */
+  /**
+   * Opens a recent visit or another device's tab, in this tab unless the
+   * click says otherwise.
+   */
   #open(event, site) {
     event.preventDefault();
     let win = this.chromeWindow;
@@ -662,7 +829,13 @@ export class OrbitoNewTab extends MozLitElement {
     >
       <span class="icon">${this.#rowIcon(row)}</span>
       <span class="title">${row.title}</span>
-      ${row.sub ? html`<span class="sub">${row.sub}</span>` : nothing}
+      ${row.sub
+        ? html`<span class="sub"
+            >${row.deviceIcon
+              ? html`<img class="device" src=${row.deviceIcon} alt="" />`
+              : nothing}${row.sub}</span
+          >`
+        : nothing}
       <span class="hint">${t(ROW_HINTS[row.kind])}</span>
     </li>`;
   }
@@ -764,6 +937,78 @@ export class OrbitoNewTab extends MozLitElement {
     </nav>`;
   }
 
+  #renderDevice(device, now) {
+    return html`${DEVICE_ICONS[device.type] ?? DEVICE_ICONS.desktop}<span
+        class="name"
+        >${device.name}</span
+      ><span class="time">${ago(device.lastUsed, now)}</span>`;
+  }
+
+  #renderRemote() {
+    let device = this.device;
+    if (!device) {
+      return nothing;
+    }
+    let now = Date.now();
+    let tabs = this.remoteExpanded
+      ? device.tabs
+      : device.tabs.slice(0, REMOTE_LIMIT);
+    let more = device.tabs.length - tabs.length;
+    return html`<nav class="remote" aria-labelledby="remote-heading">
+      <h2 id="remote-heading">${t("orbito-newtab-remote")}</h2>
+      ${this.devices.length > 1
+        ? html`<div
+            class="devices"
+            role="group"
+            aria-label=${t("orbito-newtab-remote-devices")}
+          >
+            ${this.devices.map(
+              each =>
+                html`<button
+                  class="device-chip"
+                  aria-pressed=${each == device}
+                  @click=${() => this.#pickDevice(each)}
+                >
+                  ${this.#renderDevice(each, now)}
+                </button>`
+            )}
+          </div>`
+        : html`<p class="device">${this.#renderDevice(device, now)}</p>`}
+      <ul class="remote-tabs">
+        ${tabs.map(
+          tab =>
+            html`<li>
+              <a
+                class="remote-tab"
+                href=${tab.url}
+                title=${tab.title}
+                @click=${event => this.#open(event, tab)}
+                @auxclick=${event =>
+                  event.button == 1 && this.#open(event, tab)}
+                ><img src=${tab.icon} alt="" width="16" height="16" /><span
+                  class="title"
+                  >${tab.title}</span
+                ><span class="host">${tab.host}</span>${tab.lastUsed
+                  ? html`<span class="time">${ago(tab.lastUsed, now)}</span>`
+                  : nothing}</a
+              >
+            </li>`
+        )}
+        ${more > 0
+          ? html`<li>
+              <button
+                class="remote-more"
+                aria-expanded="false"
+                @click=${this.#expandRemote}
+              >
+                ${t("orbito-newtab-remote-more", { count: more })}
+              </button>
+            </li>`
+          : nothing}
+      </ul>
+    </nav>`;
+  }
+
   render() {
     let open = this.open && this.rows.length > 0;
     return html`<link
@@ -817,6 +1062,7 @@ export class OrbitoNewTab extends MozLitElement {
           </div>
         </div>
         ${this.#renderSites()}
+        ${this.#renderRemote()}
       </main>`;
   }
 }
