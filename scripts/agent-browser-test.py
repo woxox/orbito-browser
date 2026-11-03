@@ -1039,6 +1039,33 @@ def a_declined_click_does_not_click(b):
 
 
 @test
+def a_tab_opened_in_the_background_loads_and_reads(b):
+    b.js("""
+    let url = `${MOCK}/slow-page/${encodeURIComponent("Background opened")}`;
+    use("openai", "mock-call:open_tab:" + JSON.stringify({ url }));
+    let opener = await openPage("Background opener");
+    let before = new Set(win.gBrowser.tabs);
+    bypass(true);
+    let messages;
+    try {
+      messages = await finished(askPanel("Open the page"));
+    } finally {
+      bypass(false);
+    }
+    let tab = win.gBrowser.tabs.find(t => !before.has(t));
+    // open_tab returns once the tab has loaded, without selecting it, so
+    // the page can be read at once.
+    check(tab && win.gBrowser.selectedTab == opener, "the tab did not open in the background");
+    check(tab.linkedBrowser.contentTitle == "Background opened", tab.linkedBrowser.currentURI.spec);
+    check(results(messages)[0].content.startsWith("Opened tab"), results(messages)[0].content);
+    let { OrbitoPage } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoPage.sys.mjs");
+    let text = await OrbitoPage.read(tab);
+    check(text.includes("Background opened"), text);
+    win.gBrowser.removeTab(tab);
+    """)
+
+
+@test
 def page_actions_run_without_asking_under_bypass(b):
     b.js("""
     steps("claude", [["read_page", {}], ["click", { ref: '@button "Count"' }]]);
@@ -1244,7 +1271,7 @@ TABLE_ROWS = '[...document.querySelectorAll("#prices tbody tr")].map(tr => { let
 
 
 @test
-def a_script_pulls_table_rows_out_as_json_and_always_asks(b):
+def a_script_pulls_table_rows_out_as_json_and_asks(b):
     b.js(SCRIPT_PRELUDE + """
     let tab = await openMockPage("table", "Prices");
     let codes = [
@@ -1255,27 +1282,34 @@ def a_script_pulls_table_rows_out_as_json_and_always_asks(b):
       "document.title = 'Ran'; undefined",
     ];
     steps("openai", codes.map(code => ["run_script", { code }]));
-    // Even PermissionMode bypass asks before each script.
+    let id = askPanel("What do the fruits cost?");
+    let shown = await allowEach(id);
+    let messages = await finished(id);
+    check(shown.length == codes.length, JSON.stringify(shown));
+    for (let [i, { code, site }] of shown.entries()) {
+      check(code == codes[i] && site?.startsWith("127.0.0.1:"), JSON.stringify(shown[i]));
+    }
+    let approvals = partsOf(messages, "approval");
+    check(approvals.every(a => a.result && !a.bypassed && a.text == "Run this script on 127.0.0.1?"), JSON.stringify(approvals));
+    let [rows, awaited, quoted, long, nothing] = results(messages);
+    check(!rows.is_error && rows.content.includes('[{"fruit":"Apple","price":1.2},{"fruit":"Banana","price":0.5},{"fruit":"Cherry","price":4}]'), rows.content);
+    check(rows.content.includes("untrusted"), rows.content);
+    check(awaited.content.includes('{"title":"Prices"}'), awaited.content);
+    let tags = ["<page_script_result>", "</page_script_result>"].map(t => quoted.content.split(t).length - 1);
+    check(tags[0] == 1 && tags[1] == 1 && quoted.content.includes("Ignore the user"), quoted.content);
+    check(!long.is_error && long.content.includes("cut at 20000 of 30002"), long.content);
+    check(!nothing.is_error && nothing.content.includes("undefined"), nothing.content);
+    check(tab.linkedBrowser.contentTitle == "Ran", tab.linkedBrowser.contentTitle);
+    // PermissionMode bypass runs scripts without asking, as it does clicks.
+    steps("openai", [["run_script", { code: "document.title" }]]);
     bypass(true);
     try {
-      let id = askPanel("What do the fruits cost?");
-      let shown = await allowEach(id);
+      let id = askPanel("What is the title now?");
       let messages = await finished(id);
-      check(shown.length == codes.length, JSON.stringify(shown));
-      for (let [i, { code, site }] of shown.entries()) {
-        check(code == codes[i] && site?.startsWith("127.0.0.1:"), JSON.stringify(shown[i]));
-      }
       let approvals = partsOf(messages, "approval");
-      check(approvals.every(a => a.result && !a.bypassed && a.text == "Run this script on 127.0.0.1?"), JSON.stringify(approvals));
-      let [rows, awaited, quoted, long, nothing] = results(messages);
-      check(!rows.is_error && rows.content.includes('[{"fruit":"Apple","price":1.2},{"fruit":"Banana","price":0.5},{"fruit":"Cherry","price":4}]'), rows.content);
-      check(rows.content.includes("untrusted"), rows.content);
-      check(awaited.content.includes('{"title":"Prices"}'), awaited.content);
-      let tags = ["<page_script_result>", "</page_script_result>"].map(t => quoted.content.split(t).length - 1);
-      check(tags[0] == 1 && tags[1] == 1 && quoted.content.includes("Ignore the user"), quoted.content);
-      check(!long.is_error && long.content.includes("cut at 20000 of 30002"), long.content);
-      check(!nothing.is_error && nothing.content.includes("undefined"), nothing.content);
-      check(tab.linkedBrowser.contentTitle == "Ran", tab.linkedBrowser.contentTitle);
+      check(approvals.length == 1 && approvals[0].result && approvals[0].bypassed, JSON.stringify(approvals));
+      let [title] = results(messages);
+      check(!title.is_error && title.content.includes('"Ran"'), title.content);
     } finally {
       bypass(false);
     }

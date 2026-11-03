@@ -372,6 +372,26 @@ export const OrbitoPage = {
   },
 
   /**
+   * Waits for a tab that is loading a page, as one just opened is (at its
+   * first about:blank until the load starts), to load it, for at most
+   * NAVIGATION_LOAD_MS: until then no tool can read it. In the background
+   * too: the tab loads without being selected.
+   */
+  async loaded(tab, signal) {
+    let browser = tab.linkedBrowser;
+    let end = Date.now() + NAVIGATION_LOAD_MS;
+    while (
+      (browser.browsingContext?.webProgress?.isLoadingDocument ||
+        browser.currentURI.spec == "about:blank") &&
+      !tab.closing &&
+      !signal?.aborted &&
+      Date.now() < end
+    ) {
+      await sleep(100);
+    }
+  },
+
+  /**
    * The size of the page's viewport, where it is scrolled to and how tall
    * the page is, or with a ref, where that element is on the page.
    *

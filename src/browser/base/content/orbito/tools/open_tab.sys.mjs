@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { OrbitoPage } from "../OrbitoPage.sys.mjs";
+
 export function parseURL(url) {
   let uri;
   try {
@@ -37,7 +39,7 @@ function t(id, args) {
 export default {
   name: "open_tab",
   description:
-    "Open an http(s) URL in a new background tab. The user must approve each call.",
+    "Open an http(s) URL in a new background tab, returning once it has loaded (or after 10 seconds), so it can be read at once. The user must approve each call.",
   schema: {
     type: "object",
     properties: { url: { type: "string", format: "uri" } },
@@ -72,7 +74,7 @@ export default {
     return parseURL(input.url).spec;
   },
 
-  run(ctx, input) {
+  async run(ctx, input) {
     let uri = parseURL(input.url);
     // A windowless query (a scheduled task) opens it in the window used
     // last, still in the background.
@@ -90,11 +92,18 @@ export default {
     if (!ctx.windowless) {
       ctx.opened(opened);
     }
-    // Its title is not known yet: the chip shows the host.
     let tabId = ctx.tabId(opened);
+    // Read right after, it must not be at about:blank still.
+    await OrbitoPage.loaded(opened, ctx.signal);
+    // Without a title yet (still loading, or closed), the chip shows the
+    // host.
     return {
       content: `Opened tab ${tabId}.`,
-      page: { url: uri.spec, title: null, tabId },
+      page: {
+        url: uri.spec,
+        title: opened.linkedBrowser.contentTitle || null,
+        tabId,
+      },
     };
   },
 };

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Minimal stand-in for the Anthropic Messages API and OpenAI-compatible Chat
 Completions, for checking the assistant's tool loops without a real key.
-It also serves test pages at /page/<title>, a long article at
+It also serves test pages at /page/<title> (at /slow-page/<title> after a
+second), a long article at
 /long/<title>, at /framed/<title> a page whose text is in a frame
 (/page/Framed <title>, from the ?base= origin when given) beside a 1×1,
 a hidden and a srcdoc one, at /framed-form a page with /form in a frame, at
@@ -1364,6 +1365,10 @@ def handle(request):
         return Response.json({"error": "model not found"}, 404)
     if path.startswith("/page/"):
         return page(unquote(path[6:]))
+    if path.startswith("/slow-page/"):
+        # Answers after a second, as a page that takes long to load.
+        time.sleep(1)
+        return page(unquote(path[11:]))
     if request.method != "POST":
         return Response("ok")
     requests += 1

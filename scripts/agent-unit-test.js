@@ -536,9 +536,11 @@ await (async () => {
     }
   });
 
-  test("run_script always asks, showing the code it runs", () => {
+  test("run_script runs only attended, showing the code it runs", () => {
     let runScript = OrbitoTools.get("run_script");
-    assertEquals(runScript.alwaysConfirm, true);
+    assertEquals(runScript.alwaysConfirm, undefined);
+    assertEquals(OrbitoTools.attendedOnly("run_script"), true);
+    assertEquals(OrbitoTools.attendedOnly("click"), false);
     assertEquals(runScript.approvalCode({}, { code: "document.title" }), "document.title");
     // What would read otherwise than it runs shows as escapes.
     assertEquals(runScript.approvalCode({}, { code: "'a\u202Eb\u200B'" }), "'a\\u{202e}b\\u{200b}'");

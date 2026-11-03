@@ -15,7 +15,10 @@
  *                  // only for a readOnly tool that keeps nothing, not even
  *                  // the question's state
  *     alwaysConfirm,  // optional; true: the user approves each call even
- *                     // under PermissionMode "bypass"
+ *                     // under PermissionMode "bypass"; implies attendedOnly
+ *     attendedOnly,  // optional; true: offered only to questions asked
+ *                    // from a tab, never windowless, and never allowed to
+ *                    // a task, since nobody would see what it does
  *     autoAllow,  // optional; true: runs without asking under
  *                 // PermissionMode "auto"; never for a tool that sends data
  *                 // out (as a URL), since reading tabs is free
@@ -176,6 +179,7 @@ export const OrbitoTools = {
       readOnly,
       concurrent,
       alwaysConfirm,
+      attendedOnly,
       autoAllow,
       run,
     } = tool;
@@ -192,6 +196,7 @@ export const OrbitoTools = {
       (concurrent != null && typeof concurrent != "boolean") ||
       (concurrent && !readOnly) ||
       (alwaysConfirm != null && typeof alwaysConfirm != "boolean") ||
+      (attendedOnly != null && typeof attendedOnly != "boolean") ||
       (autoAllow != null && typeof autoAllow != "boolean") ||
       typeof run != "function"
     ) {
@@ -200,6 +205,15 @@ export const OrbitoTools = {
       );
     }
     tools.set(name, tool);
+  },
+
+  /**
+   * @returns {boolean} Whether the tool by that name runs only with someone
+   *   there: attendedOnly or alwaysConfirm.
+   */
+  attendedOnly(name) {
+    let tool = this.get(name);
+    return !!(tool?.attendedOnly || tool?.alwaysConfirm);
   },
 
   /**

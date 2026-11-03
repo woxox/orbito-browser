@@ -244,9 +244,9 @@ const WINDOW_PERMISSION_MODE = "orbito-permission-mode";
 const PERMISSION_MODE_PREF = "orbito.assistant.permissionMode";
 // "ask": every tool that is not read-only asks first. "auto": autoAllow
 // tools (scrolling, grouping tabs) run without asking too. "bypass":
-// nothing asks but alwaysConfirm tools. Opening tabs and going to pages ask
-// under "auto": with tab reading free, a URL could carry what a page read
-// to another site.
+// nothing asks but alwaysConfirm tools (remembering, forgetting). Opening
+// tabs and going to pages ask under "auto": with tab reading free, a URL
+// could carry what a page read to another site.
 const PERMISSION_MODES = ["ask", "auto", "bypass"];
 
 // Whether the assistant remembers what the user asks it to.
@@ -1739,7 +1739,7 @@ export const OrbitoAssistantCore = {
    *   runs, unless the tab's window's PermissionMode lets it run; resolves
    *   to whether the user (or, windowless, the caller's own rule) allowed
    *   it. Without it such tools are refused. Windowless questions are not
-   *   offered alwaysConfirm tools.
+   *   offered attendedOnly or alwaysConfirm tools.
    * @param {AbortSignal} [options.signal]
    * @param {Function} [options.onEvent]
    * @param {string} [options.backend] The backend of a new Thread,
@@ -2256,8 +2256,8 @@ export const OrbitoAssistantCore = {
    * Whether a question is offered a tool: memory tools only with memory on,
    * create_artifact never in a private window, which keeps no documents,
    * skill_step only when a skill made from a demo may run, and
-   * alwaysConfirm tools never windowless, since nobody would see what they
-   * keep.
+   * attendedOnly and alwaysConfirm tools never windowless, since nobody
+   * would see what they do.
    */
   _offered(run, name) {
     if (!run.memory && MEMORY_TOOLS.has(name)) {
@@ -2269,7 +2269,7 @@ export const OrbitoAssistantCore = {
     if (name == STEP_TOOL) {
       return !!run.steps || !!run.skills?.some(s => s.source == "demo");
     }
-    return !!run.tab || !lazy.OrbitoTools.get(name)?.alwaysConfirm;
+    return !!run.tab || !lazy.OrbitoTools.attendedOnly(name);
   },
 
   /** The ctx a question's tools get (see OrbitoTools.context()). */

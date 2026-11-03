@@ -46,7 +46,7 @@ function t(id, args) {
 
 export default {
   name: "run_script",
-  description: `Run JavaScript in a page, as the page's own scripts would, and get its value back as JSON: the value of the last expression or statement, awaited if it is a Promise. Use it to pull data out of a page, like the rows of a table, when read_page or get_page_text would be too long or lose the structure. For several statements or await, end with an async IIFE, e.g. (async () => { ... return rows; })(). Return plain data (strings, numbers, arrays, objects), not DOM nodes. It stops after ${TIMEOUT_MS / 1000} seconds, the JSON is cut at ${MAX_RESULT_CHARS} characters, and the values of password and other secret fields cannot be read. The user must approve each call, seeing the script.`,
+  description: `Run JavaScript in a page, as the page's own scripts would, and get its value back as JSON: the value of the last expression or statement, awaited if it is a Promise. Use it to pull data out of a page, like the rows of a table, when read_page or get_page_text would be too long or lose the structure. For several statements or await, end with an async IIFE, e.g. (async () => { ... return rows; })(). Return plain data (strings, numbers, arrays, objects), not DOM nodes. It stops after ${TIMEOUT_MS / 1000} seconds, the JSON is cut at ${MAX_RESULT_CHARS} characters, and the values of password and other secret fields cannot be read. Unless the window's permissions are bypassed, the user approves each call, seeing the script.`,
   schema: {
     type: "object",
     properties: {
@@ -56,8 +56,10 @@ export default {
     required: ["code"],
   },
   readOnly: false,
-  // A script can do anything the page can, so it is never run unseen.
-  alwaysConfirm: true,
+  // A script can do anything the page can, so it runs only with someone
+  // there; PermissionMode "bypass" runs it without asking, as it does
+  // clicks and typing.
+  attendedOnly: true,
 
   label() {
     return t("orbito-assistant-tool-running-script");

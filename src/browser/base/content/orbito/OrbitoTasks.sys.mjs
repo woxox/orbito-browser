@@ -147,7 +147,7 @@ export const OrbitoTasks = {
   /**
    * The tools a task can be allowed: those registered now (MCP tools
    * included) that are not read-only, which a task runs anyway, nor
-   * alwaysConfirm, which a task is never offered.
+   * attendedOnly or alwaysConfirm, which a task is never offered.
    *
    * @returns {{name: string, description: string}[]}
    */
@@ -155,7 +155,7 @@ export const OrbitoTasks = {
     return lazy.OrbitoTools.list()
       .filter(
         ({ name, readOnly }) =>
-          !readOnly && !lazy.OrbitoTools.get(name).alwaysConfirm
+          !readOnly && !lazy.OrbitoTools.attendedOnly(name)
       )
       .map(({ name, description }) => ({ name, description }));
   },
@@ -239,8 +239,8 @@ export const OrbitoTasks = {
     let allowed = fields.allowedTools && [
       ...new Set(fields.allowedTools.map(String)),
     ];
-    let unallowable = allowed?.find(
-      name => lazy.OrbitoTools.get(name)?.alwaysConfirm
+    let unallowable = allowed?.find(name =>
+      lazy.OrbitoTools.attendedOnly(name)
     );
     if (unallowable) {
       throw new Error(t("orbito-tasks-not-allowable", { tool: unallowable }));
