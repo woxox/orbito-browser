@@ -1,0 +1,24 @@
+diff --git a/widget/windows/nsWindow.cpp b/widget/windows/nsWindow.cpp
+index eb3baef67739bf7660e0104d19908108ba8277d7..0d7bba8fe308122767a8296c7d2d3ae33bd1eca6 100644
+--- a/widget/windows/nsWindow.cpp
++++ b/widget/windows/nsWindow.cpp
+@@ -5638,6 +5638,19 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
+       if (wParam == HTCAPTION) {
+         DispatchCustomEvent(u"draggableregionleftmousedown"_ns);
+         mDraggingWindowWithMouse = true;
++        // Windows holds the press in here until the button is released. A
++        // press that never moved the window gets no WM_EXITSIZEMOVE and no
++        // WM_NCLBUTTONUP, so its mouseup is sent here.
++        *aRetValue =
++            CallWindowProcW(GetPrevWindowProc(), mWnd, msg, wParam, lParam);
++        result = true;
++        if (mDraggingWindowWithMouse) {
++          mDraggingWindowWithMouse = false;
++          DispatchMouseEvent(eMouseUp, wParamFromGlobalMouseState(),
++                             lParamToClient(lParam), false,
++                             MouseButton::ePrimary, MOUSE_INPUT_SOURCE());
++          DispatchPendingEvents();
++        }
+       }
+ 
+       if (IsWindowButton(int32_t(wParam)) && mCustomNonClient) {
