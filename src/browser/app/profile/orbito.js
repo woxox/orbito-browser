@@ -198,6 +198,27 @@ pref("orbito.recall.dwellSeconds", 10);
 // array: mail, banks, payments and account pages.
 pref("orbito.recall.excludedDomains", "[\"mail.google.com\",\"accounts.google.com\",\"outlook.live.com\",\"outlook.office.com\",\"mail.yahoo.com\",\"mail.proton.me\",\"icloud.com\",\"mail.naver.com\",\"nid.naver.com\",\"mail.daum.net\",\"accounts.kakao.com\",\"paypal.com\",\"stripe.com\",\"toss.im\",\"kbstar.com\",\"shinhan.com\",\"wooribank.com\",\"kebhana.com\",\"ibk.co.kr\",\"nonghyup.com\",\"kakaobank.com\",\"chase.com\",\"bankofamerica.com\",\"wellsfargo.com\",\"citi.com\"]");
 
+// Interline, page translation (OrbitoInterline.sys.mjs), set in Orbito's
+// settings: the engine ("google", "openai" or "claude"; Google's free
+// endpoint needs no key), the language to translate into (a BCP 47 tag,
+// "" for Orbito's own), "bilingual" (under the original) or "replace"
+// (instead of it), and the hover key (a KeyboardEvent.key, "" for none):
+// held over a paragraph, it translates that paragraph alone.
+pref("orbito.interline.engine", "google");
+pref("orbito.interline.targetLang", "");
+pref("orbito.interline.mode", "bilingual");
+pref("orbito.interline.hoverKey", "");
+// The OpenAI-compatible endpoint: with neither a base URL nor a key of its
+// own it is the Assistant's (orbito.assistant.baseURL and its key, and
+// orbito.assistant.model unless a model is set here).
+pref("orbito.interline.openai.baseURL", "");
+pref("orbito.interline.openai.model", "");
+pref("orbito.interline.claude.model", "");
+// Not in the settings: tests point these at their mock ("" for Google's own
+// endpoints).
+pref("orbito.interline.claude.baseURL", "https://api.anthropic.com");
+pref("orbito.interline.google.baseURL", "");
+
 // Firefox Sync takes the Shell's Pins, Spaces and Docks to the account's
 // other devices (shell/OrbitoShellSyncEngine.sys.mjs), unless turned off in
 // "Choose what to sync".

@@ -19,6 +19,10 @@ const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
+const { OrbitoInterline } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoInterline.sys.mjs"
+);
+
 const ICONS = {
   sidebar: html`<svg viewBox="0 0 16 16" aria-hidden="true">
     <rect x="2" y="3" width="12" height="10" rx="2" />
@@ -50,6 +54,10 @@ const ICONS = {
   </svg>`,
   reader: html`<svg viewBox="0 0 16 16" aria-hidden="true">
     <path d="M3 3.5h10M3 6.5h10M3 9.5h7M3 12.5h5" />
+  </svg>`,
+  interline: html`<svg viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M2 3.5h6.5M5.25 2v1.5M3.5 3.5c.5 2.4 2 4.1 4.25 5M7 3.5c-.5 2.6-2.1 4.6-4.75 5.5" />
+    <path d="m8.25 14 2.75-6.5 2.75 6.5M9.1 12h3.8" />
   </svg>`,
   puzzle: html`<svg viewBox="0 0 16 16" aria-hidden="true">
     <path
@@ -86,6 +94,14 @@ const NAVIGATION = {
   },
   reload: { command: "Browser:ReloadOrDuplicate", state: "Browser:Reload" },
   stop: { command: "Browser:Stop", state: "Browser:Stop" },
+};
+
+// The Interline button's title for each retryable error kind.
+const INTERLINE_WARNINGS = {
+  "rate-limit": "orbito-top-bar-interline-warning-rate-limit",
+  server: "orbito-top-bar-interline-warning-unreachable",
+  network: "orbito-top-bar-interline-warning-unreachable",
+  "bad-response": "orbito-top-bar-interline-warning-bad-response",
 };
 
 /** What the Ask button's dot says (FrameState's activity). */
@@ -194,7 +210,8 @@ export function waitingRequests(place = "site-info") {
  * Back, Forward and Reload (Stop while the page loads), the site information
  * button (the Orbito mark on Orbito's and Firefox's own pages) and the URL
  * display, which takes the room the other parts leave, then the Private pill
- * in private windows, the reader view (on pages that have one), extensions,
+ * in private windows, the reader view (on pages that have one), Interline
+ * (on pages in another language, or while the tab translates), extensions,
  * downloads (once there are any) and Ask buttons, and on Windows and Linux
  * the window controls at the far right. Popups show only the site
  * information button and the URL display. Other buttons go in its slots:
@@ -230,6 +247,7 @@ export class OrbitoTopBar extends MozLitElement {
     urlDisplay: ".url",
     siteInfoButton: ".site-info",
     readerButton: ".reader",
+    interlineButton: ".interline",
     extensionsButton: ".extensions",
     downloadsButton: ".downloads",
     askButton: ".ask",
@@ -287,6 +305,7 @@ export class OrbitoTopBar extends MozLitElement {
     window.addEventListener("OrbitoExtensionsToggle", this);
     window.addEventListener("OrbitoDownloadsToggle", this);
     window.addEventListener("OrbitoFrameStateChange", this);
+    window.addEventListener("OrbitoInterlineChange", this);
     DownloadsCommon.getIndicatorData(window).addView(this.#downloadsView);
     // Also when the window closes, which leaves the element connected: the
     // indicator data outlives the window.
@@ -337,6 +356,7 @@ export class OrbitoTopBar extends MozLitElement {
     window.removeEventListener("OrbitoExtensionsToggle", this);
     window.removeEventListener("OrbitoDownloadsToggle", this);
     window.removeEventListener("OrbitoFrameStateChange", this);
+    window.removeEventListener("OrbitoInterlineChange", this);
     this.#removeDownloadsView();
     clearTimeout(this.#downloadNotificationTimer);
     clearTimeout(this.#holdTimer);
@@ -741,6 +761,36 @@ export class OrbitoTopBar extends MozLitElement {
     </button>`;
   }
 
+  /**
+   * Interline's button: on, off, what stopped the tab's translation, or
+   * why an "on" tab's paragraphs stay untranslated.
+   */
+  #interlineButton({ status, busy, error, warning }) {
+    let label =
+      status == "error"
+        ? t(`orbito-top-bar-interline-error-${error.kind}`)
+        : warning
+          ? t(INTERLINE_WARNINGS[warning.kind])
+          : status == "on"
+            ? t("orbito-top-bar-interline-off")
+            : t("orbito-top-bar-interline-on");
+    return html`<button
+      class="interline"
+      data-control="interline"
+      tabindex=${this.#tabIndex("interline")}
+      aria-label=${label}
+      aria-pressed=${status == "on"}
+      title=${label}
+      status=${status}
+      ?running=${busy}
+      ?warning=${!!warning}
+      @click=${() =>
+        OrbitoInterline.toggle(gBrowser.selectedBrowser).catch(console.error)}
+    >
+      ${ICONS.interline}
+    </button>`;
+  }
+
   render() {
     let uri = gBrowser.currentURI;
     let { empty, host, rest } = urlParts(uri);
@@ -749,6 +799,9 @@ export class OrbitoTopBar extends MozLitElement {
     let reader = document.getElementById("reader-mode-button");
     let readerShown = !popup && !reader.hidden;
     let readerActive = reader.hasAttribute("readeractive");
+    let interline = popup
+      ? { shown: false }
+      : OrbitoInterline.view(gBrowser.selectedBrowser);
     let { state } = gBrowser.securityUI;
     let secure = state & Ci.nsIWebProgressListener.STATE_IS_SECURE;
     // Orbito's and Firefox's own pages (the new tab page too).
@@ -775,6 +828,7 @@ export class OrbitoTopBar extends MozLitElement {
     let reloadName = stopShown ? "stop" : "reload";
     if (
       (this.#current == "reader" && !readerShown) ||
+      (this.#current == "interline" && !interline.shown) ||
       (this.#current == "downloads" && !downloadsShown) ||
       (this.#current == "show-sidebar" && !showSidebar) ||
       (popup && !["url", "site-info"].includes(this.#current))
@@ -920,6 +974,7 @@ export class OrbitoTopBar extends MozLitElement {
                   ${ICONS.reader}
                 </button>`
               : nothing}
+            ${interline.shown ? this.#interlineButton(interline) : nothing}
             <button
               class="extensions"
               data-control="extensions"

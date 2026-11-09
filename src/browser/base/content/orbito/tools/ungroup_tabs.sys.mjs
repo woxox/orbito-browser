@@ -50,7 +50,7 @@ export default {
     let tabs = tabsOf(ctx, input.tab_ids);
     let grouped = tabs.filter(t => t.group);
     for (let tab of grouped) {
-      ctx.window.gBrowser.ungroupTab(tab);
+      tab.documentGlobal.gBrowser.ungroupTab(tab);
     }
     let ids = grouped.map(t => ctx.tabId(t));
     return ids.length

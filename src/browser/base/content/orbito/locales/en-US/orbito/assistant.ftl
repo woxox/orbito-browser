@@ -459,6 +459,7 @@ orbito-assistant-tool-scrolling =
        *[other] Scrolling { $direction }
     }
 orbito-assistant-tool-pressing = Pressing { $key }
+orbito-assistant-tool-answering-dialog = Answering a dialog
 
 # Short names of the steps the user approves, shown in bold on an
 # approval once it is answered.
@@ -473,6 +474,7 @@ orbito-assistant-tool-type-action = Type text
 orbito-assistant-tool-select-action = Select an option
 orbito-assistant-tool-scroll-action = Scroll
 orbito-assistant-tool-press-key-action = Press a key
+orbito-assistant-tool-dialog-action = Answer a dialog
 orbito-assistant-tool-group-action = Group tabs
 orbito-assistant-tool-ungroup-action = Ungroup tabs
 orbito-assistant-tool-select-tab-action = Switch tabs

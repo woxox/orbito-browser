@@ -19,6 +19,11 @@ const MAX_FRAME_URL = 200;
 // How long an action may take to start a navigation, and to finish it.
 const NAVIGATION_START_MS = 300;
 const NAVIGATION_LOAD_MS = 10000;
+// How often an action that has not finished looks for a dialog it opened,
+// and how long an answered dialog may take to close.
+const DIALOG_POLL_MS = 100;
+const DIALOG_CLOSE_MS = 2000;
+const MAX_DIALOG_TEXT = 1000;
 
 const STALE_REF =
   "is not on the page any more: the page has changed. Call read_page again to get fresh refs.";
@@ -79,6 +84,83 @@ async function ask(global, name, data) {
 
 function query(tab, name, data) {
   return ask(windowGlobal(tab), name, data);
+}
+
+/**
+ * The alert, confirm or prompt dialog open over the tab's page, or the
+ * prompt asking whether to leave the page (for beforeunload), or null. The
+ * page's script waits in such a dialog until it is answered.
+ *
+ * @returns {{type: string, text: string, value: string, host: string,
+ *   window: Window} | null} type is alert, confirm, prompt or beforeunload;
+ *   value what a prompt's field holds; window the dialog's own.
+ */
+function openDialog(tab) {
+  let box = tab.linkedBrowser.tabDialogBox;
+  for (let dialog of box?.getContentDialogManager().dialogs ?? []) {
+    let window = dialog.frameContentWindow;
+    // The dialog's script sets Dialog up once it has loaded.
+    let args = !dialog._isClosing && window?.Dialog?.args;
+    let type = args?.inPermitUnload
+      ? "beforeunload"
+      : /^(alert|confirm|prompt)(Check)?$/.exec(args?.promptType)?.[1];
+    if (type) {
+      let principal = args.promptPrincipal;
+      return {
+        type,
+        text: String(args.text ?? "").slice(0, MAX_DIALOG_TEXT),
+        value: String(args.value ?? ""),
+        host: principal?.isContentPrincipal
+          ? hostOf(principal.URI)
+          : hostOf(tab.linkedBrowser.currentURI),
+        window,
+      };
+    }
+  }
+  return null;
+}
+
+/** E.g. an alert: “Hello”, with the page's text quoted. */
+function dialogName({ type, text, value }) {
+  let quoted = `“${quotePageTags(text)}”`;
+  switch (type) {
+    case "alert":
+      return `an alert: ${quoted}`;
+    case "confirm":
+      return `a confirm dialog: ${quoted}`;
+    case "prompt":
+      return value
+        ? `a prompt: ${quoted} (its field holds “${quotePageTags(value)}”)`
+        : `a prompt: ${quoted}`;
+  }
+  return "a prompt asking whether to leave the page";
+}
+
+const DIALOG_WAITS =
+  "The page waits until it is answered: call handle_dialog to accept or dismiss it.";
+
+/**
+ * Has a page or frame act, unless the action opens a dialog over the tab's
+ * page (an alert, say): the page's script then waits in it, and so would
+ * the query, until the dialog is answered. Resolves to {dialog: true} then,
+ * and the query's own answer is dropped.
+ */
+async function actIn(tab, global, data) {
+  let action = ask(global, "act", data);
+  action.catch(() => {});
+  let pending = Symbol("pending");
+  while (true) {
+    let result = await Promise.race([
+      action,
+      sleep(DIALOG_POLL_MS).then(() => pending),
+    ]);
+    if (result != pending) {
+      return result;
+    }
+    if (openDialog(tab)) {
+      return { dialog: true };
+    }
+  }
 }
 
 /** The document a frame under the top browsing context shows, or null. */
@@ -266,11 +348,15 @@ export const OrbitoPage = {
     }
     refTables.set(global, state.refs);
     let browser = tab.linkedBrowser;
-    return pageBlock("page_snapshot", {
+    let snapshot = pageBlock("page_snapshot", {
       title: browser.contentTitle || tab.label,
       url: browser.currentURI.spec,
       text: [header, ...state.lines].join("\n"),
     });
+    let dialog = openDialog(tab);
+    return dialog
+      ? `Dialog: ${dialogName(dialog)}, open over the page. ${DIALOG_WAITS}\n${snapshot}`
+      : snapshot;
   },
 
   /**
@@ -321,9 +407,15 @@ export const OrbitoPage = {
    * Has the page act on one of its elements, then waits for a navigation the
    * action started.
    *
-   * @returns {Promise<{result: object, navigated: boolean, url: string}>}
+   * @returns {Promise<{result: object, navigated: boolean, url: string,
+   *   dialog: object}>} result is {dialog: true} when the page waits in a
+   *   dialog the action opened; dialog the one open (see openDialog()).
    */
   async act(tab, action, data) {
+    let open = openDialog(tab);
+    if (open) {
+      throw new Error(`The page has ${dialogName(open)} open. ${DIALOG_WAITS}`);
+    }
     let before = windowGlobal(tab);
     let target = data.ref ? this.element(tab, data.ref).global : before;
     if (action == "click" && target != before) {
@@ -334,7 +426,7 @@ export const OrbitoPage = {
         await toTop(target, point, true);
       }
     }
-    let result = await ask(target, "act", { action, ...data });
+    let result = await actIn(tab, target, { action, ...data });
     // Without a ref, a key goes where the focus is, which may be in a frame.
     while (result.frame) {
       target = frameGlobal(before.browsingContext, result.frame);
@@ -347,10 +439,53 @@ export const OrbitoPage = {
           `The focus is in a frame from ${frameHost(target)}. Call press_key with the ref of the element to press the key in.`
         );
       }
-      result = await ask(target, "act", { action, ...data });
+      result = await actIn(tab, target, { action, ...data });
+    }
+    let navigated = !result.dialog && (await this.settle(tab, before));
+    return {
+      result,
+      navigated,
+      url: tab.linkedBrowser.currentURI.spec,
+      dialog: openDialog(tab),
+    };
+  },
+
+  /** The dialog open over the tab's page (see openDialog()), or null. */
+  dialog(tab) {
+    return openDialog(tab);
+  },
+
+  /**
+   * Answers the dialog open over the tab's page, with text typed into a
+   * prompt's field first, then waits for a navigation that started.
+   *
+   * @returns {Promise<{navigated: boolean, url: string, dialog: object}>}
+   *   dialog is the next one the page opened, if it did.
+   */
+  async answerDialog(tab, { accept, text }) {
+    let dialog = openDialog(tab);
+    if (!dialog) {
+      throw new Error("The page has no dialog open.");
+    }
+    let { ui } = dialog.window.Dialog;
+    if (text != null) {
+      ui.loginTextbox.value = text;
+    }
+    let before = windowGlobal(tab);
+    (accept ? ui.button0 : ui.button1 || ui.button0).click();
+    let end = Date.now() + DIALOG_CLOSE_MS;
+    while (openDialog(tab)?.window == dialog.window) {
+      if (Date.now() > end) {
+        throw new Error("The dialog did not close. Try again in a moment.");
+      }
+      await sleep(DIALOG_POLL_MS);
     }
     let navigated = await this.settle(tab, before);
-    return { result, navigated, url: tab.linkedBrowser.currentURI.spec };
+    return {
+      navigated,
+      url: tab.linkedBrowser.currentURI.spec,
+      dialog: openDialog(tab),
+    };
   },
 
   /**
@@ -487,8 +622,18 @@ export const OrbitoPage = {
     return query(tab, "pdf", { maxChars });
   },
 
-  /** The result text for an action that may have changed the page. */
-  outcome({ navigated, url }, done) {
+  /**
+   * The result text for an action in the tab that may have changed the
+   * page, opened a dialog over it, or closed the tab (as a popup's page
+   * does once it is done).
+   */
+  outcome({ navigated, url, dialog }, done, tab) {
+    if (tab && (tab.closing || !tab.isConnected)) {
+      return `${done} The page closed its tab.`;
+    }
+    if (dialog) {
+      return `${done} The page opened ${dialogName(dialog)}. ${DIALOG_WAITS}`;
+    }
     return navigated
       ? `${done} The page navigated to ${url}. Call read_page to see it.`
       : `${done} Call read_page to see what changed.`;

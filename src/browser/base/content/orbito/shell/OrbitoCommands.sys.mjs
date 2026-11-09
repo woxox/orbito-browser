@@ -4,7 +4,8 @@
 
 /**
  * The Command bar's commands: urlbar results that open an Orbito screen
- * rather than a page ("Settings", "History"), or start Show Orbito. They
+ * rather than a page ("Settings", "History"), start Show Orbito, or turn
+ * Interline on or off in the selected tab. They
  * come up when the typed text starts one of a command's words, right below
  * the heuristic result, so Enter still goes where the text says unless a
  * command is picked.
@@ -25,6 +26,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionsProviderQuickActions:
     "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
+  OrbitoInterline: "chrome://browser/content/orbito/OrbitoInterline.sys.mjs",
   OrbitoPages: "chrome://browser/content/orbito/OrbitoPages.sys.mjs",
   ProvidersManager:
     "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
@@ -77,6 +79,26 @@ const COMMANDS = [
     // 녹화 is what users search for, though the UI never says it (GLOSSARY).
     words: ["show orbito", "demo", "record", "teach", "시연", "녹화", "가르치기"],
     run: win => win.OrbitoShell?.show.begin(),
+  },
+  {
+    // Interline in the selected tab, whatever its page's language says
+    // (the Top bar button shows only for another language). It only turns
+    // off a tab without a web page.
+    name: "interline",
+    title: t("orbito-commands-interline"),
+    description: t("orbito-commands-interline-description"),
+    icon: "chrome://browser/skin/translations.svg",
+    words: [
+      "translate page",
+      "translation",
+      "interline",
+      "페이지 번역",
+      "번역기",
+    ],
+    run: win =>
+      lazy.OrbitoInterline.toggle(win.gBrowser.selectedBrowser).catch(
+        console.error
+      ),
   },
 ];
 

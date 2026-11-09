@@ -397,6 +397,7 @@ orbito-assistant-tool-scrolling =
        *[other] { $direction } 스크롤하는 중
     }
 orbito-assistant-tool-pressing = { $key } 누르는 중
+orbito-assistant-tool-answering-dialog = 대화상자에 응답하는 중
 
 # Short names of the steps the user approves, shown in bold on an
 # approval once it is answered.
@@ -411,6 +412,7 @@ orbito-assistant-tool-type-action = 텍스트 입력
 orbito-assistant-tool-select-action = 옵션 선택
 orbito-assistant-tool-scroll-action = 스크롤
 orbito-assistant-tool-press-key-action = 키 누르기
+orbito-assistant-tool-dialog-action = 대화상자 응답
 orbito-assistant-tool-group-action = 탭 그룹으로 묶기
 orbito-assistant-tool-ungroup-action = 탭 그룹 해제
 orbito-assistant-tool-select-tab-action = 탭 전환

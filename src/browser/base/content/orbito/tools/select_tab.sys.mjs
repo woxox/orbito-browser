@@ -56,7 +56,11 @@ export default {
 
   run(ctx, input) {
     let tab = tabOf(ctx, input.tab_id);
-    ctx.window.gBrowser.selectedTab = tab;
+    tab.documentGlobal.gBrowser.selectedTab = tab;
+    // A popup window's tab is seen in its window.
+    if (tab.documentGlobal != ctx.window) {
+      tab.documentGlobal.focus();
+    }
     return `Switched to tab ${ctx.tabId(tab)} “${tab.label}”.`;
   },
 };

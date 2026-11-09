@@ -116,6 +116,11 @@ export default {
         });
     }
     await OrbitoPage.settle(tab, before);
+    // E.g. the page asks whether to leave it, and waits.
+    let dialog = OrbitoPage.dialog(tab);
+    if (dialog) {
+      return OrbitoPage.outcome({ dialog }, `Still at ${browser.currentURI.spec}.`);
+    }
     return {
       content: `Now at ${browser.currentURI.spec} (“${browser.contentTitle}”). Call read_page to see it.`,
       page: OrbitoPage.source(ctx, tab),

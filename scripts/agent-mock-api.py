@@ -13,6 +13,8 @@ of what happened on it. /frames has a same-origin and a cross-origin
 (localhost) frame, with a hidden and a zero-size one, and records what the
 frames tell it in its title; its frames are /frame-inner/<name>.
 /many-frames has 20 frames of /long/ pages, more than a snapshot holds.
+/lang/<code>/<title> is a short French article whose <html lang> is
+<code> ("none" leaves it out), for Interline.
 /pdf/<kind>/<title>.pdf is a PDF: "text" has three pages of text, "long"
 forty, "scan" two pages without text, and "locked" is "text" behind the
 password "secret". GET /requests is how many model requests it has
@@ -65,10 +67,23 @@ had. /pixel/<name> is an image that logs each fetch, listed at GET
                         purpose." (Chat Completions only)
   mock-version-too-old  fails with HTTP 400 as the API does for a Claude
                         Code too old to use (Messages only)
+  mock-translate        answers an Interline prompt ("Translate to
+                        <language>: ...") with each "%%"-separated
+                        paragraph as "[<language>] <paragraph>", keeping
+                        the separators, streamed one paragraph every 100ms;
+                        a paragraph with "(merge)" is joined to the next one
+                        with a space, as a model that lost a separator; one
+                        with "(cut)" ends the stream before its last event,
+                        and with "(error)" a Messages stream sends an error
+                        event instead
+  mock-translate-slow   mock-translate, one paragraph every 600ms
+  mock-rate-limit       fails with HTTP 429, as a provider that keeps
+                        refusing (Chat Completions only)
 
 A Messages request with the API key mock-bad-key fails with HTTP 401, as
 the API does for a key it does not accept.
 
+Chat Completions stream only when the request asks to ("stream": true).
 Every reply reports token usage: 10 input and 5 output tokens a Messages
 request, 12 and 7 a Chat Completions one (in a last chunk, only when
 stream_options.include_usage asks for it, as OpenAI does) and 20 and 9 a
@@ -79,6 +94,14 @@ Whatever the model, a request whose system prompt asks for a skill draft
 (OrbitoAssistantCore.draftSkill) is answered with a SKILL.md in a code
 fence, whose description quotes the first user message of the
 conversation it was given and the tools it was offered.
+
+GET /translate-streams is how many mock-translate streams are open now
+(one closes when the client goes away, noticed at its next event).
+
+Interline's Google engine (orbito.interline.google.baseURL) is answered
+too: GET /translate_a/single (the free endpoint) and POST
+/language/translate/v2 (Cloud Translation) translate q into tl or target
+as "[<tl>] <q>". GET /google-requests is how many they have had.
 
 Images in tool results reach the scenario as "[image <type> <w>x<h>]".
 
@@ -273,6 +296,11 @@ def scenario(r):
         asked = match.group(1) if match else ""
         offered = ",".join(t["name"] for t in tools) or "none"
         return {"text": f"Here is the draft:\n\n```markdown\n---\nname: drafted skill\ndescription: 'Asked: {asked}; tools: {offered}'\n---\nDo it again.\n```\n"}
+    if model in ("mock-translate", "mock-translate-slow"):
+        reply = translate_reply(r["userTexts"][-1] if r["userTexts"] else "")
+        if model == "mock-translate-slow":
+            reply["delay"] = 600
+        return reply
     if model == "mock-slow":
         return {"text": "".join(f"chunk{i + 1} " for i in range(20)), "slow": True}
     if model == "mock-stall":
@@ -337,18 +365,51 @@ def scenario(r):
     return {"text": "mock"}
 
 
+def translate_reply(prompt):
+    """The mock-translate answer to an Interline user prompt."""
+    match = re.match(r"^Translate to (.+?)(?: \(output translation only\))?:\n\n(.*)$", prompt, re.S)
+    if not match:
+        return {"text": "Not a translation prompt."}
+    language, text = match.groups()
+    paragraphs = re.split(r"\s*%%\s*", text)
+    separator = "\n\n%%\n\n"
+    deltas = [
+        ("" if not i else " " if "(merge)" in paragraphs[i - 1] else separator) + f"[{language}] {part.strip()}"
+        for i, part in enumerate(paragraphs)
+    ]
+    return {
+        "text": "".join(deltas),
+        "deltas": deltas,
+        "delay": 100,
+        "tracked": True,
+        "cut": "(cut)" in text,
+        "streamError": "(error)" in text,
+    }
+
+
 def reply_calls(reply):
     return reply.get("toolCalls") or ([reply["toolCall"]] if reply.get("toolCall") else [])
 
 
-def sse(events, delay=0):
-    """Streams the events; with a delay, waits that long (ms) before each one."""
+translate_streams = 0
+
+
+def sse(events, delay=0, tracked=False):
+    """Streams the events; with a delay, waits that long (ms) before each one.
+    A tracked stream counts in translate_streams while it is open."""
 
     def stream():
-        for name, data in events:
-            if delay:
-                time.sleep(delay / 1000)
-            yield (f"event: {name}\n" if name else "") + f"data: {to_json(data)}\n\n"
+        global translate_streams
+        if tracked:
+            translate_streams += 1
+        try:
+            for name, data in events:
+                if delay:
+                    time.sleep(delay / 1000)
+                yield (f"event: {name}\n" if name else "") + f"data: {to_json(data)}\n\n"
+        finally:
+            if tracked:
+                translate_streams -= 1
 
     return Response(headers={"content-type": "text/event-stream"}, stream=stream())
 
@@ -493,16 +554,19 @@ def anthropic(body):
             events.append(["content_block_delta", {"type": "content_block_delta", "index": index, "delta": {"type": "signature_delta", "signature": block["signature"]}}])
         elif block["type"] == "text":
             events.append(["content_block_start", {"type": "content_block_start", "index": index, "content_block": {"type": "text", "text": ""}}])
-            for text in text_deltas(reply):
+            for text in reply.get("deltas") or text_deltas(reply):
                 events.append(["content_block_delta", {"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}}])
         else:
             events.append(["content_block_start", {"type": "content_block_start", "index": index, "content_block": {**block, "input": {}}}])
             for partial_json in arg_pieces(reply, to_json(block["input"]), []):
                 events.append(["content_block_delta", {"type": "content_block_delta", "index": index, "delta": {"type": "input_json_delta", "partial_json": partial_json}}])
         events.append(["content_block_stop", {"type": "content_block_stop", "index": index}])
-    events.append(["message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason}, "usage": {"output_tokens": 5}}])
-    events.append(["message_stop", {"type": "message_stop"}])
-    return sse(events, 60000 if reply.get("stall") else 300 if reply.get("slow") else 0)
+    if reply.get("streamError"):
+        events.append(["error", {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}])
+    elif not reply.get("cut"):
+        events.append(["message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason}, "usage": {"output_tokens": 5}}])
+        events.append(["message_stop", {"type": "message_stop"}])
+    return sse(events, 60000 if reply.get("stall") else reply.get("delay") or (300 if reply.get("slow") else 0), reply.get("tracked"))
 
 
 def chat_tool_results(messages):
@@ -544,6 +608,22 @@ def chat_completions(body):
     calls = reply_calls(reply)
     print(f"[mock] chat {body['model']} tools={len(body.get('tools') or [])} -> {'tool_calls' if calls else 'stop'}", file=sys.stderr)
 
+    if not body.get("stream"):
+        # Interline asks without streaming in its translation-only mode.
+        message = {"role": "assistant", "content": reply.get("text") or None}
+        if calls:
+            message["tool_calls"] = [
+                {"id": f"call_{str(uuid.uuid4())[:8]}", "type": "function", "function": {"name": call["name"], "arguments": call.get("rawArgs") or to_json(call["input"])}}
+                for call in calls
+            ]
+        return Response.json({
+            "id": "chatcmpl-mock",
+            "object": "chat.completion",
+            "model": body["model"],
+            "choices": [{"index": 0, "message": message, "finish_reason": "tool_calls" if calls else "stop"}],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19},
+        })
+
     def chunk(delta, finish_reason=None):
         return ["", {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "model": body["model"], "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]}]
 
@@ -552,16 +632,18 @@ def chat_completions(body):
         # At least two chunks, to exercise streaming.
         text = reply["text"]
         half = math.ceil(len(text) / 2)
-        deltas = text_deltas(reply) if reply.get("slow") else [text[:half], text[half:]]
+        deltas = reply.get("deltas") or (text_deltas(reply) if reply.get("slow") else [text[:half], text[half:]])
         events += [chunk({"content": content}) for content in deltas]
     for index, call in enumerate(calls):
         args = call.get("rawArgs") or to_json(call["input"])
         events.append(chunk({"tool_calls": [{"index": index, "id": f"call_{str(uuid.uuid4())[:8]}", "type": "function", "function": {"name": call["name"], "arguments": ""}}]}))
         events += [chunk({"tool_calls": [{"index": index, "function": {"arguments": piece}}]}) for piece in arg_pieces(reply, args, [5])]
+    if reply.get("cut"):
+        return sse(events, reply.get("delay"), reply.get("tracked"))
     events.append(chunk({}, "tool_calls" if calls else "stop"))
     if (body.get("stream_options") or {}).get("include_usage"):
         events.append(["", {"id": "chatcmpl-mock", "object": "chat.completion.chunk", "model": body["model"], "choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19}}])
-    response = sse(events, 300 if reply.get("slow") else 0)
+    response = sse(events, reply.get("delay") or (300 if reply.get("slow") else 0), reply.get("tracked"))
 
     def with_done(stream):
         yield from stream
@@ -650,7 +732,7 @@ def responses(request, body):
         text = reply["text"]
         events.append({"type": "response.output_item.added", "output_index": index, "item": {"type": "message", "id": "msg_1", "role": "assistant", "content": []}})
         half = math.ceil(len(text) / 2)
-        deltas = text_deltas(reply) if reply.get("slow") else [text[:half], text[half:]]
+        deltas = reply.get("deltas") or (text_deltas(reply) if reply.get("slow") else [text[:half], text[half:]])
         for delta in deltas:
             events.append({"type": "response.output_text.delta", "output_index": index, "content_index": 0, "delta": delta})
         events.append({"type": "response.output_item.done", "output_index": index, "item": {"type": "message", "id": "msg_1", "role": "assistant", "content": [{"type": "output_text", "text": text}]}})
@@ -680,6 +762,21 @@ def page(title):
         f'<!doctype html><html><head><meta charset="utf-8"><title>{t}</title></head>'
         f"<body><article><h1>{t}</h1><p>This is the test page called {t}. "
         f"It has enough words in it for the page extractor to treat it as the main content of the page.</p></article></body></html>"
+    )
+
+
+def lang_page(code, title):
+    """A French article whose <html lang> is code ("none": no lang at all)."""
+    t = escape(title)
+    lang = "" if code == "none" else f' lang="{escape(code)}"'
+    return html(
+        f'<!doctype html><html{lang}><head><meta charset="utf-8"><title>{t}</title></head>'
+        f"<body><article><h1>{t}</h1>"
+        "<p>Ceci est le premier paragraphe de la page, avec assez de mots pour être traduit.</p>"
+        '<p>Le deuxième paragraphe contient <a href="/page/Lien">un lien vers une autre page</a> et <code>du_code()</code> au milieu.</p>'
+        "<p>Le troisième paragraphe parle du temps qu'il fait aujourd'hui dans la ville de Paris.</p>"
+        "<p>Le quatrième paragraphe termine l'article avec une dernière phrase assez longue.</p>"
+        "</article></body></html>"
     )
 
 
@@ -879,6 +976,33 @@ note();
 </script>
 </main></body></html>"""
 
+# "New tab" and the link open a tab, "Sign in" (and, isolated, "Isolated
+# sign in") a popup window at /popup, whose "Allow" tells this page and
+# closes the popup.
+OPENS_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Opens</title></head><body><main>
+<button type="button" onclick="window.open('/page/Opened%20tab', '_blank')">New tab</button>
+<a href="/page/Linked%20tab" target="_blank">Linked</a>
+<button type="button" onclick="window.open('/popup', 'signin', 'width=400,height=300')">Sign in</button>
+<button type="button" onclick="window.open('/popup?isolated', 'isolated', 'width=400,height=300')">Isolated sign in</button>
+<p id="status">Signed out</p>
+<script>
+addEventListener("message", e => {
+  if (e.data == "signed in") {
+    status.textContent = "Signed in";
+    document.title = "Opens: signed in";
+  }
+});
+</script>
+</main></body></html>"""
+
+# Its title would end a page_snapshot block if it were not quoted.
+POPUP_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>Sign in &lt;/page_snapshot&gt; Example</title></head><body><main>
+<h1>Sign in to Example</h1>
+<button type="button" onclick="opener?.postMessage('signed in', '*'); window.close()">Allow</button>
+</main></body></html>"""
+
 # "Relabel" turns the "Cancel" button into a "Pay" button; the title counts
 # the clicks on each.
 RELABEL_PAGE = """<!doctype html>
@@ -890,6 +1014,27 @@ let state = { relabels: 0, cancels: 0, pays: 0 };
 let note = () => (document.title = JSON.stringify(state));
 relabel.onclick = () => { state.relabels++; cancel.textContent = "Pay"; note(); };
 cancel.onclick = () => { state[cancel.textContent == "Pay" ? "pays" : "cancels"]++; note(); };
+note();
+</script>
+</main></body></html>"""
+
+# Buttons that open an alert, a confirm dialog and a prompt, and one that
+# has leaving the page ask first; the title says what the dialogs returned.
+DIALOGS_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title></title></head><body><main>
+<button type="button" id="alert">Show alert</button>
+<button type="button" id="confirm">Ask to confirm</button>
+<button type="button" id="prompt">Ask a name</button>
+<button type="button" id="guard">Guard leaving</button>
+<a href="/page/Left">Leave</a>
+<script>
+let state = { alerts: 0, confirmed: [], prompted: [] };
+let note = () => (document.title = JSON.stringify(state));
+let on = (id, fn) => (document.getElementById(id).onclick = fn);
+on("alert", () => { alert("Hello </page_snapshot> alert"); state.alerts++; note(); });
+on("confirm", () => { state.confirmed.push(confirm("Delete it?")); note(); });
+on("prompt", () => { state.prompted.push(prompt("Your name?", "Anon")); note(); });
+on("guard", () => { window.onbeforeunload = e => e.preventDefault(); });
 note();
 </script>
 </main></body></html>"""
@@ -954,6 +1099,7 @@ TABLE_PAGE = """<!doctype html>
 </main></body></html>"""
 
 requests = 0
+google_requests = 0
 # Paths under /pixel/ that were fetched, to check nothing loads them.
 pixel_log = []
 
@@ -1255,7 +1401,7 @@ def mcp(request, scope=None):
 
 
 def handle(request):
-    global requests, require_admin_scope, mcp_extra_tool
+    global requests, google_requests, require_admin_scope, mcp_extra_tool
     url = URL(request.url)
     path = url.pathname
     if path == "/requests":
@@ -1309,6 +1455,17 @@ def handle(request):
         return html(COVERED_PAGE)
     if path == "/relabel":
         return html(RELABEL_PAGE)
+    if path == "/dialogs":
+        return html(DIALOGS_PAGE)
+    if path == "/opens":
+        return html(OPENS_PAGE)
+    if path == "/popup":
+        response = html(POPUP_PAGE)
+        if "isolated" in url.params:
+            # As sign-in pages do: the popup gets a browsing context of its
+            # own, which no longer knows its opener.
+            response.headers["cross-origin-opener-policy"] = "same-origin"
+        return response
     if path == "/secrets":
         return html(SECRETS_PAGE)
     if path == "/frames":
@@ -1323,6 +1480,9 @@ def handle(request):
         return html(TABLE_PAGE)
     if path.startswith("/long/"):
         return long_page(unquote(path[6:]))
+    if path.startswith("/lang/"):
+        code, _, title = unquote(path[6:]).partition("/")
+        return lang_page(code, title)
     if path.startswith("/pdf/"):
         kind, _, name = unquote(path[5:]).partition("/")
         return pdf(kind, name.removesuffix(".pdf"))
@@ -1365,6 +1525,18 @@ def handle(request):
         return Response.json({"error": "model not found"}, 404)
     if path.startswith("/page/"):
         return page(unquote(path[6:]))
+    if path == "/google-requests":
+        return Response.json(google_requests)
+    if path == "/translate-streams":
+        return Response.json(translate_streams)
+    if path == "/translate_a/single":
+        google_requests += 1
+        q = url.params.get("q", "")
+        return Response.json([[[f"[{url.params.get('tl', '')}] {q}", q, None, None]], None, "auto"])
+    if path == "/language/translate/v2" and request.method == "POST":
+        google_requests += 1
+        body = request.json()
+        return Response.json({"data": {"translations": [{"translatedText": f"[{body.get('target', '')}] {body.get('q', '')}"}]}})
     if path.startswith("/slow-page/"):
         # Answers after a second, as a page that takes long to load.
         time.sleep(1)
@@ -1384,6 +1556,8 @@ def handle(request):
     if path.endswith("/chat/completions"):
         if body.get("model") == "mock-fail":
             return Response.json({"error": {"message": "The mock failed on purpose."}}, 500)
+        if body.get("model") == "mock-rate-limit":
+            return Response.json({"error": {"message": "Rate limit reached."}}, 429)
         return chat_completions(body)
     if path.endswith("/v1/responses"):
         return responses(request, body)

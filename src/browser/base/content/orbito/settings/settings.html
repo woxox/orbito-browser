@@ -25,6 +25,7 @@
         <h1 data-l10n-id="orbito-settings-heading"></h1>
         <nav id="panes" data-l10n-id="orbito-settings-panes">
           <button type="button" data-pane="general" data-l10n-id="orbito-settings-general"></button>
+          <button type="button" data-pane="interline" data-l10n-id="orbito-settings-interline"></button>
           <p class="rail-group" data-l10n-id="orbito-settings-assistant"></p>
           <button type="button" data-pane="backends" data-l10n-id="orbito-settings-backends"></button>
           <button type="button" data-pane="spaces" data-l10n-id="orbito-settings-spaces"></button>
@@ -151,6 +152,75 @@
               </li>
             </ul>
           </section>
+        </section>
+
+        <section id="interline" class="pane" hidden>
+          <h2 data-l10n-id="orbito-settings-interline"></h2>
+          <p class="lead" data-l10n-id="orbito-settings-interline-hint"></p>
+          <ul class="list">
+            <li class="row">
+              <div class="row-main">
+                <div id="interline-engine-label" class="row-title" data-l10n-id="orbito-settings-interline-engine"></div>
+                <p class="hint" data-l10n-id="orbito-settings-interline-engine-hint"></p>
+              </div>
+              <div id="interline-engine" class="segments" role="radiogroup" aria-labelledby="interline-engine-label">
+                <button type="button" role="radio" data-value="google" data-l10n-id="orbito-settings-interline-engine-google"></button>
+                <button type="button" role="radio" data-value="openai" data-l10n-id="orbito-settings-interline-engine-openai"></button>
+                <button type="button" role="radio" data-value="claude" data-l10n-id="orbito-settings-interline-engine-claude"></button>
+              </div>
+              <div class="row-sub">
+                <form id="interline-fields" class="form">
+                  <div class="fields">
+                    <label data-engine="google"><span data-l10n-id="orbito-settings-interline-key"></span> <input id="interline-google-key" type="password" autocomplete="off" /></label>
+                    <label data-engine="openai"><span data-l10n-id="orbito-settings-interline-base-url"></span> <input id="interline-openai-baseurl" /></label>
+                    <label data-engine="openai"><span data-l10n-id="orbito-settings-interline-model"></span> <input id="interline-openai-model" /></label>
+                    <label data-engine="openai"><span data-l10n-id="orbito-settings-interline-key"></span> <input id="interline-openai-key" type="password" autocomplete="off" /></label>
+                    <label data-engine="claude"><span data-l10n-id="orbito-settings-interline-model"></span> <input id="interline-claude-model" /></label>
+                    <label data-engine="claude"><span data-l10n-id="orbito-settings-interline-key"></span> <input id="interline-claude-key" type="password" autocomplete="off" placeholder="sk-ant-..." /></label>
+                  </div>
+                  <p class="hint" data-engine="google" data-l10n-id="orbito-settings-interline-google-hint"></p>
+                  <p class="hint" data-engine="openai" data-l10n-id="orbito-settings-interline-openai-hint"></p>
+                  <p class="hint" data-engine="claude" data-l10n-id="orbito-settings-interline-claude-hint"></p>
+                </form>
+              </div>
+            </li>
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title"><label for="interline-target" data-l10n-id="orbito-settings-interline-target"></label></div>
+              </div>
+              <select id="interline-target">
+                <option value="" data-l10n-id="orbito-settings-interline-target-default"></option>
+              </select>
+            </li>
+            <li class="row">
+              <div class="row-main">
+                <div id="interline-mode-label" class="row-title" data-l10n-id="orbito-settings-interline-mode"></div>
+              </div>
+              <div id="interline-mode" class="segments" role="radiogroup" aria-labelledby="interline-mode-label">
+                <button type="button" role="radio" data-value="bilingual" data-l10n-id="orbito-settings-interline-mode-bilingual"></button>
+                <button type="button" role="radio" data-value="replace" data-l10n-id="orbito-settings-interline-mode-replace"></button>
+              </div>
+            </li>
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title"><label for="interline-hover-key" data-l10n-id="orbito-settings-interline-hover-key"></label></div>
+                <p id="interline-hover-key-hint" class="hint" data-l10n-id="orbito-settings-interline-hover-key-hint"></p>
+              </div>
+              <select id="interline-hover-key" aria-describedby="interline-hover-key-hint">
+                <option value="" data-l10n-id="orbito-settings-interline-hover-key-off"></option>
+                <option value="Alt"></option>
+                <option value="Control"></option>
+                <option value="Shift">Shift</option>
+              </select>
+            </li>
+            <li class="row">
+              <div class="row-main">
+                <div class="row-title" data-l10n-id="orbito-settings-interline-cache"></div>
+                <p id="interline-cache-hint" class="hint" data-l10n-id="orbito-settings-interline-cache-hint"></p>
+              </div>
+              <button id="interline-clear-cache" aria-describedby="interline-cache-hint" data-l10n-id="orbito-settings-interline-clear-cache"></button>
+            </li>
+          </ul>
         </section>
 
         <section id="backends" class="pane" hidden>

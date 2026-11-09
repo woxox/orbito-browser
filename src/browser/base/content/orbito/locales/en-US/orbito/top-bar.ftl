@@ -51,6 +51,17 @@ orbito-top-bar-address-placeholder = Enter an address or ask
 orbito-top-bar-private = Private
 orbito-top-bar-reader-view = Reader view
 orbito-top-bar-close-reader-view = Close reader view
+# Interline, page translation.
+orbito-top-bar-interline-on = Translate page
+orbito-top-bar-interline-off = Stop translating page
+# The tab's translation stopped; clicking the button turns it off.
+orbito-top-bar-interline-error-needs-key = Page translation needs an API key. Click to turn it off and open the settings.
+orbito-top-bar-interline-error-auth = The translation API key was refused. Click to turn translation off and open the settings.
+orbito-top-bar-interline-error-bad-request = The translation provider refused the request. Click to turn translation off.
+# Translation is on, but the provider keeps failing; clicking turns it off.
+orbito-top-bar-interline-warning-rate-limit = The translation provider is limiting requests, so some paragraphs are not translated. Click to stop translating page.
+orbito-top-bar-interline-warning-unreachable = The translation provider or the network cannot be reached, so some paragraphs are not translated. Click to stop translating page.
+orbito-top-bar-interline-warning-bad-response = The translation provider gave an unexpected answer, so some paragraphs are not translated. Click to stop translating page.
 orbito-top-bar-extensions = Extensions
 orbito-top-bar-extensions-waiting =
     { $count ->
@@ -188,5 +199,7 @@ orbito-commands-history = Show history
 orbito-commands-history-description = Timeline
 orbito-commands-show = Show Orbito
 orbito-commands-show-description = Teach Orbito a skill by doing it
+orbito-commands-interline = Translate page
+orbito-commands-interline-description = Turn page translation on or off in this tab
 orbito-urlbar-memory = From memory
 orbito-urlbar-ask = Ask Orbito

@@ -73,6 +73,6 @@ export default {
       ref: input.ref,
       key: input.key,
     });
-    return OrbitoPage.outcome(outcome, `Pressed ${input.key}.`);
+    return OrbitoPage.outcome(outcome, `Pressed ${input.key}.`, tab);
   },
 };

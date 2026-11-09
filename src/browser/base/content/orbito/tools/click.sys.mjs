@@ -45,6 +45,6 @@ export default {
   async run(ctx, input) {
     let tab = OrbitoPage.targetTab(ctx, input);
     let outcome = await OrbitoPage.act(tab, "click", { ref: input.ref });
-    return OrbitoPage.outcome(outcome, "Clicked.");
+    return OrbitoPage.outcome(outcome, "Clicked.", tab);
   },
 };

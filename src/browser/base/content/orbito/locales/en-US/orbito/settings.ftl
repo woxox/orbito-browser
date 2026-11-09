@@ -94,6 +94,40 @@ orbito-settings-import-dialog =
 # The folder of Arc's Favorites, among the bookmarks imported from Arc.
 orbito-import-arc-favorites = Favorites
 
+## Interline (page translation)
+
+orbito-settings-interline = Page translation
+orbito-settings-interline-hint =
+    Translate a page paragraph by paragraph, under the original or instead of it,
+    from the Top bar button or the Command bar. The page's text goes to the engine picked here.
+orbito-settings-interline-engine = Engine
+orbito-settings-interline-engine-hint = Separate from the Assistant's backends.
+orbito-settings-interline-engine-google = Google
+orbito-settings-interline-engine-openai = OpenAI-compatible
+orbito-settings-interline-engine-claude = Claude
+orbito-settings-interline-key = API key
+orbito-settings-interline-base-url = Base URL
+orbito-settings-interline-model = Model
+orbito-settings-interline-key-inherited = Uses the Assistant's key
+orbito-settings-interline-google-hint = Without a key, Google's free endpoint is used.
+orbito-settings-interline-openai-hint =
+    With no base URL and no key of its own, translation uses the Assistant's OpenAI-compatible
+    endpoint and key. Local servers like Ollama need no key.
+orbito-settings-interline-claude-hint = Claude needs an Anthropic API key.
+orbito-settings-interline-target = Translate into
+orbito-settings-interline-target-default = Orbito's language
+orbito-settings-interline-mode = Show
+orbito-settings-interline-mode-bilingual = Under the original
+orbito-settings-interline-mode-replace = Translation only
+orbito-settings-interline-hover-key = Hover key
+orbito-settings-interline-hover-key-hint =
+    Hold it over a paragraph to translate just that paragraph, on any page.
+    Press it there again to take the translation away.
+orbito-settings-interline-hover-key-off = Off
+orbito-settings-interline-cache = Translations
+orbito-settings-interline-cache-hint = Kept in memory until Orbito quits, so a page translates again at once.
+orbito-settings-interline-clear-cache = Forget translations
+
 ## Backends
 
 orbito-settings-backends = Backends

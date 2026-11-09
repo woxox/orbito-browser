@@ -53,9 +53,10 @@
  * tabId(tab), tabById(id), opened(tab, {result}?)}: the tab the user asked
  * from, the window that tab is in now, the Space of the Thread (null in a
  * window without Spaces), the tabs the tools may see and act on (that
- * Space's in that window, and the pinned ones), the query's abort signal
- * and the Thread it is answered in; tabById finds only those tabs. A tool
- * that opens a tab puts it in that Space and passes it to opened(), which
+ * Space's in that window, the pinned ones, and those of the popup windows
+ * their pages opened: see openedTabs()), the query's abort signal and the
+ * Thread it is answered in; tabById finds only those tabs. A tool that
+ * opens a tab puts it in that Space and passes it to opened(), which
  * puts it in the question's Orbit (with result, as what the task made). A
  * windowless query (a scheduled task) has neither tab nor window: reading
  * tab, window, tabs or tabById throws, so tools that need them fail; its
@@ -73,6 +74,7 @@ const BUILTIN_TOOLS = [
   "select_option",
   "scroll",
   "press_key",
+  "handle_dialog",
   "navigate",
   "screenshot",
   "run_script",
@@ -103,7 +105,85 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   OrbitoShellStore:
     "chrome://browser/content/orbito/shell/OrbitoShellStore.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
+
+// The browserId of each top-level page a page opened -> the browserId of
+// the opener's tab, kept from when the page's browsing context is made: a
+// page that isolates itself (Cross-Origin-Opener-Policy, as sign-in pages
+// do) gets a new browsing context without the opener, in the same browser.
+const openers = new Map();
+let watchingOpeners = false;
+
+function watchOpeners() {
+  if (watchingOpeners) {
+    return;
+  }
+  watchingOpeners = true;
+  Services.obs.addObserver(context => {
+    let opener = context.top == context && openerContext(context);
+    if (opener?.browserId && context.browserId != opener.browserId) {
+      openers.set(context.browserId, opener.browserId);
+    }
+  }, "browsing-context-attached");
+}
+
+/** The top browsing context of the page that opened one, or null. */
+function openerContext(context) {
+  try {
+    return (context.crossGroupOpener ?? context.opener)?.top ?? null;
+  } catch {
+    // Not a CanonicalBrowsingContext.
+    return null;
+  }
+}
+
+/** The open browser windows as private (or not) as win, win among them. */
+function windowsLike(win) {
+  let isPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(win);
+  return [...Services.wm.getEnumerator("navigator:browser")].filter(
+    w =>
+      !w.closed &&
+      w.gBrowser &&
+      lazy.PrivateBrowsingUtils.isWindowPrivate(w) == isPrivate
+  );
+}
+
+/** The open tabs of those windows, by their browser's browserId. */
+function tabsByBrowser(win) {
+  let tabs = new Map();
+  for (let w of windowsLike(win)) {
+    for (let tab of w.gBrowser.tabs) {
+      let id = tab.linkedBrowser?.browserId;
+      if (id && !tab.closing) {
+        tabs.set(id, tab);
+      }
+    }
+  }
+  return tabs;
+}
+
+/** The tab of byId whose page opened the tab's, or null. */
+function openerIn(tab, byId) {
+  let browser = tab.linkedBrowser;
+  let id =
+    openerContext(browser?.browsingContext)?.browserId ||
+    openers.get(browser?.browserId);
+  return (id && byId.get(id)) || null;
+}
+
+/** Whether a tab in roots opened the tab's page, or opened one that did. */
+function openedFrom(tab, roots, byId) {
+  let seen = new Set();
+  while (tab && !seen.has(tab)) {
+    seen.add(tab);
+    tab = openerIn(tab, byId);
+    if (roots.has(tab)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export const OrbitoTools = {
   _tools: null,
@@ -227,7 +307,9 @@ export const OrbitoTools = {
    *   tab, none by default.
    */
   context({ tab, space, signal, threadId, opened = () => {} }) {
+    watchOpeners();
     let tabIds = this._tabIds;
+    let tools = this;
     let noTab = () => {
       throw new Error(
         "This runs without a browser tab or window, so this could not run."
@@ -259,12 +341,13 @@ export const OrbitoTools = {
           : (known.spaceOf(tab) ?? known.current);
       },
       get tabs() {
-        let { gBrowser } = this.window;
+        let win = this.window;
         let known = spaces();
         let id = this.space;
-        return gBrowser.tabs.filter(
+        let own = win.gBrowser.tabs.filter(
           t => !t.closing && (!known || t.pinned || known.spaceOf(t) == id)
         );
+        return own.concat(tools.openedTabs(win, own));
       },
       tabId: t => this.tabId(t),
       opened,
@@ -272,6 +355,50 @@ export const OrbitoTools = {
         return this.tabs.find(t => tabIds.get(t) == id) || null;
       },
     };
+  },
+
+  /**
+   * The tabs of popup windows (window.open with a size: a sign-in or
+   * payment window, say), as private as win, whose pages one of these tabs
+   * opened, or one of the popups they opened, and so on; a page's opener
+   * counts even when it opened it with noopener. Other windows' tabs are
+   * the user's, even those opened from these.
+   *
+   * @param {Window} win
+   * @param {Element[]} tabs
+   * @returns {Element[]}
+   */
+  openedTabs(win, tabs) {
+    let roots = new Set(tabs);
+    let byId = tabsByBrowser(win);
+    return [...byId.values()].filter(
+      t =>
+        t.documentGlobal != win &&
+        // A popup window has no toolbars.
+        !t.documentGlobal.toolbar.visible &&
+        openedFrom(t, roots, byId)
+    );
+  },
+
+  /** The open tabs of every window as private as win, its own among them. */
+  allTabs(win) {
+    return [...tabsByBrowser(win).values()];
+  },
+
+  /**
+   * The open tab whose page opened the tab's, in a window as private as
+   * its, or null.
+   */
+  openerOf(tab) {
+    return openerIn(tab, tabsByBrowser(tab.documentGlobal));
+  },
+
+  /**
+   * Whether one of these tabs opened the tab's page, or opened the page of
+   * a tab that did, and so on, in windows as private as the tab's.
+   */
+  openedFrom(tab, tabs) {
+    return openedFrom(tab, new Set(tabs), tabsByBrowser(tab.documentGlobal));
   },
 
   /**

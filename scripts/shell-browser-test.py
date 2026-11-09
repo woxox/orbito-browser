@@ -2136,6 +2136,39 @@ def settings_and_history_commands_open_their_screens(b):
 
 
 @test
+def the_interline_command_turns_page_translation_on_and_off(b):
+    # The command works whatever the page's language. The engine points
+    # nowhere: only the tab's state is checked here (the agent suite's
+    # interline_* tests check the translations).
+    b.js("""
+    await onlyBlankTab();
+    Services.prefs.setStringPref("orbito.interline.engine", "openai");
+    Services.prefs.setStringPref("orbito.interline.openai.baseURL", "http://127.0.0.1:9/v1");
+    await openPage("Interline command");
+    """)
+    state = """
+    let { OrbitoInterline } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoInterline.sys.mjs");
+    let status = () => OrbitoInterline.view(byLabel("Interline command").linkedBrowser).status;
+    """
+    try:
+        b.keys((ACCEL, "l"))
+        pick_command(b, "interline")
+        b.js(state + """
+        await wait(() => status() == "on", "the tab translating");
+        await wait(() => !commandBar.isOpen, "the Command bar to close");
+        """)
+        b.keys((ACCEL, "l"))
+        pick_command(b, "interline")
+        b.js(state + 'await wait(() => status() == "off", "the tab not translating");')
+    finally:
+        b.js("""
+        Services.prefs.clearUserPref("orbito.interline.engine");
+        Services.prefs.clearUserPref("orbito.interline.openai.baseURL");
+        await onlyBlankTab();
+        """)
+
+
+@test
 def closing_the_command_bar_puts_focus_back(b):
     b.js("""
     await onlyBlankTab();
@@ -11667,7 +11700,7 @@ def the_orbito_settings_show_one_pane_at_a_time_from_the_rail(b):
     check(shown(page.getElementById("theme")) && !shown(page.getElementById("mcp-add-start")), "the general pane");
     check(await named(page.getElementById("panes")) == "Settings", accessibleName(page.getElementById("panes")));
     let rail = [...page.querySelectorAll("#panes > button")].map(b => b.textContent).join();
-    check(rail == "General,Backends,Spaces,Memory,Browsing recall,Skills,Scheduled tasks,MCP servers,Advanced", rail);
+    check(rail == "General,Page translation,Backends,Spaces,Memory,Browsing recall,Skills,Scheduled tasks,MCP servers,Advanced", rail);
     // A click shows its pane from the top.
     page.querySelector('#panes [data-pane="mcp"]').click();
     check(open() == "mcp" && current() == "mcp", `${open()} / ${current()}`);
@@ -11746,8 +11779,8 @@ def the_orbito_settings_follow_the_keyboard_rules(b):
 
         # The rail's panes, the library link, then each radio group is one
         # tab stop on its picked radio; the arrows, Home and End pick another.
-        rail = ["General", "Backends", "Spaces", "Memory", "Browsing recall", "Skills", "Scheduled tasks",
-                "MCP servers", "Advanced"]
+        rail = ["General", "Page translation", "Backends", "Spaces", "Memory", "Browsing recall", "Skills",
+                "Scheduled tasks", "MCP servers", "Advanced"]
         steps = [(Keys.TAB, pane) for pane in rail] + [
             (Keys.TAB, "library"),
             (Keys.TAB, "theme system"),

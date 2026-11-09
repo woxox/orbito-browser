@@ -2,7 +2,7 @@ diff --git a/browser/base/jar.mn b/browser/base/jar.mn
 index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7ac4d2d22 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -5,6 +5,174 @@ browser.jar:
+@@ -5,6 +5,179 @@ browser.jar:
  %  content browser %content/browser/ contentaccessible=yes
  
          content/browser/aboutDialog-appUpdater.js     (content/aboutDialog-appUpdater.js)
@@ -33,6 +33,7 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7
 +        content/browser/orbito/tools/select_option.sys.mjs (content/orbito/tools/select_option.sys.mjs)
 +        content/browser/orbito/tools/scroll.sys.mjs (content/orbito/tools/scroll.sys.mjs)
 +        content/browser/orbito/tools/press_key.sys.mjs (content/orbito/tools/press_key.sys.mjs)
++        content/browser/orbito/tools/handle_dialog.sys.mjs (content/orbito/tools/handle_dialog.sys.mjs)
 +        content/browser/orbito/tools/navigate.sys.mjs (content/orbito/tools/navigate.sys.mjs)
 +        content/browser/orbito/tools/screenshot.sys.mjs (content/orbito/tools/screenshot.sys.mjs)
 +        content/browser/orbito/tools/run_script.sys.mjs (content/orbito/tools/run_script.sys.mjs)
@@ -97,6 +98,10 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7
 +        content/browser/orbito/OrbitoSchedule.sys.mjs (content/orbito/OrbitoSchedule.sys.mjs)
 +        content/browser/orbito/OrbitoTasks.sys.mjs (content/orbito/OrbitoTasks.sys.mjs)
 +        content/browser/orbito/OrbitoScheduler.sys.mjs (content/orbito/OrbitoScheduler.sys.mjs)
++        content/browser/orbito/OrbitoInterline.sys.mjs (content/orbito/OrbitoInterline.sys.mjs)
++        content/browser/orbito/actors/OrbitoInterlineChild.sys.mjs (content/orbito/actors/OrbitoInterlineChild.sys.mjs)
++        content/browser/orbito/actors/OrbitoInterline.css (content/orbito/actors/OrbitoInterline.css)
++        content/browser/orbito/OrbitoInterlineEngines.sys.mjs (content/orbito/OrbitoInterlineEngines.sys.mjs)
 +        content/browser/orbito/OrbitoRecall.sys.mjs (content/orbito/OrbitoRecall.sys.mjs)
 +        content/browser/orbito/OrbitoRecallSearch.sys.mjs (content/orbito/OrbitoRecallSearch.sys.mjs)
 +        content/browser/orbito/OrbitoEmbedder.sys.mjs (content/orbito/OrbitoEmbedder.sys.mjs)

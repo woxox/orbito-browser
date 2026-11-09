@@ -67,6 +67,13 @@ const { OrbitoUpdates } = ChromeUtils.importESModule(
 const { t, OrbitoL10n, LANGUAGES } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
 );
+const { OrbitoInterline } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoInterline.sys.mjs"
+);
+const { DEFAULT_MODELS: INTERLINE_MODELS, PREF_BRANCH: INTERLINE_PREFS } =
+  ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/OrbitoInterlineEngines.sys.mjs"
+  );
 
 // The page takes Orbito's light, dark and accent, as the windows do.
 OrbitoAppearance.follow(document);
@@ -78,6 +85,11 @@ const NEWTAB_REMOTE_TABS_PREF = "orbito.newtab.remoteTabs";
 // Where Sync's pages are opened from, for Mozilla's account server.
 const SYNC_ENTRY_POINT = "orbito-settings";
 const IMPORT_URL = "chrome://browser/content/orbito/settings/import.html";
+// What Interline can translate into, besides Orbito's own language.
+const INTERLINE_TARGETS = [
+  "en", "ko", "ja", "zh-CN", "zh-TW", "es", "fr", "de", "it", "pt-BR",
+  "ru", "vi", "id", "th", "ar", "hi", "tr", "nl", "pl", "uk",
+];
 
 function el(tag, props = {}, children = []) {
   let node = document.createElement(tag);
@@ -337,6 +349,7 @@ const OrbitoSettings = {
       window.browsingContext.topChromeWindow.openPreferences()
     );
     this._initAppearance();
+    this._initInterline();
     this._initLanguage();
     this._initUpdates();
     this._initLayout();
@@ -381,8 +394,8 @@ const OrbitoSettings = {
   /**
    * Shows a pane from its top, and marks it in the rail.
    *
-   * @param {string} id The pane's: "general", "backends", "spaces",
-   *   "memory", "recall", "skills", "tasks", "mcp" or "advanced".
+   * @param {string} id The pane's: "general", "interline", "backends",
+   *   "spaces", "memory", "recall", "skills", "tasks", "mcp" or "advanced".
    */
   showPane(id) {
     let panes = [...document.querySelectorAll("main > .pane")];
@@ -730,6 +743,97 @@ const OrbitoSettings = {
       Services.prefs.removeObserver(THEME_PREF, sync);
       Services.prefs.removeObserver(ACCENT_PREF, sync);
     });
+  },
+
+  /* Interline: page translation's engine, language and display */
+
+  _initInterline() {
+    let $ = id => document.getElementById(id);
+    let pref = name => Services.prefs.getStringPref(INTERLINE_PREFS + name, "");
+    let setPref = (name, value) =>
+      Services.prefs.setStringPref(INTERLINE_PREFS + name, value.trim());
+    let checkEngine = radioGroup($("interline-engine"), id => setPref("engine", id));
+    let checkMode = radioGroup($("interline-mode"), id => setPref("mode", id));
+    let target = $("interline-target");
+    let names = new Intl.DisplayNames([OrbitoL10n.language], { type: "language" });
+    target.append(
+      ...INTERLINE_TARGETS.map(tag => el("option", { value: tag, text: names.of(tag) }))
+    );
+    target.addEventListener("change", () => setPref("targetLang", target.value));
+    // Key names, as the keyboard says them.
+    let hoverKey = $("interline-hover-key");
+    let mac = AppConstants.platform == "macosx";
+    hoverKey.querySelector('[value="Alt"]').textContent = mac ? "Option (⌥)" : "Alt";
+    hoverKey.querySelector('[value="Control"]').textContent = mac ? "Control (⌃)" : "Ctrl";
+    hoverKey.addEventListener("change", () => setPref("hoverKey", hoverKey.value));
+    // [input, pref under orbito.interline.]
+    let texts = [
+      [$("interline-openai-baseurl"), "openai.baseURL"],
+      [$("interline-openai-model"), "openai.model"],
+      [$("interline-claude-model"), "claude.model"],
+    ];
+    for (let [input, name] of texts) {
+      input.addEventListener("change", () => setPref(name, input.value));
+    }
+    // Keys live in the password manager, through Interline's realms.
+    let keys = ["openai", "claude", "google"].map(engine => [
+      $(`interline-${engine}-key`),
+      engine,
+    ]);
+    for (let [input, engine] of keys) {
+      input.addEventListener("change", async () => {
+        await OrbitoInterline.setKey(engine, input.value);
+        sync();
+      });
+    }
+    $("interline-fields").addEventListener("submit", event => event.preventDefault());
+    $("interline-clear-cache").addEventListener("click", () =>
+      OrbitoInterline.clearCache()
+    );
+    let sync = async () => {
+      let engine = pref("engine") || "google";
+      checkEngine(engine);
+      checkMode(pref("mode") || "bilingual");
+      let tag = pref("targetLang");
+      if (tag && ![...target.options].some(option => option.value == tag)) {
+        target.append(el("option", { value: tag, text: names.of(tag) }));
+      }
+      target.value = tag;
+      hoverKey.value = pref("hoverKey");
+      for (let field of $("interline-fields").querySelectorAll("[data-engine]")) {
+        field.hidden = field.dataset.engine != engine;
+      }
+      for (let [input, name] of texts) {
+        input.value = pref(name);
+      }
+      for (let [input, engine] of keys) {
+        input.value = await OrbitoInterline.getKey(engine);
+      }
+      // An empty endpoint and key mean the Assistant's endpoint.
+      let inherited = OrbitoInterline.inheritedOpenAI();
+      let own = pref("openai.baseURL") || $("interline-openai-key").value;
+      $("interline-openai-baseurl").placeholder = own
+        ? "https://api.openai.com/v1"
+        : inherited.baseURL;
+      $("interline-openai-model").placeholder = own
+        ? INTERLINE_MODELS.openai
+        : inherited.model;
+      $("interline-openai-key").placeholder = own
+        ? ""
+        : t("orbito-settings-interline-key-inherited");
+      $("interline-claude-model").placeholder = INTERLINE_MODELS.claude;
+    };
+    let observe = () => sync().catch(console.error);
+    let watched = [INTERLINE_PREFS, "orbito.assistant.baseURL", "orbito.assistant.model"];
+    for (let name of watched) {
+      Services.prefs.addObserver(name, observe);
+    }
+    window.addEventListener("unload", () => {
+      for (let name of watched) {
+        Services.prefs.removeObserver(name, observe);
+      }
+    });
+    observe();
   },
 
   /* Language: Orbito's and Firefox's, from the next start */

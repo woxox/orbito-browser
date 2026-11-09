@@ -13,7 +13,7 @@ function t(id, args) {
 export default {
   name: "list_tabs",
   description:
-    "List the open tabs in the user's browser window (or, for a scheduled task, in every window) with their ids, titles, URLs and the tab group each is in. These are the tabs of the Space this conversation belongs to (a set of tabs for one kind of work) and the pinned ones (every tab for a scheduled task of no Space); a scheduled task also gets the Space of each tab.",
+    "List the open tabs in the user's browser window (or, for a scheduled task, in every window) with their ids, titles, URLs and the tab group each is in. These are the tabs of the Space this conversation belongs to (a set of tabs for one kind of work) and the pinned ones (every tab for a scheduled task of no Space); a scheduled task also gets the Space of each tab. The tab of a popup window that one of these tabs' pages opened (to sign in or pay, say) comes last, with window \"popup\" and, as opened_by, the id of the tab whose page opened it.",
   schema: { type: "object", properties: {} },
   readOnly: true,
   concurrent: true,
@@ -63,12 +63,20 @@ export default {
       );
     }
     // The tabs of the Thread's Space in the asking window and the
-    // pinned ones.
+    // pinned ones, then those of the popup windows their pages opened.
+    let { OrbitoTools } = ChromeUtils.importESModule(
+      "chrome://browser/content/orbito/OrbitoTools.sys.mjs"
+    );
     return JSON.stringify(
-      ctx.tabs.map(tab => ({
-        ...describe(tab),
-        active: tab == ctx.tab,
-      }))
+      ctx.tabs.map(tab => {
+        let opener =
+          tab.documentGlobal != ctx.window && OrbitoTools.openerOf(tab);
+        return {
+          ...describe(tab),
+          active: tab == ctx.tab,
+          ...(opener && { window: "popup", opened_by: ctx.tabId(opener) }),
+        };
+      })
     );
   },
 };

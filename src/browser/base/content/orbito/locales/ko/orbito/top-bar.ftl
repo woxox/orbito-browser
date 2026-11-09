@@ -44,6 +44,17 @@ orbito-top-bar-address-placeholder = 주소를 입력하거나 질문하세요
 orbito-top-bar-private = 사생활 보호
 orbito-top-bar-reader-view = 리더 모드
 orbito-top-bar-close-reader-view = 리더 모드 닫기
+# Interline, page translation.
+orbito-top-bar-interline-on = 페이지 번역
+orbito-top-bar-interline-off = 페이지 번역 끄기
+# The tab's translation stopped; clicking the button turns it off.
+orbito-top-bar-interline-error-needs-key = 페이지 번역에 API 키가 필요합니다. 누르면 번역을 끄고 설정을 엽니다.
+orbito-top-bar-interline-error-auth = 번역 API 키가 거부되었습니다. 누르면 번역을 끄고 설정을 엽니다.
+orbito-top-bar-interline-error-bad-request = 번역 서비스가 요청을 거부했습니다. 누르면 번역을 끕니다.
+# Translation is on, but the provider keeps failing; clicking turns it off.
+orbito-top-bar-interline-warning-rate-limit = 번역 서비스가 요청을 제한해서 일부 문단을 번역하지 못했습니다. 누르면 번역을 끕니다.
+orbito-top-bar-interline-warning-unreachable = 번역 서비스나 네트워크에 연결할 수 없어 일부 문단을 번역하지 못했습니다. 누르면 번역을 끕니다.
+orbito-top-bar-interline-warning-bad-response = 번역 서비스가 예상하지 못한 응답을 보내 일부 문단을 번역하지 못했습니다. 누르면 번역을 끕니다.
 orbito-top-bar-extensions = 확장
 orbito-top-bar-extensions-waiting = 확장, 요청 { $count }개 대기 중
 orbito-top-bar-downloads-progress = 다운로드, { $percent }% 완료
@@ -160,5 +171,7 @@ orbito-commands-history = 기록 보기
 orbito-commands-history-description = 타임라인
 orbito-commands-show = Show Orbito
 orbito-commands-show-description = 직접 해 보여서 스킬 만들기
+orbito-commands-interline = 페이지 번역
+orbito-commands-interline-description = 이 탭의 페이지 번역을 켜거나 끄기
 orbito-urlbar-memory = 기억에서
 orbito-urlbar-ask = Ask Orbito

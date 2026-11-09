@@ -1,0 +1,89 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Interline's translations in a page (actors/OrbitoInterlineChild.sys.mjs),
+ * loaded as an author sheet. It matches only the nodes Interline inserts. */
+
+font.notranslate.il-dual {
+  white-space: pre-line;
+}
+
+font.notranslate.il-dual:not(.il-block) {
+  display: inline !important;
+}
+
+font.notranslate.il-dual:not(.il-block).il-loading {
+  opacity: 0 !important;
+}
+
+font.notranslate.il-dual:not(.il-block) il-content {
+  visibility: visible;
+}
+
+font.notranslate.il-dual.il-block {
+  display: inline !important;
+  flex-basis: 100% !important;
+}
+
+font.notranslate.il-dual.il-block il-content {
+  margin-top: 8px !important;
+  margin-bottom: 10px !important;
+  line-height: 1.46em;
+  display: inline-block !important;
+  visibility: visible;
+}
+
+font.notranslate.il-dual.il-loading il-content {
+  display: inherit !important;
+}
+
+/* A block translation in a flex row takes a row of its own. */
+*:has(> font.notranslate.il-dual.il-block) {
+  flex-wrap: wrap !important;
+}
+
+/* The original, kept hidden while only the translation shows. */
+il-dual {
+  display: none;
+}
+
+/* A <br> came through as "\n". */
+il-trans {
+  display: inline;
+  white-space: pre-line;
+}
+
+font.notranslate.il-dual.il-loading {
+  z-index: 2147483647;
+  position: relative;
+  overflow: hidden;
+  color: transparent !important;
+  background: linear-gradient(
+    90deg,
+    rgba(128, 128, 128, 0.08) 0%,
+    rgba(128, 128, 128, 0.08) 33%,
+    rgba(128, 128, 128, 0.18) 50%,
+    rgba(128, 128, 128, 0.08) 67%,
+    rgba(128, 128, 128, 0.08) 100%
+  );
+  background-size: 300% 100%;
+  animation: il-shimmer 1.5s ease-in-out infinite;
+  line-height: 1.6em;
+  white-space: unset !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  font.notranslate.il-dual.il-loading {
+    animation: none;
+  }
+}
+
+@keyframes il-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}

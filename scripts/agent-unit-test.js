@@ -325,6 +325,7 @@ await (async () => {
     ["select_option", false],
     ["scroll", false],
     ["press_key", false],
+    ["handle_dialog", false],
     ["navigate", false],
     ["screenshot", true],
     ["run_script", false],
@@ -4052,6 +4053,261 @@ await (async () => {
     assertEquals(summaryParts({ now, pagesRead: 1, taskRuns: 3 }, "en-US"), [date, "1 page read today", "3 scheduled tasks ran"]);
     assertEquals(summaryParts({ now, pagesRead: 0, taskRuns: 0 }, "en-US"), [date]);
     assertEquals(summaryParts({ now }, "en-US"), [date]);
+  });
+})();
+
+// Interline's engines (OrbitoInterlineEngines.sys.mjs): the "%%" stream
+// splitter, retry, which engine the settings mean, the cache's keys and
+// LRU, and the prompts' language names.
+await (async () => {
+  const { cacheKey, engineKey, InterlineError, languageName, LRU, PercentSplit, queueKey, REALMS, resolveEngine, systemPrompt, userPrompt, withRetry } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/OrbitoInterlineEngines.sys.mjs"
+  );
+
+  function assertEquals(actual, expected) {
+    let a = JSON.stringify(actual, null, 2);
+    let e = JSON.stringify(expected, null, 2);
+    if (a != e) {
+      throw new Error(`Expected:\n${e}\nActual:\n${a}`);
+    }
+  }
+  async function rejects(promise) {
+    try {
+      await promise;
+    } catch (e) {
+      return e;
+    }
+    throw new Error("Expected a rejection");
+  }
+
+  test("PercentSplit gives parts as their separator arrives", () => {
+    let split = new PercentSplit(3);
+    assertEquals(split.push("Un"), [{ index: 0, text: "Un", done: false }]);
+    // Half a separator is held back.
+    assertEquals(split.push("Un\n\n%"), [{ index: 0, text: "Un", done: false }]);
+    assertEquals(split.push("Un\n\n%%\n\nDe"), [
+      { index: 0, text: "Un", done: true },
+      { index: 1, text: "De", done: false },
+    ]);
+    assertEquals(split.push("Un\n\n%%\n\nDeux\n\n%%\n\nTr"), [
+      { index: 1, text: "Deux", done: true },
+      { index: 2, text: "Tr", done: false },
+    ]);
+    // A retry starts the stream over: finished parts are not given again.
+    assertEquals(split.push("U"), []);
+    assertEquals(split.push("Un\n\n%%\n\nDeux\n\n%%\n\nTrois"), [{ index: 2, text: "Trois", done: false }]);
+    assertEquals(split.end("Un\n\n%%\n\nDeux\n\n%%\n\nTrois"), ["Un", "Deux", "Trois"]);
+    assertEquals(split.end("Un %% Deux %% Trois\n\n%%"), ["Un", "Deux", "Trois"]);
+    assertEquals(split.end("Un\n\n%%\n\nDeux"), null);
+  });
+
+  test("withRetry tries three times, 500 ms apart, only while it may help", async () => {
+    let sleeps = [];
+    let sleep = async ms => sleeps.push(ms);
+    let calls = 0;
+    let error = await rejects(withRetry(async () => {
+      calls++;
+      throw new InterlineError("rate-limit");
+    }, { sleep }));
+    assertEquals([error.kind, calls, sleeps], ["rate-limit", 3, [500, 500]]);
+    calls = 0;
+    sleeps = [];
+    error = await rejects(withRetry(async () => {
+      calls++;
+      throw new InterlineError("auth");
+    }, { sleep }));
+    assertEquals([error.kind, calls, sleeps], ["auth", 1, []]);
+    calls = 0;
+    let result = await withRetry(async () => {
+      if (++calls < 2) {
+        throw new InterlineError("server");
+      }
+      return "done";
+    }, { sleep });
+    assertEquals([result, calls], ["done", 2]);
+    let aborted = new AbortController();
+    aborted.abort();
+    calls = 0;
+    await rejects(withRetry(async () => {
+      calls++;
+      throw new InterlineError("network");
+    }, { sleep, signal: aborted.signal }));
+    assertEquals(calls, 1);
+  });
+
+  test("resolveEngine takes the Assistant's endpoint only as a whole", () => {
+    let prefs = {
+      "orbito.assistant.baseURL": "https://assistant.example/v1/",
+      "orbito.assistant.model": "gpt-5-mini",
+      "orbito.interline.engine": "openai",
+    };
+    let resolve = (more, secrets) => resolveEngine({ prefs: { ...prefs, ...more }, secrets });
+    assertEquals(resolve({}, { "OpenAI API Key": "assistant" }), {
+      kind: "openai", baseURL: "https://assistant.example/v1", model: "gpt-5-mini", apiKey: "assistant",
+    });
+    assertEquals(resolve({ "orbito.interline.openai.model": "small" }, { "OpenAI API Key": "assistant" }).model, "small");
+    // A base URL of its own: never the Assistant's key.
+    assertEquals(resolve({ "orbito.interline.openai.baseURL": "http://localhost:11434/v1/chat/completions" }, { "OpenAI API Key": "assistant" }), {
+      kind: "openai", baseURL: "http://localhost:11434/v1", model: "gpt-4o-mini", apiKey: "",
+    });
+    // A key of its own: never the Assistant's base URL.
+    assertEquals(resolve({}, { "OpenAI API Key": "assistant", [REALMS.openai]: "own" }), {
+      kind: "openai", baseURL: "https://api.openai.com/v1", model: "gpt-4o-mini", apiKey: "own",
+    });
+    assertEquals(resolve({ "orbito.interline.openai.baseURL": "https://other/v1" }, { [REALMS.openai]: "own" }).apiKey, "own");
+    let error;
+    try {
+      resolve({ "orbito.interline.engine": "claude" }, {});
+    } catch (e) {
+      error = e;
+    }
+    assertEquals(error?.kind, "needs-key");
+    assertEquals(resolve({ "orbito.interline.engine": "claude" }, { [REALMS.claude]: "key" }), {
+      kind: "claude", baseURL: "https://api.anthropic.com", model: "claude-haiku-4-5-20251001", apiKey: "key",
+    });
+    assertEquals(resolve({ "orbito.interline.engine": "google" }, {}), { kind: "google", baseURL: "", apiKey: "" });
+    assertEquals(resolve({ "orbito.interline.engine": "google" }, { [REALMS.google]: "cloud" }).apiKey, "cloud");
+  });
+
+  test("engineKey leaves the key out; cache and queue keys separate what differs", () => {
+    let engine = { kind: "openai", baseURL: "https://x/v1", model: "m", apiKey: "secret-1" };
+    assertEquals(engineKey(engine), engineKey({ ...engine, apiKey: "secret-2" }));
+    assertEquals(engineKey(engine).includes("secret"), false);
+    assertEquals(engineKey({ kind: "google", baseURL: "", apiKey: "" }) == engineKey({ kind: "google", baseURL: "", apiKey: "k" }), false);
+    assertEquals(cacheKey("e", "ko", "Hi") == cacheKey("e", "ja", "Hi"), false);
+    assertEquals(queueKey("e", "ko", true) == queueKey("e", "ko", false), false);
+    assertEquals(queueKey("e", "ko", false, "https://a.example") == queueKey("e", "ko", false, "https://b.example"), false);
+  });
+
+  test("LRU keeps the most recent within entries and characters", () => {
+    let lru = new LRU({ maxEntries: 2, maxChars: 100 });
+    lru.set("a", "1");
+    lru.set("b", "2");
+    lru.get("a");
+    lru.set("c", "3");
+    assertEquals([lru.get("a"), lru.get("b"), lru.get("c")], ["1", undefined, "3"]);
+    lru = new LRU({ maxEntries: 10, maxChars: 10 });
+    lru.set("aa", "bbb");
+    lru.set("cc", "ddd");
+    lru.set("e", "f");
+    assertEquals([lru.get("aa"), lru.get("cc"), lru.size], [undefined, "ddd", 2]);
+    lru.set("big", "x".repeat(20));
+    assertEquals(lru.get("big"), undefined);
+    lru.clear();
+    assertEquals(lru.size, 0);
+  });
+
+  test("Prompts name the language in English", () => {
+    assertEquals([languageName("ko"), languageName("en-US"), languageName("!!")], ["Korean", "American English", "!!"]);
+    assertEquals(systemPrompt("ja").includes("professional Japanese native translator"), true);
+    assertEquals(userPrompt("Hi", "fr"), "Translate to French (output translation only):\n\nHi");
+    assertEquals(userPrompt("Hi", "fr", { batch: true }), "Translate to French:\n\nHi");
+  });
+})();
+
+// Interline's page side (actors/OrbitoInterlineChild.sys.mjs) on parsed
+// documents: the units of a paragraph and their placeholders, what is
+// skipped, how a translation is rebuilt as nodes, and when the Top bar
+// shows its button (OrbitoInterline.sys.mjs).
+await (async () => {
+  const { buildUnits, collectParents, renderUnit, siteRule, stripPlaceholders } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/actors/OrbitoInterlineChild.sys.mjs"
+  );
+  const { interlineShown } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/OrbitoInterline.sys.mjs"
+  );
+
+  function assertEquals(actual, expected) {
+    let a = JSON.stringify(actual, null, 2);
+    let e = JSON.stringify(expected, null, 2);
+    if (a != e) {
+      throw new Error(`Expected:\n${e}\nActual:\n${a}`);
+    }
+  }
+  // A parsed page has no layout: its window says which elements are
+  // inline by tag, as a default style sheet would.
+  const INLINE = new Set(["a", "b", "i", "em", "strong", "span", "code", "kbd", "font", "il-trans", "il-dual", "small", "sup", "sub"]);
+  function page(body) {
+    let doc = new DOMParser().parseFromString(`<!doctype html><html><body>${body}</body></html>`, "text/html");
+    let pageWin = {
+      document: doc,
+      getComputedStyle: el => ({ display: INLINE.has(el.localName) ? "inline" : "block" }),
+    };
+    return { doc, pageWin };
+  }
+  const html = node => {
+    let box = node.ownerDocument.createElement("div");
+    box.append(node);
+    return box.innerHTML;
+  };
+
+  test("buildUnits makes placeholders of inline elements and keeps code whole", () => {
+    let { doc, pageWin } = page('<p>Lire <a href="/x" class="c" onclick="evil()">la <b>doc</b></a> et <code>run()</code> ici.</p>');
+    let [unit, ...rest] = buildUnits(pageWin, doc.querySelector("p"));
+    assertEquals(rest.length, 0);
+    assertEquals(unit.text, "Lire <1>la <2>doc</2></1> et <3></3> ici.");
+    assertEquals(unit.plain, "Lire la doc et  ici.");
+    assertEquals([...unit.tagMap].map(([n, e]) => [n, e.shell.localName, e.excluded]), [[1, "a", false], [2, "b", false], [3, "code", true]]);
+    let escaped = buildUnits(pageWin, page("<p>Fish &amp; chips &lt;3 for everyone</p>").doc.querySelector("p"))[0];
+    assertEquals(escaped.text, "Fish &amp; chips &lt;3 for everyone");
+  });
+
+  test("buildUnits cuts units at block children and skips Interline's own nodes", () => {
+    let { doc, pageWin } = page('<li>First part of the item<div>A block inside it here</div>tail words of it<font class="notranslate il-dual">old</font><il-trans>old</il-trans><il-dual>hidden original</il-dual></li>');
+    let li = doc.querySelector("li");
+    let units = buildUnits(pageWin, li);
+    assertEquals(units.map(u => [u.text, u.anchor?.localName ?? null]), [["First part of the item", "div"], ["tail words of it", null]]);
+    // Short labels and numbers only: skipped unless forced (a hover).
+    let short = page("<span>OK</span>");
+    assertEquals(buildUnits(short.pageWin, short.doc.querySelector("span")).length, 0);
+    assertEquals(buildUnits(short.pageWin, short.doc.querySelector("span"), { force: true }).length, 1);
+    let number = page("<p>12,345 km</p>");
+    assertEquals(buildUnits(number.pageWin, number.doc.querySelector("p")).length, 0);
+  });
+
+  test("collectParents finds paragraphs and leaves navigation, code and translations alone", () => {
+    let { doc, pageWin } = page(`
+      <nav><p>Menu entry with many words in it</p></nav>
+      <article>
+        <h2>A heading of the article</h2>
+        <p>A paragraph with <em>emphasis</em> in it.</p>
+        <pre>code that is not translated at all</pre>
+        <p class="notranslate">Left alone by the page's wish</p>
+        <p il-marked="ok">Already translated paragraph</p>
+        <il-trans>A translation already shown</il-trans>
+        <p translate="no">Also left alone here</p>
+      </article>`);
+    let found = collectParents(pageWin, doc.body, siteRule("example.com")).map(el => el.textContent.trim());
+    assertEquals(found, ["A heading of the article", "A paragraph with emphasis in it."]);
+    let github = page('<div class="markdown-body"><p>Inside the readme text</p></div><p>Outside the readme text</p>');
+    assertEquals(collectParents(github.pageWin, github.doc.body, siteRule("github.com")).map(el => el.textContent), ["Inside the readme text"]);
+  });
+
+  test("renderUnit rebuilds placeholders as nodes and drops everything else", () => {
+    let { doc, pageWin } = page('<p>Lire <a href="/x" title="t" class="c" onclick="evil()">la <b>doc</b></a> et <code>run()</code> ici.</p>');
+    let unit = buildUnits(pageWin, doc.querySelector("p"))[0];
+    let render = text => html(renderUnit(doc, text, unit.tagMap));
+    assertEquals(render("Read <1>the <2>docs</2></1> and <3></3> here."), 'Read <a href="/x" title="t">the <b>docs</b></a> and <code>run()</code> here.');
+    // Unknown tags and scripts are dropped; their text stays as text.
+    assertEquals(render('Hi <script>alert(1)</script><img src=x onerror=alert(1)><7>seven</7>'), "Hi alert(1)seven");
+    // Entities become characters, never markup.
+    assertEquals(render("Fish &amp; chips &lt;b&gt; &#65;&#x42;"), "Fish &amp; chips &lt;b&gt; AB");
+    // Unbalanced: the open element closes at the end; a stray close is ignored.
+    assertEquals(render("<1>open </2>to the end"), '<a href="/x" title="t">open to the end</a>');
+    // An excluded subtree comes back once, whatever the model put inside.
+    assertEquals(render("<3>changed</3> and <3></3> again"), "<code>run()</code> and  again");
+    assertEquals(stripPlaceholders("<1>a</1> <2></2>b"), "a b");
+    let js = page('<p>Go <a href="javascript:evil()">there</a> now please</p>');
+    let link = buildUnits(js.pageWin, js.doc.querySelector("p"))[0];
+    assertEquals(html(renderUnit(js.doc, "Va <1>là</1>", link.tagMap)), "Va <a>là</a>");
+  });
+
+  test("interlineShown: the button for a page in another language, or a tab not off", () => {
+    let shown = (status, lang, target = "en-US") => interlineShown({ status, lang, target });
+    assertEquals([shown("off", "en"), shown("off", "en-GB"), shown("off", "EN_us")], [false, false, false]);
+    assertEquals([shown("off", "und"), shown("off", ""), shown("off", null)], [false, false, false]);
+    assertEquals([shown("off", "fr"), shown("off", "ko", "en-US"), shown("off", "en", "ko")], [true, true, true]);
+    assertEquals([shown("on", "en"), shown("error", null), shown("on", "und")], [true, true, true]);
   });
 })();
 

@@ -135,9 +135,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   replyArtifact: "chrome://browser/content/orbito/tools/create_artifact.sys.mjs",
   OrbitoChatGPT: "chrome://browser/content/orbito/OrbitoChatGPT.sys.mjs",
   OrbitoDocs: "chrome://browser/content/orbito/OrbitoDocs.sys.mjs",
+  OrbitoInterline: "chrome://browser/content/orbito/OrbitoInterline.sys.mjs",
   OrbitoMCP: "chrome://browser/content/orbito/OrbitoMCP.sys.mjs",
   OpenAIBackend: "chrome://browser/content/orbito/backends/OpenAI.sys.mjs",
   OrbitoSecrets: "chrome://browser/content/orbito/OrbitoSecrets.sys.mjs",
+  OrbitoPage: "chrome://browser/content/orbito/OrbitoPage.sys.mjs",
+  quotePageTags: "chrome://browser/content/orbito/OrbitoPage.sys.mjs",
   OrbitoPages: "chrome://browser/content/orbito/OrbitoPages.sys.mjs",
   OrbitoRecall: "chrome://browser/content/orbito/OrbitoRecall.sys.mjs",
   OrbitoScheduler: "chrome://browser/content/orbito/OrbitoScheduler.sys.mjs",
@@ -408,9 +411,9 @@ export const OrbitoAssistantCore = {
 
   /**
    * Starts what the assistant needs app-wide: its pages, the MCP servers,
-   * the scheduled tasks and Browsing recall, and lists the backends' models
-   * for the model menu. Called by every browser window; only the first
-   * call does it.
+   * the scheduled tasks, Browsing recall and Interline, and lists the
+   * backends' models for the model menu. Called by every browser window;
+   * only the first call does it.
    */
   startup() {
     if (this._started) {
@@ -421,6 +424,7 @@ export const OrbitoAssistantCore = {
     lazy.OrbitoMCP.init();
     lazy.OrbitoScheduler.start();
     lazy.OrbitoRecall.start();
+    lazy.OrbitoInterline.start();
     for (let backend of Object.keys(BACKENDS)) {
       this.models(backend);
     }
@@ -2376,6 +2380,11 @@ export const OrbitoAssistantCore = {
             : "This tool was not allowed for this question."
         );
       }
+      let watch =
+        run.tab &&
+        !tool.readOnly &&
+        tool.schema?.properties?.tab_id &&
+        this._watchOpened(run, ctx);
       let content = await tool.run(ctx, input);
       if (content?.memory) {
         let { id, text } = content.memory;
@@ -2402,6 +2411,9 @@ export const OrbitoAssistantCore = {
         typeof content == "object" && content
           ? { ok: true, content: String(content.content ?? "") }
           : { ok: true, content: String(content ?? "") };
+      if (watch) {
+        result.content += await watch();
+      }
       if (content?.images) {
         result.images = content.images;
       }
@@ -2603,6 +2615,75 @@ export const OrbitoAssistantCore = {
     }
     run.emit({ type: "orbit", id });
     this._touch(run, tab);
+  },
+
+  /**
+   * Notes the open tabs before a page tool acts. The function it returns,
+   * called once the tool is done, finds the tabs the tools' tabs' pages
+   * opened since (a link to a new tab, a sign-in popup window) and resolves,
+   * once they have loaded (for as long as open_tab waits at most), to what
+   * to tell the model of them, or "". Those in the asking window go into
+   * the question's Orbit and the Thread's Space, as open_tab's do: out of
+   * sight, if the window shows another Space.
+   *
+   * @returns {Function}
+   */
+  _watchOpened(run, ctx) {
+    let { OrbitoTools } = lazy;
+    let win = run.tab.documentGlobal;
+    let before = new Set(OrbitoTools.allTabs(win));
+    let roots = ctx.tabs;
+    let selected = win.gBrowser.selectedTab;
+    return async () => {
+      let opened = OrbitoTools.allTabs(win).filter(
+        t => !before.has(t) && OrbitoTools.openedFrom(t, roots)
+      );
+      let spaces = win.OrbitoShell?.spaces;
+      let space = ctx.space;
+      for (let tab of opened.filter(t => t.documentGlobal == win)) {
+        ctx.opened(tab);
+        if (spaces && space && !tab.pinned && spaces.spaceOf(tab) != space) {
+          // A page's new tab is selected, and moved so, it would switch the
+          // window to the Thread's Space: the user's tab comes back first.
+          if (
+            tab.selected &&
+            spaces.current != space &&
+            selected.isConnected &&
+            !selected.closing
+          ) {
+            win.gBrowser.selectedTab = selected;
+          }
+          spaces.moveTab(tab, space);
+        }
+      }
+      // Only those the tools can reach (not a tab a popup put in another
+      // normal window).
+      let reachable = new Set(ctx.tabs);
+      opened = opened.filter(t => reachable.has(t));
+      if (!opened.length) {
+        return "";
+      }
+      await Promise.all(
+        opened.map(t => lazy.OrbitoPage.loaded(t, run.signal))
+      );
+      let notes = opened.map(tab => {
+        let browser = tab.linkedBrowser;
+        // Page text, as its title is.
+        let title = lazy.quotePageTags(
+          browser.contentTitle || browser.currentURI.spec
+        );
+        let id = ctx.tabId(tab);
+        return tab.documentGlobal == win
+          ? ` The page opened a new tab, tab ${id} (“${title}”).`
+          : ` The page opened a new window with tab ${id} (“${title}”).`;
+      });
+      return (
+        notes.join("") +
+        (opened.length == 1
+          ? " Call read_page with its tab_id to see it."
+          : " Call read_page with their tab_ids to see them.")
+      );
+    };
   },
 
   /** The tab a question's tools act on is now this one. */
@@ -3320,9 +3401,9 @@ export const OrbitoAssistantCore = {
    * Deletes everything the assistant kept from normal windows, as the
    * settings page does once confirmed: Threads, memories, documents,
    * scheduled tasks' runs and the pages Browsing recall remembers (see
-   * SqliteStore.deleteAllData). Questions being answered stop first. Tabs
-   * then show their Threads empty and documents' tabs say they are
-   * gone.
+   * SqliteStore.deleteAllData), and Interline's translations. Questions
+   * being answered stop first. Tabs then show their Threads empty and
+   * documents' tabs say they are gone.
    */
   async deleteAllData() {
     let saved = [...this._runs.keys()].filter(id => !this._private.has(id));
@@ -3330,6 +3411,7 @@ export const OrbitoAssistantCore = {
     let artifacts = (await this.store.listArtifacts()).map(a => a.id);
     await this.store.deleteAllData();
     lazy.OrbitoRecall.resetIndex();
+    lazy.OrbitoInterline.clearCache();
     for (let id of [...this._threads.keys()]) {
       if (!this._private.has(id)) {
         this._threads.delete(id);

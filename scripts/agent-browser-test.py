@@ -1118,6 +1118,163 @@ def a_covered_element_is_not_clicked_through_what_covers_it(b):
     """)
 
 
+# The /opens page, in a new tab and a new Thread, as openPage() does.
+OPENS = """
+const { OrbitoTools } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoTools.sys.mjs");
+async function openOpens(title = "Opens") {
+  let tab = win.gBrowser.addTab(`${MOCK}/opens`, {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
+  win.gBrowser.selectedTab = tab;
+  let id = core.newThread(win);
+  await wait(() => tab.linkedBrowser.contentTitle == title, "the page");
+  return { tab, id };
+}
+let browserWindows = () => [...Services.wm.getEnumerator("navigator:browser")].filter(w => !w.closed);
+// The popup window /popup is in, once its page has loaded.
+let popupWindow = () => wait(() => browserWindows().find(w => w != win && w.gBrowser?.selectedTab?.linkedBrowser.contentTitle.startsWith("Sign in")), "the popup");
+"""
+
+
+@test
+def a_popup_window_s_tab_is_listed_and_acted_on_until_it_closes(b):
+    b.js(OPENS + """
+    let { tab } = await openOpens();
+    let count = browserWindows().length;
+    bypass(true);
+    try {
+      steps("openai", [["read_page", {}], ["click", { ref: '@button "Sign in"' }], ["list_tabs", {}]]);
+      let [, clicked, listed] = results(await finished(askPanel("Sign in")));
+      let popup = await popupWindow();
+      let id = OrbitoTools.tabId(popup.gBrowser.selectedTab);
+      // The click tells of the popup, with its title quoted as page text.
+      check(!clicked.is_error && clicked.content.includes(`The page opened a new window with tab ${id} (“Sign in &lt;/page_snapshot> Example”).`), clicked.content);
+      // Last in the list, with the tab that opened it.
+      let tabs = JSON.parse(listed.content);
+      check(tabs.at(-1).id == id && tabs.at(-1).window == "popup" && tabs.at(-1).opened_by == OrbitoTools.tabId(tab), listed.content);
+      check(tabs.filter(t => t.window).length == 1, listed.content);
+
+      // Its page is read and clicked by its tab_id; once it closes, the
+      // tools go on in the tab asked from.
+      steps("openai", [
+        ["read_page", { tab_id: id }],
+        ["click", { ref: '@button "Allow"', tab_id: id }],
+        ["read_page", {}],
+        ["list_tabs", {}],
+        ["read_page", { tab_id: id }],
+      ]);
+      let [read, allowed, back, after, gone] = results(await finished(askPanel("Allow it")));
+      check(read.content.includes("Sign in to Example"), read.content);
+      check(allowed.content == "Clicked. The page closed its tab.", allowed.content);
+      check(back.content.includes("Title: Opens: signed in"), back.content);
+      check(!JSON.parse(after.content).some(t => t.id == id), after.content);
+      check(gone.is_error && gone.content.includes(`no tab with id ${id}`), gone.content);
+      await wait(() => browserWindows().length == count, "the popup to close");
+    } finally {
+      bypass(false);
+      for (let w of browserWindows()) {
+        if (w != win && !w.toolbar.visible) {
+          w.close();
+        }
+      }
+    }
+    win.gBrowser.removeTab(tab);
+    """)
+
+
+@test
+def a_popup_that_isolates_itself_from_its_opener_stays_in_the_list(b):
+    b.js(OPENS + """
+    let { tab } = await openOpens();
+    bypass(true);
+    try {
+      steps("openai", [["read_page", {}], ["click", { ref: '@button "Isolated sign in"' }]]);
+      let [, clicked] = results(await finished(askPanel("Sign in")));
+      let popup = await popupWindow();
+      let popupTab = popup.gBrowser.selectedTab;
+      let id = OrbitoTools.tabId(popupTab);
+      // Its page has a browsing context of its own, which does not know
+      // the page that opened it.
+      let context = popupTab.linkedBrowser.browsingContext;
+      check(!context.crossGroupOpener && !context.opener, "the popup still knows its opener");
+      check(clicked.content.includes(`The page opened a new window with tab ${id} (`), clicked.content);
+      // close_tab closes it in its own window.
+      steps("openai", [["list_tabs", {}], ["read_page", { tab_id: id }], ["close_tab", { tab_id: id }]]);
+      let [listed, read, closed] = results(await finished(askPanel("Where is it?")));
+      check(JSON.parse(listed.content).some(t => t.id == id && t.opened_by == OrbitoTools.tabId(tab)), listed.content);
+      check(read.content.includes("Sign in to Example"), read.content);
+      check(closed.content.startsWith(`Closed tab ${id} `), closed.content);
+      await wait(() => popup.closed, "the popup to close");
+      check(!tab.closing && win.gBrowser.tabs.includes(tab), "the opener's tab closed");
+    } finally {
+      bypass(false);
+    }
+    win.gBrowser.removeTab(tab);
+    """)
+
+
+@test
+def a_tab_the_page_opens_is_told_of_and_joins_the_orbit(b):
+    b.js(OPENS + """
+    let { tab } = await openOpens();
+    let before = new Set(win.gBrowser.tabs);
+    bypass(true);
+    try {
+      steps("openai", [["read_page", {}], ["click", { ref: '@button "New tab"' }], ["click", { ref: '@link "Linked"' }], ["list_tabs", {}]]);
+      let messages = await finished(askPanel("Open them"));
+      let [, byScript, byLink, listed] = results(messages);
+      let opened = title => wait(() => win.gBrowser.tabs.find(t => !before.has(t) && t.linkedBrowser.contentTitle == title), title);
+      let scripted = await opened("Opened tab");
+      // A link to a new tab opens it without an opener for the page.
+      let linked = await opened("Linked tab");
+      check(byScript.content.includes(`The page opened a new tab, tab ${OrbitoTools.tabId(scripted)} (“Opened tab”). Call read_page with its tab_id to see it.`), byScript.content);
+      check(byLink.content.includes(`The page opened a new tab, tab ${OrbitoTools.tabId(linked)} (“Linked tab”).`), byLink.content);
+      let ids = JSON.parse(listed.content).map(t => t.id);
+      check(ids.includes(OrbitoTools.tabId(scripted)) && ids.includes(OrbitoTools.tabId(linked)), listed.content);
+      // In the question's Orbit, as open_tab's tabs are.
+      let orbit = partsOf(messages, "orbit")[0]?.id;
+      check(orbit && core.orbitOf(scripted) == orbit && core.orbitOf(linked) == orbit, `${orbit} ${core.orbitOf(scripted)} ${core.orbitOf(linked)}`);
+      win.gBrowser.removeTab(scripted);
+      win.gBrowser.removeTab(linked);
+    } finally {
+      bypass(false);
+    }
+    win.gBrowser.removeTab(tab);
+    """)
+
+
+@test
+def a_tab_the_page_opens_goes_to_the_thread_s_space_out_of_sight(b):
+    b.js(OPENS + """
+    let spaces = win.OrbitoShell.spaces;
+    let home = spaces.current;
+    let { tab, id } = await openOpens();
+    // The user goes on in another Space while the question works.
+    let other = spaces.create();
+    check(other && spaces.current == other.id, "no other Space");
+    let shown = win.gBrowser.selectedTab;
+    let before = new Set(win.gBrowser.tabs);
+    bypass(true);
+    try {
+      steps("openai", [["read_page", {}], ["click", { ref: '@button "New tab"' }], ["list_tabs", {}]]);
+      await core.ask({ threadId: id, prompt: "Open a tab", origin: { tab } });
+      let [, clicked, listed] = results(await core.getMessages(id));
+      let opened = await wait(() => win.gBrowser.tabs.find(t => !before.has(t) && t.linkedBrowser.contentTitle == "Opened tab"), "the new tab");
+      check(spaces.spaceOf(opened) == home, "the tab is not in the Thread's Space");
+      check(spaces.current == other.id && win.gBrowser.selectedTab == shown && opened.hidden, "the window shows the new tab");
+      let tabId = OrbitoTools.tabId(opened);
+      check(clicked.content.includes(`The page opened a new tab, tab ${tabId} (“Opened tab”).`), clicked.content);
+      check(JSON.parse(listed.content).some(t => t.id == tabId), listed.content);
+      win.gBrowser.removeTab(opened);
+    } finally {
+      bypass(false);
+      spaces.switchTo(home);
+      spaces.remove(other.id);
+    }
+    win.gBrowser.removeTab(tab);
+    """)
+
+
 @test
 def an_element_relabeled_after_the_snapshot_is_not_acted_on(b):
     b.js("""
@@ -1142,6 +1299,130 @@ def an_element_relabeled_after_the_snapshot_is_not_acted_on(b):
       check(state.relabels == 2 && state.pays == 0 && state.cancels == 0, JSON.stringify(state));
     } finally {
       bypass(false);
+    }
+    win.gBrowser.removeTab(tab);
+    """)
+
+
+DIALOGS_PRELUDE = """
+async function openDialogs() {
+  let tab = win.gBrowser.addTab(`${MOCK}/dialogs`, {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
+  win.gBrowser.selectedTab = tab;
+  core.newThread(win);
+  await wait(() => tab.linkedBrowser.contentTitle.startsWith('{"'), "the page");
+  return tab;
+}
+function dialogState(tab) {
+  return JSON.parse(tab.linkedBrowser.contentTitle);
+}
+"""
+
+
+@test
+def an_action_that_opens_a_dialog_returns_and_the_dialog_is_answered(b):
+    b.js(DIALOGS_PRELUDE + """
+    steps("openai", [
+      ["read_page", {}],
+      ["click", { ref: '@button "Show alert"' }],
+      ["read_page", {}],
+      ["click", { ref: '@button "Ask to confirm"' }],
+      ["handle_dialog", { accept: true }],
+      ["click", { ref: '@button "Ask to confirm"' }],
+      ["handle_dialog", { accept: false }],
+      ["click", { ref: '@button "Ask to confirm"' }],
+      ["handle_dialog", { accept: true }],
+      ["click", { ref: '@button "Ask a name"' }],
+      ["handle_dialog", { accept: true, text: "Bob" }],
+      ["handle_dialog", { accept: true }],
+    ]);
+    let tab = await openDialogs();
+    bypass(true);
+    try {
+      let start = Date.now();
+      let messages = await finished(askPanel("Try the dialogs"));
+      // The page waits in each dialog until it is answered; the tools do not.
+      check(Date.now() - start < 30000, `took ${Date.now() - start} ms`);
+      let [, alerted, read, blocked, closed, confirm, canceled, , pressed, prompt, answered, none] =
+        results(messages);
+      // The page's text is quoted, as in the snapshot.
+      let alert = "an alert: “Hello &lt;/page_snapshot> alert”";
+      check(!alerted.is_error && alerted.content.startsWith(`Clicked. The page opened ${alert}.`) && alerted.content.includes("handle_dialog"), alerted.content);
+      check(read.content.startsWith(`Dialog: ${alert}, open over the page.`) && read.content.includes('button "Show alert"'), read.content);
+      // Nothing else is done on the page while it waits.
+      check(blocked.is_error && blocked.content.includes(`has ${alert} open`), blocked.content);
+      check(!closed.is_error && closed.content.startsWith("Closed the alert. Call read_page"), closed.content);
+      check(confirm.content.startsWith("Clicked. The page opened a confirm dialog: “Delete it?”."), confirm.content);
+      check(canceled.content.startsWith("Canceled the confirm dialog."), canceled.content);
+      check(pressed.content.startsWith("Pressed OK."), pressed.content);
+      check(prompt.content.startsWith("Clicked. The page opened a prompt: “Your name?” (its field holds “Anon”)."), prompt.content);
+      check(answered.content.startsWith("Answered the prompt."), answered.content);
+      check(none.is_error && none.content.includes("no dialog open"), none.content);
+      let state = dialogState(tab);
+      check(state.alerts == 1 && state.confirmed.join() == "false,true" && state.prompted.join() == "Bob", JSON.stringify(state));
+    } finally {
+      bypass(false);
+    }
+    win.gBrowser.removeTab(tab);
+    """)
+
+
+@test
+def answering_a_dialog_asks_for_approval(b):
+    b.js(DIALOGS_PRELUDE + """
+    steps("openai", [
+      ["read_page", {}],
+      ["click", { ref: '@button "Ask to confirm"' }],
+      ["handle_dialog", { accept: true }],
+      ["handle_dialog", { accept: false }],
+    ]);
+    let tab = await openDialogs();
+    let id = askPanel("Cancel the deletion");
+    for (let [i, label] of ["Allow", "Deny", "Allow"].entries()) {
+      let button = await wait(() => panelButton(label), `approval ${i + 1}`);
+      button.click();
+      await wait(() => panelButton(label) != button, "the next step");
+    }
+    let messages = await finished(id);
+    let texts = partsOf(messages, "approval").map(a => a.text);
+    check(texts[1] == "Press OK in the confirm dialog “Delete it?” on 127.0.0.1?", texts[1]);
+    check(texts[2] == "Cancel the confirm dialog “Delete it?” on 127.0.0.1?", texts[2]);
+    let [, , declined, canceled] = results(messages);
+    check(declined.is_error && /declined/.test(declined.content), declined.content);
+    check(!canceled.is_error, canceled.content);
+    check(dialogState(tab).confirmed.join() == "false", tab.linkedBrowser.contentTitle);
+    win.gBrowser.removeTab(tab);
+    """)
+
+
+@test
+def leaving_a_page_that_asks_first_waits_for_the_answer(b):
+    b.js(DIALOGS_PRELUDE + """
+    // Marionette turns beforeunload off.
+    let disabled = Services.prefs.getBoolPref("dom.disable_beforeunload", false);
+    Services.prefs.setBoolPref("dom.disable_beforeunload", false);
+    Services.prefs.setBoolPref("dom.require_user_interaction_for_beforeunload", false);
+    steps("openai", [
+      ["read_page", {}],
+      ["click", { ref: '@button "Guard leaving"' }],
+      ["click", { ref: '@link "Leave"' }],
+      ["handle_dialog", { accept: false }],
+      ["click", { ref: '@link "Leave"' }],
+      ["handle_dialog", { accept: true }],
+    ]);
+    let tab = await openDialogs();
+    bypass(true);
+    try {
+      let [, , asked, stayed, , left] = results(await finished(askPanel("Leave")));
+      check(asked.content.startsWith("Clicked. The page opened a prompt asking whether to leave the page."), asked.content);
+      check(stayed.content.startsWith("Chose to stay on the page. Call read_page"), stayed.content);
+      check(left.content.startsWith("Chose to leave the page. The page navigated to") && left.content.includes("/page/Left"), left.content);
+      check(tab.linkedBrowser.currentURI.spec.endsWith("/page/Left"), tab.linkedBrowser.currentURI.spec);
+    } finally {
+      bypass(false);
+      Services.prefs.clearUserPref("dom.require_user_interaction_for_beforeunload");
+      Services.prefs.setBoolPref("dom.disable_beforeunload", disabled);
     }
     win.gBrowser.removeTab(tab);
     """)
@@ -8038,6 +8319,736 @@ def the_claude_cli_offers_each_query_its_own_tools_until_it_ends(b):
     check(!OrbitoMCPServer._endpoints.size && !OrbitoMCPServer._socket, "the endpoint is left");
     """)
 
+
+
+# Interline (OrbitoInterline.sys.mjs), against mock-translate and the
+# mock's Google routes. Each test sets the orbito.interline prefs it needs
+# and clears them again.
+INTERLINE = r"""
+const { OrbitoInterline } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoInterline.sys.mjs"
+);
+const { languageName } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoInterlineEngines.sys.mjs"
+);
+function interlinePrefs(prefs) {
+  for (let [name, value] of Object.entries(prefs)) {
+    Services.prefs.setStringPref(`orbito.interline.${name}`, value);
+  }
+}
+async function resetInterline() {
+  for (let name of Services.prefs.getChildList("orbito.interline.")) {
+    Services.prefs.clearUserPref(name);
+  }
+  for (let engine of ["openai", "claude", "google"]) {
+    await OrbitoInterline.setKey(engine, "");
+  }
+  OrbitoInterline.clearCache();
+}
+async function mockCount(path) {
+  return (await fetch(`${MOCK}${path}`)).json();
+}
+const { OrbitoPage } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoPage.sys.mjs"
+);
+// The mock's French article, its <html lang> code ("none" for none).
+function langURL(code, title) {
+  return `${MOCK}/lang/${code}/${encodeURIComponent(title)}`;
+}
+async function openLang(code, title, w = win) {
+  let tab = w.gBrowser.addTab(langURL(code, title), {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
+  w.gBrowser.selectedTab = tab;
+  await wait(() => tab.linkedBrowser.contentTitle == title, `page ${title}`);
+  return tab;
+}
+async function loadLang(tab, code, title) {
+  tab.linkedBrowser.loadURI(Services.io.newURI(langURL(code, title)), {
+    triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+  });
+  await wait(() => tab.linkedBrowser.contentTitle == title, `page ${title}`);
+}
+// The value of an expression in the tab's page.
+async function inPage(tab, code) {
+  let { json } = await OrbitoPage.script(tab, { code, timeoutMs: 5000, maxChars: 100000 });
+  return json == null ? undefined : JSON.parse(json);
+}
+// What Interline put in the page: the translations under paragraphs
+// (bilingual), instead of them (replace), the shells still loading and the
+// paragraphs marked.
+function translations(tab) {
+  return inPage(tab, `({
+    dual: [...document.querySelectorAll("font.il-dual il-content")].map(e => e.textContent),
+    // Each bilingual translation's paragraph, without the translation.
+    originals: [...document.querySelectorAll("font.il-dual")].map(f =>
+      f.parentElement.textContent.replace(f.textContent, "").trim()),
+    loading: document.querySelectorAll(".il-loading").length,
+    trans: [...document.querySelectorAll("il-trans")].map(e => e.textContent),
+    hidden: [...document.querySelectorAll("il-dual")].map(e => e.textContent),
+    marked: document.querySelectorAll("[il-marked]").length,
+  })`);
+}
+// The article has a heading and four paragraphs. Bilingual translations
+// are done once each reads in full (not a preview still typing).
+async function translated(tab, what = "dual") {
+  return wait(async () => {
+    let t = await translations(tab);
+    let done = what == "dual"
+      ? t.dual.every((text, i) => text == `[Korean] ${t.originals[i]}`)
+      : t.trans.every(text => text.startsWith("[Korean] "));
+    return t[what].length == 5 && done && !t.loading && t;
+  }, `the ${what} translations`, 20000);
+}
+function useMockTranslate(more = {}) {
+  interlinePrefs({ engine: "openai", "openai.model": "mock-translate", targetLang: "ko", ...more });
+}
+"""
+
+
+def interline_test(fn):
+    """A test whose body runs with INTERLINE's helpers, prefs reset after."""
+
+    def run(b):
+        b.js(INTERLINE + "try {\n" + fn() + "\n} finally {\n  await resetInterline();\n}")
+
+    run.__name__ = fn.__name__
+    return test(run)
+
+
+@interline_test
+def interline_batches_streams_and_caches_translations():
+    return """
+    interlinePrefs({ engine: "openai", "openai.model": "mock-translate", targetLang: "ko" });
+    let before = await mockCount("/requests");
+    let texts = ["Un", "Deux", "Trois"];
+    let deltas = texts.map(() => []);
+    let results = await Promise.all(texts.map((text, i) =>
+      OrbitoInterline.translate(text, { onDelta: d => deltas[i].push(d) })
+    ));
+    check(JSON.stringify(results) == JSON.stringify(texts.map(t => `[Korean] ${t}`)), JSON.stringify(results));
+    check(await mockCount("/requests") == before + 1, "the three texts were not sent as one batch");
+    check(deltas.every(d => d.length && d[0].startsWith("[Korean]")), JSON.stringify(deltas));
+
+    // A cache hit: no request, no delta.
+    let again = [];
+    check(await OrbitoInterline.translate("Deux", { onDelta: d => again.push(d) }) == "[Korean] Deux", "cached");
+    check(await mockCount("/requests") == before + 1 && !again.length, "the cache was not used");
+
+    // Private text has a cache and batches of its own.
+    before = await mockCount("/requests");
+    let both = await Promise.all([
+      OrbitoInterline.translate("Quatre", { private: true }),
+      OrbitoInterline.translate("Cinq"),
+    ]);
+    check(both.join() == "[Korean] Quatre,[Korean] Cinq", both.join());
+    check(await mockCount("/requests") == before + 2, "private and normal text shared a request");
+    await OrbitoInterline.translate("Deux", { private: true });
+    check(await mockCount("/requests") == before + 3, "a private translation came from the normal cache");
+
+    // The prompt names the language in English.
+    let english = await OrbitoInterline.translate("Six", { targetLang: "en-US" });
+    check(english == `[${languageName("en-US")}] Six`, english);
+
+    // Turning the cache off for good.
+    OrbitoInterline.clearCache();
+    before = await mockCount("/requests");
+    await OrbitoInterline.translate("Deux");
+    check(await mockCount("/requests") == before + 1, "clearCache kept a translation");
+    """
+
+
+@interline_test
+def interline_translates_with_google_free_and_cloud():
+    return """
+    interlinePrefs({ engine: "google", "google.baseURL": MOCK, targetLang: "ko" });
+    let before = await mockCount("/google-requests");
+    let free = await OrbitoInterline.translate("Bonjour <1>le</1> monde");
+    check(free == "[ko] Bonjour <1>le</1> monde", free);
+    await OrbitoInterline.setKey("google", "mock");
+    let cloud = await OrbitoInterline.translate("Salut");
+    check(cloud == "[ko] Salut", cloud);
+    check(await mockCount("/google-requests") == before + 2, "Google was not asked twice");
+    """
+
+
+@interline_test
+def interline_claude_needs_a_key_and_reports_a_refused_one():
+    return """
+    interlinePrefs({ engine: "claude", "claude.baseURL": MOCK, "claude.model": "mock-translate", targetLang: "ko" });
+    let kind = await OrbitoInterline.translate("Un").then(() => "none", e => e.kind);
+    check(kind == "needs-key", kind);
+    await OrbitoInterline.setKey("claude", "mock");
+    let results = await Promise.all(["Un", "Deux"].map(t => OrbitoInterline.translate(t, { onDelta() {} })));
+    check(results.join() == "[Korean] Un,[Korean] Deux", results.join());
+    await OrbitoInterline.setKey("claude", "mock-bad-key");
+    kind = await OrbitoInterline.translate("Trois").then(() => "none", e => e.kind);
+    check(kind == "auth", kind);
+    """
+
+
+@interline_test
+def interline_translates_a_tab_under_its_paragraphs_until_turned_off():
+    return """
+    useMockTranslate();
+    let tab = await openLang("fr", "Interline one");
+    let before = await mockCount("/requests");
+    check(await OrbitoInterline.toggle(tab.linkedBrowser), "toggle found no page");
+    let t = await translated(tab);
+    check(t.dual[2].includes("un lien vers une autre page") && t.dual[2].includes("du_code()"), JSON.stringify(t.dual));
+    let rebuilt = await inPage(tab, `[...document.querySelectorAll("font.il-dual a")].map(a => a.getAttribute("href") + " " + a.textContent).concat(
+      [...document.querySelectorAll("font.il-dual code")].map(c => c.textContent))`);
+    check(JSON.stringify(rebuilt) == JSON.stringify(["/page/Lien un lien vers une autre page", "du_code()"]), JSON.stringify(rebuilt));
+    let sent = (await mockCount("/requests")) - before;
+    check(sent >= 1 && sent < 5, `${sent} requests for five paragraphs`);
+    // The sheet's loading look is for Interline's shells, not a page's class.
+    let own = await inPage(tab, `(() => {
+      let d = document.createElement("div");
+      d.className = "il-loading";
+      document.body.append(d);
+      let color = getComputedStyle(d).color;
+      d.remove();
+      return color;
+    })()`);
+    check(own != "rgba(0, 0, 0, 0)", `the page's own .il-loading: ${own}`);
+
+    // The tab stays on as it moves to another page; another tab stays off.
+    await loadLang(tab, "fr", "Interline two");
+    await translated(tab);
+    let other = await openLang("fr", "Interline other");
+    await sleep(1500);
+    let untouched = await translations(other);
+    check(!untouched.dual.length && !untouched.marked, JSON.stringify(untouched));
+    win.gBrowser.removeTab(other);
+
+    // Off takes every translation and mark away.
+    win.gBrowser.selectedTab = tab;
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    await wait(async () => {
+      let t = await translations(tab);
+      return !t.dual.length && !t.marked && !t.loading;
+    }, "the page without translations");
+    // Nor does its sheet stay (no hover key either).
+    let display = await inPage(tab, `(() => {
+      let d = document.createElement("il-dual");
+      document.body.append(d);
+      let display = getComputedStyle(d).display;
+      d.remove();
+      return display;
+    })()`);
+    check(display != "none", "Interline's sheet stayed after it was turned off");
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_turned_off_is_off_on_a_page_back_from_the_bfcache():
+    return """
+    useMockTranslate();
+    let tab = await openLang("fr", "Interline cached");
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    await translated(tab);
+    // Only a page restored from the bfcache still has this.
+    await inPage(tab, `document.documentElement.setAttribute("data-kept", "yes")`);
+    await loadLang(tab, "fr", "Interline after");
+    await translated(tab);
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    tab.linkedBrowser.goBack();
+    await wait(() => tab.linkedBrowser.contentTitle == "Interline cached", "the page back");
+    let kept = await inPage(tab, `document.documentElement.getAttribute("data-kept")`);
+    check(kept == "yes", "the page did not come back from the bfcache");
+    await wait(async () => {
+      let t = await translations(tab);
+      return !t.dual.length && !t.marked;
+    }, "the restored page without translations");
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_replace_mode_shows_only_the_translation():
+    return """
+    useMockTranslate({ mode: "replace" });
+    let tab = await openLang("fr", "Interline replace");
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    let t = await translated(tab, "trans");
+    check(!t.dual.length, "bilingual shells in replace mode");
+    check(t.hidden.length == 5 && t.hidden[1].startsWith("Ceci est le premier"), JSON.stringify(t.hidden));
+    let shown = await inPage(tab, `getComputedStyle(document.querySelector("il-dual")).display`);
+    check(shown == "none", `the original shows: ${shown}`);
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    await wait(async () => {
+      let t = await translations(tab);
+      return !t.trans.length && !t.hidden.length;
+    }, "the original back");
+    let text = await inPage(tab, `document.querySelector("p").textContent`);
+    check(text.startsWith("Ceci est le premier"), text);
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_translates_in_a_private_window():
+    return """
+    useMockTranslate();
+    let pw = await openWindow({ private: true });
+    try {
+      let tab = await openLang("fr", "Interline private", pw);
+      await OrbitoInterline.toggle(tab.linkedBrowser);
+      await translated(tab);
+    } finally {
+      pw.close();
+    }
+    """
+
+
+@interline_test
+def interline_toggle_does_nothing_on_a_page_that_is_not_web():
+    return """
+    let tab = win.gBrowser.addTab("about:blank", {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+    check(await OrbitoInterline.toggle(tab.linkedBrowser) === false, "toggled about:blank");
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_button_shows_on_a_page_in_another_language_and_translates_it():
+    return """
+    // The target is Orbito's own language (en-US here).
+    interlinePrefs({ engine: "openai", "openai.model": "mock-translate" });
+    let topBar = win.document.querySelector("orbito-top-bar");
+    let english = await openPage("Interline English page");
+    await sleep(1000);
+    await topBar.updateComplete;
+    check(!topBar.interlineButton, "the button shows on an English page");
+    win.gBrowser.removeTab(english);
+
+    let tab = await openLang("fr", "Interline button");
+    let button = await wait(() => topBar.interlineButton, "the Interline button");
+    check(button.getAttribute("aria-pressed") == "false", "pressed before a click");
+    let order = [...topBar.renderRoot.querySelectorAll("[data-control]")].map(el => el.dataset.control);
+    check(order.indexOf("interline") == order.indexOf("reader") + 1 || !order.includes("reader"), order.join());
+    button.click();
+    await wait(() => topBar.interlineButton?.getAttribute("aria-pressed") == "true", "the button pressed");
+    let t = await wait(async () => {
+      let t = await translations(tab);
+      return t.dual.length == 5 && t.dual.every((text, i) => text == `[${languageName("en-US")}] ${t.originals[i]}`) && t;
+    }, "the page translated into English", 20000);
+    topBar.interlineButton.click();
+    await wait(() => topBar.interlineButton?.getAttribute("aria-pressed") == "false", "the button released");
+    await wait(async () => !(await translations(tab)).dual.length, "the translations gone");
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_button_shows_once_a_page_without_lang_is_detected():
+    return """
+    let topBar = win.document.querySelector("orbito-top-bar");
+    let tab = await openLang("none", "Interline detected");
+    await wait(() => topBar.interlineButton, "the button for a French page with no lang", 20000);
+    win.gBrowser.removeTab(tab);
+    """
+
+
+# The settings tab, once it shows Interline's pane.
+INTERLINE_SETTINGS = r"""
+async function interlinePane() {
+  let doc = await wait(() => {
+    let browser = win.gBrowser.selectedBrowser;
+    let doc = browser.currentURI.spec == "about:orbito-settings" && browser.contentDocument;
+    return doc?.readyState == "complete" && doc.getElementById("interline")?.hidden === false && doc;
+  }, "the settings page on its Interline pane");
+  return doc;
+}
+function closeSettings() {
+  for (let tab of [...win.gBrowser.tabs]) {
+    if (tab.linkedBrowser.currentURI.spec == "about:orbito-settings") {
+      win.gBrowser.removeTab(tab);
+    }
+  }
+}
+"""
+
+
+@interline_test
+def interline_without_a_key_opens_its_settings_pane_and_takes_the_key_there():
+    return INTERLINE_SETTINGS + """
+    interlinePrefs({ engine: "claude", "claude.baseURL": MOCK, "claude.model": "mock-translate", targetLang: "ko" });
+    let tab = await openLang("fr", "Interline no key");
+    check(await OrbitoInterline.toggle(tab.linkedBrowser), "no page");
+    check(OrbitoInterline.view(tab.linkedBrowser).status == "off", "the tab turned on without a key");
+    let doc = await interlinePane();
+    try {
+      let claude = doc.querySelector('#interline-engine [data-value="claude"]');
+      check(claude.getAttribute("aria-checked") == "true", "Claude is not the picked engine");
+      check(doc.getElementById("interline-openai-baseurl").closest("label").hidden, "the OpenAI fields show for Claude");
+      let input = doc.getElementById("interline-claude-key");
+      input.value = "mock";
+      input.dispatchEvent(new doc.defaultView.Event("change"));
+      await wait(async () => (await OrbitoInterline.getKey("claude")) == "mock", "the key saved");
+      // Picking an engine in the pane sets the pref.
+      doc.querySelector('#interline-engine [data-value="google"]').click();
+      check(Services.prefs.getStringPref("orbito.interline.engine") == "google", "the engine pref");
+      await wait(() => !doc.getElementById("interline-google-key").closest("label").hidden, "the Google field");
+    } finally {
+      closeSettings();
+    }
+    interlinePrefs({ engine: "claude" });
+    win.gBrowser.selectedTab = tab;
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    await translated(tab);
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_refused_key_marks_the_button_and_a_click_turns_it_off():
+    return INTERLINE_SETTINGS + """
+    interlinePrefs({ engine: "claude", "claude.baseURL": MOCK, "claude.model": "mock-translate", targetLang: "ko" });
+    await OrbitoInterline.setKey("claude", "mock-bad-key");
+    let topBar = win.document.querySelector("orbito-top-bar");
+    let tab = await openLang("fr", "Interline bad key");
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    let button = await wait(() => topBar.interlineButton?.getAttribute("status") == "error" && topBar.interlineButton, "the error look");
+    check(OrbitoInterline.view(tab.linkedBrowser).error?.kind == "auth", JSON.stringify(OrbitoInterline.view(tab.linkedBrowser)));
+    check(button.title.length > 0 && button.getAttribute("aria-pressed") == "false", button.title);
+    button.click();
+    await interlinePane();
+    closeSettings();
+    win.gBrowser.selectedTab = tab;
+    check(OrbitoInterline.view(tab.linkedBrowser).status == "off", "the click left the tab on");
+    let t = await translations(tab);
+    check(!t.dual.length && !t.loading && !t.marked, JSON.stringify(t));
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_marks_the_button_when_the_provider_keeps_refusing():
+    return """
+    const { t } = ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoL10n.sys.mjs");
+    useMockTranslate({ "openai.model": "mock-rate-limit" });
+    let topBar = win.document.querySelector("orbito-top-bar");
+    let tab = await openLang("fr", "Interline refused");
+    let browser = tab.linkedBrowser;
+    await OrbitoInterline.toggle(browser);
+    let button = await wait(() => topBar.interlineButton?.hasAttribute("warning") && topBar.interlineButton, "the warning look", 20000);
+    let view = OrbitoInterline.view(browser);
+    check(view.status == "on" && view.warning?.kind == "rate-limit", JSON.stringify(view));
+    check(button.getAttribute("aria-pressed") == "true", "the tab is not shown as on");
+    check(button.title == t("orbito-top-bar-interline-warning-rate-limit"), button.title);
+    // The child gives up on its paragraphs: no skeleton is left.
+    await wait(async () => {
+      let n = await mockCount("/requests");
+      await sleep(2000);
+      return n == await mockCount("/requests");
+    }, "the requests to stop", 30000);
+    let left = await translations(tab);
+    check(!left.loading && !left.dual.length, JSON.stringify(left));
+    view = OrbitoInterline.view(browser);
+    check(view.status == "on" && view.warning?.kind == "rate-limit", JSON.stringify(view));
+
+    // Another document starts without the warning (until it fails too).
+    await loadLang(tab, "fr", "Interline refused again");
+    await wait(() => !OrbitoInterline.view(browser).warning, "the warning cleared by the new page");
+    await wait(() => OrbitoInterline.view(browser).warning?.kind == "rate-limit", "the new page's warning", 20000);
+
+    // A settings change clears it too.
+    interlinePrefs({ mode: "replace" });
+    await wait(() => !OrbitoInterline.view(browser).warning, "the warning cleared by a settings change");
+    await wait(() => OrbitoInterline.view(browser).warning, "the warning back", 20000);
+
+    // Off: no warning.
+    topBar.interlineButton.click();
+    await wait(() => OrbitoInterline.view(browser).status == "off", "the tab off");
+    check(!OrbitoInterline.view(browser).warning, JSON.stringify(OrbitoInterline.view(browser)));
+    await wait(() => !topBar.interlineButton?.hasAttribute("warning"), "the button without the warning look");
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_settings_change_brings_a_stopped_tab_back():
+    return """
+    interlinePrefs({ engine: "claude", "claude.baseURL": MOCK, "claude.model": "mock-translate", targetLang: "ko" });
+    await OrbitoInterline.setKey("claude", "mock-bad-key");
+    let tab = await openLang("fr", "Interline fixed key");
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    await wait(() => OrbitoInterline.view(tab.linkedBrowser).status == "error", "the error");
+    // A website's login saved or removed is not a settings change.
+    let login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(Ci.nsILoginInfo);
+    login.init("https://example.com", "https://example.com", null, "someone", "secret", "", "");
+    let before = await mockCount("/requests");
+    await Services.logins.addLoginAsync(login);
+    try {
+      await sleep(1000);
+    } finally {
+      await Services.logins.removeLoginAsync(login);
+    }
+    await sleep(1000);
+    check(OrbitoInterline.view(tab.linkedBrowser).status == "error", OrbitoInterline.view(tab.linkedBrowser).status);
+    check(await mockCount("/requests") == before, "a website's login brought the tab back");
+    await OrbitoInterline.setKey("claude", "mock");
+    check(OrbitoInterline.view(tab.linkedBrowser).status == "on", OrbitoInterline.view(tab.linkedBrowser).status);
+    await translated(tab);
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@test
+def interline_hover_key_translates_the_paragraph_under_the_pointer(b):
+    # Real pointer and key input in the page, on a tab that is not
+    # translated; the key is set once the page is open.
+    from marionette_driver.keys import Keys
+
+    handle = b.js(INTERLINE + """
+    useMockTranslate();
+    let tab = await openLang("fr", "Interline hover");
+    interlinePrefs({ hoverKey: "Shift" });
+    return ChromeUtils.importESModule(
+      "chrome://remote/content/shared/NavigableManager.sys.mjs"
+    ).NavigableManager.getIdForBrowser(tab.linkedBrowser);
+    """)
+    previous = b.m.current_window_handle
+    shown = """
+    return [...document.querySelectorAll("font.il-dual")].map(f => [
+      f.parentElement.tagName, f.querySelector("il-content").textContent, f.classList.contains("il-loading")]);
+    """
+
+    def until(check, what):
+        for _ in range(200):
+            value = b.m.execute_script(shown)
+            if check(value):
+                return value
+            time.sleep(0.1)
+        raise AssertionError(f"{what}: {value}")
+
+    def press_shift_over(index):
+        x, y = b.m.execute_script(
+            "let r = document.querySelectorAll('p')[arguments[0]].getBoundingClientRect();"
+            "return [Math.round(r.left + 20), Math.round(r.top + r.height / 2)];",
+            script_args=[index],
+        )
+        mouse = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+        mouse.pointer_move(x, y, duration=50).perform()
+        keys = b.m.actions.sequence("key", "keyboard")
+        keys.key_down(Keys.SHIFT).pause(100).key_up(Keys.SHIFT).perform()
+        b.m.actions.release()
+
+    try:
+        b.m.switch_to_window(handle)
+        b.m.set_context("content")
+        time.sleep(0.5)
+        press_shift_over(1)
+        done = until(lambda v: len(v) == 1 and not v[0][2] and v[0][1].startswith("[Korean] Le deuxième"), "one paragraph translated")
+        assert done[0][0] == "P", done
+        press_shift_over(1)
+        until(lambda v: not v, "the translation taken away")
+        # Not while typing in a field: the key stays the page's.
+        b.m.execute_script("""
+        let field = document.createElement("textarea");
+        document.body.prepend(field);
+        field.focus();
+        window.addEventListener("keydown", e => field.setAttribute("data-prevented", e.defaultPrevented));
+        """)
+        press_shift_over(1)
+        time.sleep(1.5)
+        assert not b.m.execute_script(shown), b.m.execute_script(shown)
+        prevented = b.m.execute_script("return document.querySelector('textarea').getAttribute('data-prevented')")
+        assert prevented == "false", prevented
+    finally:
+        b.m.set_context("chrome")
+        b.m.switch_to_window(previous, focus=False)
+        b.js(INTERLINE + """
+        await resetInterline();
+        for (let tab of [...win.gBrowser.tabs]) {
+          if (tab.linkedBrowser.contentTitle == "Interline hover") {
+            win.gBrowser.removeTab(tab);
+          }
+        }
+        """)
+
+
+@interline_test
+def interline_keeps_translating_a_page_back_from_the_bfcache():
+    return """
+    useMockTranslate();
+    let tab = await openLang("fr", "Interline back");
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    await translated(tab);
+    // Only a page restored from the bfcache still has this.
+    await inPage(tab, `document.documentElement.setAttribute("data-kept", "yes")`);
+    await loadLang(tab, "fr", "Interline away");
+    await translated(tab);
+    tab.linkedBrowser.goBack();
+    await wait(() => tab.linkedBrowser.contentTitle == "Interline back", "the page back");
+    let kept = await inPage(tab, `document.documentElement.getAttribute("data-kept")`);
+    check(kept == "yes", "the page did not come back from the bfcache");
+    // What the page adds once back is translated too.
+    let added = "Un cinquième paragraphe arrive après le retour sur la page.";
+    await inPage(tab, `document.querySelector("article").insertAdjacentHTML("beforeend", "<p>${added}</p>")`);
+    await wait(async () => (await translations(tab)).dual.includes(`[Korean] ${added}`),
+      "the added paragraph translated", 20000);
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_never_sends_one_sites_text_with_anothers():
+    return """
+    useMockTranslate();
+    let before = await mockCount("/requests");
+    let both = await Promise.all([
+      OrbitoInterline.translate("Site un", { origin: "https://a.example" }),
+      OrbitoInterline.translate("Site deux", { origin: "https://b.example" }),
+    ]);
+    check(both.join() == "[Korean] Site un,[Korean] Site deux", both.join());
+    check(await mockCount("/requests") == before + 2, "two sites' texts shared a request");
+
+    // The parent actor sends a page's text as its page's origin's.
+    interlinePrefs({ hoverKey: "Shift" });
+    let a = await openLang("fr", "Interline site A");
+    let b = win.gBrowser.addTab(langURL("fr", "Interline site B").replace("127.0.0.1", "localhost"), {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+    await wait(() => b.linkedBrowser.contentTitle == "Interline site B", "the other site's page");
+    let ask = (tab, text) => tab.linkedBrowser.browsingContext.currentWindowGlobal
+      .getActor("OrbitoInterline").receiveMessage({ name: "Interline:Translate", data: { id: 1, text } });
+    before = await mockCount("/requests");
+    let answers = await Promise.all([ask(a, "Page un"), ask(b, "Page deux")]);
+    check(answers.map(answer => answer.text).join() == "[Korean] Page un,[Korean] Page deux", JSON.stringify(answers));
+    check(await mockCount("/requests") == before + 2, "two sites' pages shared a request");
+    win.gBrowser.removeTab(a);
+    win.gBrowser.removeTab(b);
+    """
+
+
+@interline_test
+def interline_caches_a_batch_only_once_its_count_is_confirmed():
+    return """
+    useMockTranslate();
+    let texts = ["Alpha", "Bravo (merge)", "Charlie", "Delta"];
+    let results = await Promise.all(texts.map(text => OrbitoInterline.translate(text, { onDelta() {} })));
+    // The model joined Bravo and Charlie: Bravo's part came early, and wrong.
+    check(results[1] == "[Korean] Bravo (merge) [Korean] Charlie", JSON.stringify(results));
+    check(results[2] == "[Korean] Charlie" && results[3] == "[Korean] Delta", JSON.stringify(results));
+    let before = await mockCount("/requests");
+    let again = await OrbitoInterline.translate("Bravo (merge)");
+    check(again == "[Korean] Bravo (merge)", `the wrong part was cached: ${again}`);
+    check(await mockCount("/requests") == before + 1, "Bravo was not asked again");
+    """
+
+
+@interline_test
+def interline_stops_a_batch_once_nobody_waits_for_it():
+    return """
+    useMockTranslate({ "openai.model": "mock-translate-slow" });
+    await wait(async () => (await mockCount("/translate-streams")) == 0, "no stream left open");
+    let texts = ["Un", "Deux", "Trois", "Quatre", "Cinq", "Six"];
+    let controllers = texts.map(() => new AbortController());
+    let answers = texts.map((text, i) =>
+      OrbitoInterline.translate(text, { onDelta() {}, signal: controllers[i].signal }).then(t => t, e => e.kind)
+    );
+    // The first text is answered early, as the stream goes on.
+    check(await answers[0] == "[Korean] Un", "the first text");
+    check(await mockCount("/translate-streams") == 1, "the stream is not open");
+    for (let controller of controllers.slice(1)) {
+      controller.abort();
+    }
+    let kinds = await Promise.all(answers.slice(1));
+    check(kinds.every(kind => kind == "gone"), kinds.join());
+    await wait(async () => (await mockCount("/translate-streams")) == 0, "the stream closed", 1500);
+    """
+
+
+@interline_test
+def interline_takes_text_only_from_a_tab_that_translates_or_hovers():
+    return """
+    useMockTranslate();
+    let tab = await openLang("fr", "Interline refuses");
+    let ask = text => tab.linkedBrowser.browsingContext.currentWindowGlobal
+      .getActor("OrbitoInterline").receiveMessage({ name: "Interline:Translate", data: { id: 1, text } });
+    let before = await mockCount("/requests");
+    let refused = await ask("Refusé");
+    check(refused.error?.kind == "gone" && !refused.error.retryable, JSON.stringify(refused));
+    check(await mockCount("/requests") == before, "an off tab's text was sent");
+    interlinePrefs({ hoverKey: "Shift" });
+    let hovered = await ask("Survolé");
+    check(hovered.text == "[Korean] Survolé", JSON.stringify(hovered));
+    interlinePrefs({ hoverKey: "" });
+    await OrbitoInterline.toggle(tab.linkedBrowser);
+    let on = await ask("Traduit");
+    check(on.text == "[Korean] Traduit", JSON.stringify(on));
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_toggle_turns_off_a_tab_that_left_the_web():
+    return """
+    useMockTranslate();
+    let tab = await openLang("fr", "Interline leaves");
+    let browser = tab.linkedBrowser;
+    await OrbitoInterline.toggle(browser);
+    await translated(tab);
+    browser.loadURI(Services.io.newURI("about:blank"), {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+    await wait(() => browser.currentURI.spec == "about:blank", "about:blank");
+    check(OrbitoInterline.view(browser).status == "on", "the tab turned off as it left");
+    check(await OrbitoInterline.toggle(browser) === true, "toggle found nothing to do");
+    check(OrbitoInterline.view(browser).status == "off", OrbitoInterline.view(browser).status);
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_turning_off_cancels_what_is_in_flight():
+    return """
+    useMockTranslate({ "openai.model": "mock-translate-slow" });
+    let tab = await openLang("fr", "Interline cancels");
+    let browser = tab.linkedBrowser;
+    await OrbitoInterline.toggle(browser);
+    await wait(() => OrbitoInterline.view(browser).busy, "the requests sent");
+    await OrbitoInterline.toggle(browser);
+    await wait(() => !OrbitoInterline.view(browser).busy, "the requests cancelled", 1000);
+    // Off and on again at once: what the first answers bring must not
+    // unmark what the second translates.
+    await OrbitoInterline.toggle(browser);
+    await wait(() => OrbitoInterline.view(browser).busy, "the requests sent again");
+    await OrbitoInterline.toggle(browser);
+    await OrbitoInterline.toggle(browser);
+    await translated(tab);
+    await sleep(1500);
+    let t = await translations(tab);
+    check(t.marked == 5 && t.dual.length == 5, JSON.stringify(t));
+    win.gBrowser.removeTab(tab);
+    """
+
+
+@interline_test
+def interline_treats_a_broken_stream_as_an_error():
+    return """
+    useMockTranslate();
+    let attempt = async text => {
+      let before = await mockCount("/requests");
+      let result = await OrbitoInterline.translate(text, { onDelta() {} }).then(t => `text: ${t}`, e => e.kind);
+      return `${result} after ${(await mockCount("/requests")) - before}`;
+    };
+    let result = await attempt("Coupé (cut)");
+    check(result == "network after 3", `OpenAI, cut: ${result}`);
+    interlinePrefs({ engine: "claude", "claude.baseURL": MOCK, "claude.model": "mock-translate" });
+    await OrbitoInterline.setKey("claude", "mock");
+    result = await attempt("Coupé aussi (cut)");
+    check(result == "network after 3", `Claude, cut: ${result}`);
+    result = await attempt("Erreur (error)");
+    check(result == "server after 3", `Claude, error event: ${result}`);
+    result = await attempt("Entier");
+    check(result == "text: [Korean] Entier after 1", `Claude, whole: ${result}`);
+    """
 
 
 @test

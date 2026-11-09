@@ -56,7 +56,12 @@ export default {
       ref: input.ref,
       values: input.values.map(String),
     });
-    let selected = outcome.result.selected.map(v => `“${v}”`).join(", ");
-    return OrbitoPage.outcome(outcome, `Selected ${selected}.`);
+    // Not known when the change opened a dialog the page waits in.
+    let selected = outcome.result.selected?.map(v => `“${v}”`).join(", ");
+    return OrbitoPage.outcome(
+      outcome,
+      selected ? `Selected ${selected}.` : "Selected.",
+      tab
+    );
   },
 };

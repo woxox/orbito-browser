@@ -89,6 +89,40 @@ orbito-settings-import-dialog =
 # The folder of Arc's Favorites, among the bookmarks imported from Arc.
 orbito-import-arc-favorites = 즐겨찾기
 
+## Interline (page translation)
+
+orbito-settings-interline = 페이지 번역
+orbito-settings-interline-hint =
+    페이지를 문단마다 원문 아래나 원문 대신 번역해 보여 줍니다. Top bar 버튼이나
+    Command bar로 켜고 끕니다. 페이지의 글은 여기서 고른 엔진으로 보냅니다.
+orbito-settings-interline-engine = 엔진
+orbito-settings-interline-engine-hint = Assistant 백엔드와 따로 정합니다.
+orbito-settings-interline-engine-google = Google
+orbito-settings-interline-engine-openai = OpenAI 호환
+orbito-settings-interline-engine-claude = Claude
+orbito-settings-interline-key = API 키
+orbito-settings-interline-base-url = Base URL
+orbito-settings-interline-model = 모델
+orbito-settings-interline-key-inherited = Assistant의 키를 씁니다
+orbito-settings-interline-google-hint = 키가 없으면 Google의 무료 엔드포인트를 씁니다.
+orbito-settings-interline-openai-hint =
+    base URL과 키를 둘 다 비우면 Assistant의 OpenAI 호환 엔드포인트와 키를 씁니다.
+    Ollama 같은 로컬 서버는 키가 없어도 됩니다.
+orbito-settings-interline-claude-hint = Claude는 Anthropic API 키가 있어야 합니다.
+orbito-settings-interline-target = 번역할 언어
+orbito-settings-interline-target-default = Orbito 언어
+orbito-settings-interline-mode = 보기
+orbito-settings-interline-mode-bilingual = 원문 아래에
+orbito-settings-interline-mode-replace = 번역만
+orbito-settings-interline-hover-key = 호버 키
+orbito-settings-interline-hover-key-hint =
+    문단 위에서 누르고 있으면 어느 페이지에서나 그 문단만 번역합니다.
+    그 자리에서 다시 누르면 번역을 걷어냅니다.
+orbito-settings-interline-hover-key-off = 끔
+orbito-settings-interline-cache = 번역 결과
+orbito-settings-interline-cache-hint = Orbito를 끌 때까지 메모리에 두어서, 같은 페이지는 바로 다시 번역됩니다.
+orbito-settings-interline-clear-cache = 번역 결과 지우기
+
 ## Backends
 
 orbito-settings-backends = 백엔드

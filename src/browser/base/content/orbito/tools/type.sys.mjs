@@ -66,6 +66,10 @@ export default {
       text: String(input.text),
       submit: !!input.submit,
     });
-    return OrbitoPage.outcome(outcome, input.submit ? "Typed and pressed Enter." : "Typed.");
+    return OrbitoPage.outcome(
+      outcome,
+      input.submit ? "Typed and pressed Enter." : "Typed.",
+      tab
+    );
   },
 };

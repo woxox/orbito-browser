@@ -61,6 +61,7 @@ button {
 .reload,
 .site-info,
 .reader,
+.interline,
 .extensions,
 .downloads {
   width: 28px;
@@ -369,12 +370,48 @@ svg {
   stroke-linejoin: round;
 }
 
+/* Interline: the accent while translations are on their way, an amber dot
+ * while the provider keeps failing, a danger dot once something stopped
+ * the tab's translation. */
+.interline {
+  position: relative;
+
+  &[running] {
+    color: var(--orbito-accent);
+  }
+
+  &[warning] {
+    color: var(--orbito-warn);
+  }
+
+  &[status="error"] {
+    color: var(--orbito-danger);
+  }
+
+  &:is([warning], [status="error"])::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 5px;
+    inset-inline-end: 5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--orbito-danger);
+    box-shadow: 0 0 0 2px var(--orbito-frame-base);
+  }
+
+  &[warning]::after {
+    background-color: var(--orbito-warn);
+  }
+}
+
 svg .fill {
   fill: currentColor;
   stroke: none;
 }
 
-/* A narrow window: Ask shows only its icon, and the reader view and
+/* A narrow window: Ask shows only its icon, and the reader view,
+ * Interline (unless the tab translates, so it can be turned off) and
  * downloads buttons make room for the URL display. */
 @media (max-width: 760px) {
   .ident {
@@ -390,6 +427,7 @@ svg .fill {
   }
 
   .reader,
+  .interline:not([aria-pressed="true"], [status="error"]),
   .downloads {
     display: none;
   }

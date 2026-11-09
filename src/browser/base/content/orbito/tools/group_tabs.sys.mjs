@@ -61,6 +61,9 @@ function check(ctx, input) {
   if (tabs.some(t => t.pinned)) {
     throw new Error("Pinned tabs cannot be grouped.");
   }
+  if (tabs.some(t => t.documentGlobal != ctx.window)) {
+    throw new Error("Tabs of a popup window cannot be grouped.");
+  }
   let group = groupOf(ctx, input);
   let name = String(input.name ?? "").trim();
   if (!group && !name) {

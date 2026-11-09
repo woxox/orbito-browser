@@ -52,7 +52,7 @@ export default {
     let tab = check(ctx, input);
     let id = ctx.tabId(tab);
     let title = tab.label;
-    ctx.window.gBrowser.removeTab(tab);
+    tab.documentGlobal.gBrowser.removeTab(tab);
     return `Closed tab ${id} “${title}”.`;
   },
 };
