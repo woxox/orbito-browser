@@ -678,6 +678,84 @@ async function resetDocks() {
     "no Dock tab");
   await dock().updateComplete;
 }
+// Whether a tab's page was loaded (not a lazy or pending tab).
+function loaded(tab) {
+  return !!tab.linkedPanel && !tab.hasAttribute("pending");
+}
+// The tabs of a window marked as the tab of a Pin ("orbitoPin") or a Dock
+// entry ("orbitoDock") by its id.
+function tabsMarked(value, id, w = win) {
+  return w.gBrowser.tabs.filter(t => !t.closing && SessionStore.getCustomTabValue(t, value) == id);
+}
+// Runs fn, which opens a window to move tabs to and returns it, and waits
+// until the window has its Shell and has taken them.
+async function windowFrom(fn) {
+  let w = fn();
+  check(w, "no window opened");
+  await wait(() => w.gBrowserInit?.delayedStartupFinished && w.OrbitoShell?.docks?.ready &&
+    !w.gBrowserInit.getTabToAdopt(), "the new window");
+  return w;
+}
+function browserWindows() {
+  return [...Services.wm.getEnumerator("navigator:browser")].filter(w => !w.closed);
+}
+// The window opened since the windows before were listed, once it has its
+// Shell and has taken the tabs it was opened for.
+async function windowSince(before) {
+  let w = await wait(() => browserWindows().find(other => !before.includes(other)), "a new window", 5000);
+  return windowFrom(() => w);
+}
+// A pointer event at a point of the screen (CSS px), as the window gets one
+// there while a press drags, inside the window or out of it.
+function pointerAt(type, [screenX, screenY], w = win) {
+  w.dispatchEvent(new w.PointerEvent(type, {
+    bubbles: true, cancelable: true, composed: true, isPrimary: true, pointerType: "mouse",
+    button: 0, buttons: type == "pointerup" ? 0 : 1,
+    screenX, screenY, clientX: screenX - w.mozInnerScreenX, clientY: screenY - w.mozInnerScreenY,
+  }));
+}
+// A point in the window's client coordinates, on the screen.
+function onScreen([x, y], w = win) {
+  return [w.mozInnerScreenX + x, w.mozInnerScreenY + y];
+}
+// A point on the screen to the right of the window, at a height in it.
+function besideWindow(dx, y, w = win) {
+  return [w.mozInnerScreenX + w.innerWidth + dx, w.mozInnerScreenY + y];
+}
+// The chip that follows a row dragged out of the window, when it shows.
+function tearOffChip(w = win) {
+  let panel = w.document.getElementById("orbito-tear-off");
+  return ["open", "showing"].includes(panel?.state) ? panel : null;
+}
+async function closeWindow(w) {
+  if (!w.closed) {
+    await new Promise(resolve => {
+      w.addEventListener("unload", resolve, { once: true });
+      w.close();
+    });
+  }
+}
+// Shrinks the window to the screen's top left and opens another to its
+// right, for drags from one to the other.
+async function windowBeside(options = {}) {
+  win.resizeTo(800, 400);
+  win.moveTo(0, 0);
+  await wait(() => win.outerWidth == 800 && win.outerHeight == 400 && win.screenY == 0,
+    "the window to shrink");
+  let other = await windowFrom(() => win.OpenBrowserWindow(options));
+  other.resizeTo(800, 400);
+  other.moveTo(900, 0);
+  await wait(() => other.outerWidth == 800 && other.screenY == 0 && other.mozInnerScreenX > win.mozInnerScreenX + win.innerWidth,
+    "the other window beside it");
+  return other;
+}
+// The middle of a window's page, on the screen.
+function overPage(w) {
+  return onScreen(middle(w.gBrowser.selectedBrowser), w);
+}
+function tearOffHint(w = win) {
+  return tearOffChip(w)?.querySelector(".hint").textContent;
+}
 // The Sidebar as the user left it: open, at the default width.
 async function resetSidebar() {
   Services.prefs.clearUserPref("orbito.sidebar.collapsed");
@@ -6354,6 +6432,324 @@ def holding_a_dragged_tab_over_another_groups_them(b):
     """)
 
 
+def hold_drag(b, start):
+    """Presses at start and moves past the drag threshold, keeping the button
+    down. pointerAt() goes on with the drag from there, out of the window too
+    (the window's handlers read screenX and screenY); b.m.actions.release()
+    lets go of the button."""
+    x, y = start
+    seq = b.m.actions.sequence("pointer", "mouse", pointer_params={"pointerType": "mouse"})
+    seq.pointer_move(round(x), round(y)).pointer_down()
+    seq.pointer_move(round(x), round(y + 8), duration=50)
+    seq.perform()
+
+
+@test
+def dragging_a_row_out_of_the_window_opens_its_tab_in_a_new_window(b):
+    size = b.js("return [win.outerWidth, win.outerHeight, win.screenX, win.screenY];")
+    try:
+        start = b.js("""
+        await resetPins();
+        await resetDocks();
+        await resetSpaces();
+        await onlyBlankTab();
+        await openPage("Tear A");
+        await openPage("Tear B");
+        // Room on the screen under the window for the new one, whose row is
+        // to be under the pointer there.
+        win.resizeTo(800, 400);
+        win.moveTo(0, 0);
+        await wait(() => win.outerWidth == 800 && win.outerHeight == 400 && win.screenY == 0, "the window to shrink");
+        await rows();
+        return middle(rowFor(byLabel("Tear A")));
+        """)
+        hold_drag(b, start)
+        b.js("""
+        let start = START;
+        let rect = rowFor(byLabel("Tear A")).getBoundingClientRect();
+        let grab = [start[0] - rect.left, start[1] - rect.top];
+        let before = browserWindows();
+        // Out of the window: the chip, as the row, with the hint under it.
+        pointerAt("pointermove", besideWindow(60, 200));
+        let chip = await wait(() => tearOffChip(), "the chip");
+        check(chip.querySelector(".chip .label").textContent == "Tear A" &&
+          chip.querySelector(".hint").textContent == "Open in new window", chip.textContent);
+        check(!tabList().renderRoot.querySelector(".guide"), "a guide bar shows out of the window");
+        // Back in, over the page: it goes.
+        pointerAt("pointermove", onScreen(middle(win.gBrowser.selectedBrowser)));
+        await wait(() => !tearOffChip(), "the chip to go");
+        // Out again: it comes back and follows, held where the row was
+        // grabbed.
+        pointerAt("pointermove", besideWindow(30, 150));
+        await wait(() => tearOffChip(), "the chip again");
+        let drop = onScreen([start[0] + 30, win.innerHeight + 20]);
+        pointerAt("pointermove", drop);
+        let card = onScreen(middle(tearOffChip().querySelector(".chip")));
+        let held = [drop[0] - card[0] + rect.width / 2, drop[1] - card[1] + rect.height / 2];
+        check(Math.abs(held[0] - grab[0]) <= 2 && Math.abs(held[1] - grab[1]) <= 2,
+          `the chip is held at ${held}, the row was at ${grab}`);
+        // Let go there: the tab opens in a new window, its row under the
+        // pointer as it was grabbed.
+        pointerAt("pointerup", drop);
+        check(!tearOffChip(), "the chip stays after the drop");
+        let w = await windowSince(before);
+        try {
+          let moved = w.gBrowser.selectedTab;
+          check(moved.label == "Tear A" && loaded(moved) && w.gBrowser.tabs.length == 1,
+            `the new window has ${w.gBrowser.tabs.map(t => t.label)}`);
+          check(!byLabel("Tear A"), "the tab stayed in the window");
+          await listMatchesGBrowser();
+          let [row] = await rows(w);
+          let r = row.getBoundingClientRect();
+          let under = [drop[0] - w.mozInnerScreenX - r.left, drop[1] - w.mozInnerScreenY - r.top];
+          check(Math.abs(under[0] - grab[0]) <= 2 && Math.abs(under[1] - grab[1]) <= 2,
+            `the pointer is at ${under} in the new window's row, grabbed at ${grab}; the window is at ${w.screenX},${w.screenY}`);
+        } finally {
+          await closeWindow(w);
+        }
+        """.replace("START", json.dumps(start)))
+        b.m.actions.release()
+        # Escape ends the drag out of the window too: the chip goes and a
+        # drop there opens nothing.
+        start = b.js("return middle(rowFor(byLabel('Tear B')));")
+        hold_drag(b, start)
+        b.js("""
+        pointerAt("pointermove", besideWindow(60, 200));
+        await wait(() => tearOffChip(), "the chip");
+        """)
+        b.keys(Keys.ESCAPE)
+        b.js("""
+        let before = browserWindows();
+        await wait(() => !tearOffChip() && !tabList().dragging, "Escape to end the drag");
+        pointerAt("pointerup", besideWindow(60, 200));
+        await sleep(300);
+        check(browserWindows().length == before.length && byLabel("Tear B"), "a cancelled drag opened a window");
+        """)
+    finally:
+        b.m.actions.release()
+        b.js("""
+        let [width, height, x, y] = SIZE;
+        win.resizeTo(width, height);
+        win.moveTo(x, y);
+        await wait(() => win.outerWidth == width && win.outerHeight == height, "the window's size back");
+        """.replace("SIZE", json.dumps(size)))
+
+
+@test
+def a_row_dropped_on_the_page_stays_in_the_window(b):
+    start, end = b.js("""
+    await onlyBlankTab();
+    await openPage("Stay A");
+    await openPage("Stay B");
+    await rows();
+    win.__tearOffShown = false;
+    doc.addEventListener("popupshowing", e => {
+      if (e.target.id == "orbito-tear-off") {
+        win.__tearOffShown = true;
+      }
+    }, true);
+    win.__windows = browserWindows().length;
+    return [middle(rowFor(byLabel("Stay A"))), middle(win.gBrowser.selectedBrowser)];
+    """)
+    b.drag(start, end)
+    b.js("""
+    await wait(() => !tabList().dragging, "the drag to end");
+    await sleep(300);
+    check(browserWindows().length == win.__windows && byLabel("Stay A"), "a drop on the page opened a window");
+    check(!win.__tearOffShown, "the chip showed over the page");
+    await listMatchesGBrowser();
+    """)
+
+
+@test
+def a_group_header_dragged_out_of_the_window_moves_the_group(b):
+    start = b.js("""
+    await onlyBlankTab();
+    let g1 = await openPage("Tear g1");
+    let g2 = await openPage("Tear g2");
+    await openPage("Tear other");
+    addGroup([g1, g2], "green", "Tear group");
+    await rows();
+    return middle(headerFor(g1.group));
+    """)
+    try:
+        hold_drag(b, start)
+        b.js("""
+        let before = browserWindows();
+        pointerAt("pointermove", besideWindow(60, 200));
+        let chip = await wait(() => tearOffChip(), "the chip");
+        check(chip.querySelector(".chip .label").textContent == "Tear group" && chip.querySelector(".chip .dot"),
+          chip.innerHTML);
+        pointerAt("pointerup", besideWindow(60, 200));
+        let w = await windowSince(before);
+        try {
+          let groups = w.gBrowser.tabGroups;
+          check(groups.length == 1 && groups[0].label == "Tear group" && groups[0].color == "green" &&
+            groups[0].tabs.map(t => t.label).join() == "Tear g1,Tear g2",
+            `the new window's groups: ${groups.map(g => g.label + ":" + g.tabs.map(t => t.label))}`);
+          check(!win.gBrowser.tabGroups.length && !byLabel("Tear g1"), "the group stayed in the window");
+          await listMatchesGBrowser();
+          await listMatchesGBrowser(w);
+        } finally {
+          await closeWindow(w);
+        }
+        """)
+    finally:
+        b.m.actions.release()
+
+
+@test
+def an_orbits_tab_or_the_windows_only_tab_stays_when_dragged_out(b):
+    start = b.js("""
+    await resetPins();
+    await resetDocks();
+    await onlyBlankTab();
+    let tab = await openPage("Orbit stays");
+    SessionStore.setCustomTabValue(tab, "orbitoOrbit", "orbito-test-orbit");
+    tabList().requestUpdate();
+    await rows();
+    check(orbitBoxes().length == 1, "the tab is in no Orbit");
+    return middle(rowFor(tab));
+    """)
+    try:
+        for case in ("an Orbit's tab", "the only tab"):
+            hold_drag(b, start)
+            b.js("""
+            let before = browserWindows();
+            let tabs = win.gBrowser.tabs.length;
+            pointerAt("pointermove", besideWindow(60, 200));
+            await sleep(200);
+            check(!tearOffChip(), "CASE: the chip shows");
+            pointerAt("pointerup", besideWindow(60, 200));
+            await sleep(500);
+            check(browserWindows().length == before.length && win.gBrowser.tabs.length == tabs,
+              "CASE: the tab left for a new window");
+            """.replace("CASE", case))
+            b.m.actions.release()
+            start = b.js("""
+            for (let tab of win.gBrowser.tabs) {
+              SessionStore.deleteCustomTabValue(tab, "orbitoOrbit");
+            }
+            await onlyBlankTab();
+            return middle((await rows())[0]);
+            """)
+    finally:
+        b.m.actions.release()
+        b.js("""
+        for (let tab of win.gBrowser.tabs) {
+          SessionStore.deleteCustomTabValue(tab, "orbitoOrbit");
+        }
+        """)
+
+
+@test
+def a_row_dropped_on_another_window_moves_into_its_space_shown(b):
+    size = b.js("return [win.outerWidth, win.outerHeight, win.screenX, win.screenY];")
+    try:
+        start = b.js("""
+        await resetPins();
+        await resetDocks();
+        await resetSpaces();
+        await onlyBlankTab();
+        await openPage("Into A");
+        let g1 = await openPage("Into g1");
+        let g2 = await openPage("Into g2");
+        addGroup([g1, g2], "blue", "Into group");
+        await openPage("Into B");
+        let other = await windowBeside();
+        // The other window shows a Space this one does not.
+        other.OrbitoShell.spaces.create();
+        await wait(() => other.OrbitoShell.spaces.current != shell.spaces.current, "another Space there");
+        await openPage("Into there", other);
+        await rows();
+        return middle(rowFor(byLabel("Into A")));
+        """)
+        hold_drag(b, start)
+        b.js("""
+        let other = browserWindows().find(w => w != win);
+        let before = browserWindows();
+        pointerAt("pointermove", overPage(other));
+        await wait(() => tearOffHint() == "Move to this window", "the hint for the other window");
+        check(tearOffChip().querySelector(".chip .label").textContent == "Into A", tearOffChip().textContent);
+        // Off both windows, it would open a new one.
+        pointerAt("pointermove", besideWindow(60, 200, other));
+        await wait(() => tearOffHint() == "Open in new window", "the hint for a new window");
+        pointerAt("pointermove", overPage(other));
+        await wait(() => tearOffHint() == "Move to this window", "the hint for the other window again");
+        pointerAt("pointerup", overPage(other));
+        check(!tearOffChip(), "the chip stays after the drop");
+        let moved = await wait(() => byLabel("Into A", other), "the tab in the other window");
+        // SessionStore moves the tab's values once more after it closes here.
+        await sleep(300);
+        let spaces = other.OrbitoShell.spaces;
+        check(browserWindows().length == before.length, "a new window opened");
+        check(!byLabel("Into A"), "the tab stayed in the window");
+        check(other.gBrowser.selectedTab == moved && loaded(moved),
+          `the other window selects ${other.gBrowser.selectedTab.label}`);
+        check(spaces.spaceOf(moved) == spaces.current && spaces.tabsIn(spaces.current).at(-1) == moved,
+          `the tab is not last in the Space shown there: ${spaces.tabsIn(spaces.current).map(t => t.label)}`);
+        await listMatchesGBrowser(other);
+        await listMatchesGBrowser();
+        """)
+        b.m.actions.release()
+        # A group goes whole, after the tab.
+        start = b.js("return middle(headerFor(byLabel('Into g1').group));")
+        hold_drag(b, start)
+        b.js("""
+        let other = browserWindows().find(w => w != win);
+        pointerAt("pointermove", overPage(other));
+        await wait(() => tearOffHint() == "Move to this window", "the hint for the other window");
+        pointerAt("pointerup", overPage(other));
+        let group = await wait(() => other.gBrowser.tabGroups.find(g => g.label == "Into group"), "the group there");
+        await sleep(300);
+        let spaces = other.OrbitoShell.spaces;
+        check(group.color == "blue" && group.tabs.map(t => t.label).join() == "Into g1,Into g2",
+          `the group there: ${group.color} ${group.tabs.map(t => t.label)}`);
+        check(!win.gBrowser.tabGroups.length && !byLabel("Into g1"), "the group stayed in the window");
+        check(group.tabs.every(t => spaces.spaceOf(t) == spaces.current && !t.hidden),
+          "the group is not in the Space shown there");
+        check(spaces.tabsIn(spaces.current).map(t => t.label).slice(-3).join() == "Into A,Into g1,Into g2",
+          `the order there: ${spaces.tabsIn(spaces.current).map(t => t.label)}`);
+        check(group.tabs.includes(other.gBrowser.selectedTab), `the other window selects ${other.gBrowser.selectedTab.label}`);
+        await listMatchesGBrowser(other);
+        await listMatchesGBrowser();
+        await closeWindow(other);
+        """)
+        b.m.actions.release()
+        # A private window takes no tab from this one: over it, the tab
+        # would open in a new window.
+        start = b.js("""
+        let other = await windowBeside({ private: true });
+        await rows();
+        return middle(rowFor(byLabel("Into B")));
+        """)
+        hold_drag(b, start)
+        b.js("""
+        let other = browserWindows().find(w => w != win);
+        let before = browserWindows();
+        pointerAt("pointermove", overPage(other));
+        await wait(() => tearOffHint() == "Open in new window", "the hint for a new window");
+        pointerAt("pointerup", overPage(other));
+        let w = await windowSince(before);
+        check(!byLabel("Into B", other) && w.gBrowser.selectedTab.label == "Into B",
+          `the new window has ${w.gBrowser.tabs.map(t => t.label)}`);
+        await closeWindow(w);
+        await closeWindow(other);
+        """)
+    finally:
+        b.m.actions.release()
+        b.js("""
+        for (let w of browserWindows().filter(w => w != win)) {
+          await closeWindow(w);
+        }
+        await resetSpaces();
+        let [width, height, x, y] = SIZE;
+        win.resizeTo(width, height);
+        win.moveTo(x, y);
+        await wait(() => win.outerWidth == width && win.outerHeight == height, "the window's size back");
+        """.replace("SIZE", json.dumps(size)))
+
+
 @test
 def arrow_keys_move_through_groups_and_toggle_them(b):
     b.js("""
@@ -9689,6 +10085,305 @@ def switching_spaces_switches_the_dock(b):
       await resetSpaces();
     }
     """)
+
+
+@test
+def a_pin_or_dock_tab_moved_to_a_new_window_stays_its_entrys_tab(b):
+    b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let pin = await openPage("Moved pin");
+    shell.pins.pinTab(pin);
+    let docked = await openPage("Moved dock");
+    shell.docks.dockTab(docked);
+    await openPage("Moved other");
+    await pinsMatch();
+    await docksMatch();
+    let pins = JSON.stringify(storedPins());
+    let docks = JSON.stringify(storedDocks());
+    let pinId = shell.pins.pinOf(pin).id;
+    let dockId = shell.docks.dockOf(docked).id;
+    // The one tab a window has for an entry.
+    let only = (value, id, w, where) => {
+      let tabs = tabsMarked(value, id, w);
+      check(tabs.length == 1, `${where} has ${tabs.length} tabs for its ${value} entry`);
+      return tabs[0];
+    };
+    for (let [tab, title, value] of [[pin, "Moved pin", "orbitoPin"], [docked, "Moved dock", "orbitoDock"]]) {
+      let w = await windowFrom(() => win.gBrowser.replaceTabsWithWindow(tab));
+      try {
+        await pinsMatch(w);
+        await docksMatch(w);
+        await pinsMatch();
+        await docksMatch();
+        // The moved tab is the entry's tab there, selected and loaded; the
+        // source has an unloaded one in its place.
+        let moved = w.gBrowser.selectedTab;
+        check(moved.label == title && loaded(moved), `${title}: the new window selects ${moved.label}, loaded ${loaded(moved)}`);
+        check(only("orbitoPin", pinId, w, "the new window") == (value == "orbitoPin" ? moved : w.OrbitoShell.pins.tabs[0]),
+          `${title}: the moved tab is not the Pin's`);
+        check(only("orbitoDock", dockId, w, "the new window") == (value == "orbitoDock" ? moved : w.OrbitoShell.docks.tabsIn()[0]),
+          `${title}: the moved tab is not the Dock entry's`);
+        check(moved.pinned == (value == "orbitoPin"), `${title}: the moved tab is pinned ${moved.pinned}`);
+        let left = only(value, value == "orbitoPin" ? pinId : dockId, win, "the source");
+        check(!loaded(left) && left.label == title, `${title}: the source's tab is ${left.label}, loaded ${loaded(left)}`);
+        only(value == "orbitoPin" ? "orbitoDock" : "orbitoPin", value == "orbitoPin" ? dockId : pinId, win, "the source");
+        check(JSON.stringify(storedPins()) == pins && JSON.stringify(storedDocks()) == docks, `${title}: the lists changed`);
+        await listMatchesGBrowser(w);
+        await listMatchesGBrowser();
+      } finally {
+        await closeWindow(w);
+      }
+    }
+    // Moved into a window already open (gBrowser.adoptTab, as Firefox's
+    // drag between windows), at the end of its tabs: the same.
+    let other = win.OpenBrowserWindow();
+    try {
+      await wait(() => other.gBrowserInit?.delayedStartupFinished && other.OrbitoShell?.docks?.ready, "the other window");
+      await pinsMatch(other);
+      await docksMatch(other);
+      for (let [value, id] of [["orbitoPin", pinId], ["orbitoDock", dockId]]) {
+        let tab = tabsMarked(value, id)[0];
+        win.gBrowser.selectedTab = tab;
+        await wait(() => loaded(tab) && tab.linkedBrowser.contentTitle, "the tab to load");
+        let moved = other.gBrowser.adoptTab(tab, { tabIndex: other.gBrowser.tabs.length, selectTab: true });
+        await wait(() => tabsMarked(value, id, other).length == 1 && moved.pinned == (value == "orbitoPin"),
+          `${value}: the open window to take the moved tab as the entry's`);
+        await pinsMatch(other);
+        await docksMatch(other);
+        await pinsMatch();
+        await docksMatch();
+        check(only(value, id, other, "the open window") == moved && loaded(moved) && moved.selected,
+          `${value}: the open window's tab for the entry is not the moved one`);
+        check(!loaded(only(value, id, win, "the source")), `${value}: the source's tab is loaded`);
+        check(JSON.stringify(storedPins()) == pins && JSON.stringify(storedDocks()) == docks, `${value}: the lists changed`);
+      }
+    } finally {
+      await closeWindow(other);
+      await resetPins();
+      await resetDocks();
+    }
+    """)
+
+
+@test
+def a_group_moved_to_a_new_window_comes_whole_beside_the_pins_and_dock(b):
+    b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    shell.pins.pinTab(await openPage("Group move pin"));
+    shell.docks.dockTab(await openPage("Group move dock"));
+    let g1 = await openPage("Moved g1");
+    let g2 = await openPage("Moved g2");
+    await openPage("Group move other");
+    let group = addGroup([g1, g2], "blue", "Moved group");
+    await pinsMatch();
+    await docksMatch();
+    let pinId = storedPins()[0].id;
+    let dockId = storedDockEntries()[0].id;
+    let w = await windowFrom(() => win.gBrowser.replaceGroupWithWindow(group));
+    try {
+      await pinsMatch(w);
+      await docksMatch(w);
+      await pinsMatch();
+      await docksMatch();
+      let groups = w.gBrowser.tabGroups;
+      check(groups.length == 1 && groups[0].label == "Moved group" && groups[0].color == "blue",
+        `the new window's groups: ${groups.map(g => g.label)}`);
+      check(groups[0].tabs.map(t => t.label).join() == "Moved g1,Moved g2" && groups[0].tabs.every(loaded),
+        `the moved group holds ${groups[0].tabs.map(t => t.label)}`);
+      check(w.gBrowser.selectedTab.group == groups[0], `the new window selects ${w.gBrowser.selectedTab.label}`);
+      check(!win.gBrowser.tabGroups.length, "the group stayed in the source");
+      for (let x of [win, w]) {
+        check(tabsMarked("orbitoPin", pinId, x).length == 1 && tabsMarked("orbitoDock", dockId, x).length == 1,
+          `${x == win ? "the source" : "the new window"} has not one tab for each entry`);
+      }
+      await listMatchesGBrowser(w);
+    } finally {
+      await closeWindow(w);
+      await resetPins();
+      await resetDocks();
+    }
+    """)
+
+
+@test
+def tabs_moved_to_a_new_window_show_in_their_space_there(b):
+    b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    try {
+      let space = (await newSpace()).id;
+      let plain = await openPage("Space move plain");
+      let docked = await openPage("Space move dock");
+      shell.docks.dockTab(docked);
+      let g1 = await openPage("Space move g1");
+      let g2 = await openPage("Space move g2");
+      let group = addGroup([g1, g2], "red", "Space move group");
+      await openPage("Space move other");
+      await docksMatch();
+      for (let [what, move, picked] of [
+        ["a plain tab", () => win.gBrowser.replaceTabsWithWindow(plain), t => t.label == "Space move plain"],
+        ["a Dock tab", () => win.gBrowser.replaceTabsWithWindow(docked), t => t.label == "Space move dock"],
+        ["a group", () => win.gBrowser.replaceGroupWithWindow(group), t => t.group?.label == "Space move group"],
+      ]) {
+        let w = await windowFrom(move);
+        try {
+          await docksMatch(w);
+          let selected = w.gBrowser.selectedTab;
+          check(spaces(w).current == space, `${what}: the new window shows another Space`);
+          check(picked(selected) && !selected.hidden && spaceOfTab(selected) == space,
+            `${what}: the new window selects ${selected.label}, hidden ${selected.hidden}`);
+          check(w.gBrowser.tabs.filter(picked).every(t => !t.hidden), `${what}: a moved tab is hidden`);
+          await listMatchesGBrowser(w);
+          if (what == "a Dock tab") {
+            check(dockRowFor(selected, w)?.hasAttribute("selected"), "the moved Dock tab's row is not selected");
+          }
+        } finally {
+          await closeWindow(w);
+        }
+      }
+    } finally {
+      await resetDocks();
+      await resetSpaces();
+    }
+    """)
+
+
+@test
+def a_pin_or_dock_tab_dragged_out_of_the_window_opens_in_a_new_window(b):
+    b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    shell.pins.pinTab(await openPage("Tear pin"));
+    shell.docks.dockTab(await openPage("Tear dock"));
+    await openPage("Tear plain");
+    await pinsMatch();
+    await docksMatch();
+    """)
+    try:
+        for kind in ("pin", "dock"):
+            start = b.js("""
+            return KIND == "pin" ? middle((await pinButtons())[0]) : middle((await dockRows())[0]);
+            """.replace("KIND", json.dumps(kind)))
+            hold_drag(b, start)
+            b.js("""
+            let [value, title] = KIND == "pin" ? ["orbitoPin", "Tear pin"] : ["orbitoDock", "Tear dock"];
+            let pinId = storedPins()[0].id;
+            let dockId = storedDockEntries()[0].id;
+            let lists = JSON.stringify([storedPins(), storedDocks()]);
+            let before = browserWindows();
+            pointerAt("pointermove", besideWindow(60, 200));
+            let chip = await wait(() => tearOffChip(), "the chip");
+            check(chip.querySelector(".chip .label").textContent == title, chip.textContent);
+            check(!pinGrid().renderRoot.querySelector("[preview]") && !dock().renderRoot.querySelector("[preview]"),
+              "a drop place shows out of the window");
+            pointerAt("pointerup", besideWindow(60, 200));
+            let w = await windowSince(before);
+            try {
+              await pinsMatch(w);
+              await docksMatch(w);
+              await pinsMatch();
+              await docksMatch();
+              // Selected and loaded there, the entry's tab; an unloaded one
+              // here in its place.
+              let moved = w.gBrowser.selectedTab;
+              check(moved.label == title && loaded(moved), `${title}: the new window selects ${moved.label}, loaded ${loaded(moved)}`);
+              for (let [x, where] of [[win, "the window"], [w, "the new window"]]) {
+                check(tabsMarked("orbitoPin", pinId, x).length == 1 && tabsMarked("orbitoDock", dockId, x).length == 1,
+                  `${title}: ${where} has not one tab for each entry`);
+              }
+              let id = value == "orbitoPin" ? pinId : dockId;
+              check(tabsMarked(value, id, w)[0] == moved, `${title}: the moved tab is not the entry's`);
+              check(!loaded(tabsMarked(value, id)[0]), `${title}: the window's tab for the entry is loaded`);
+              check(JSON.stringify([storedPins(), storedDocks()]) == lists, `${title}: the lists changed`);
+            } finally {
+              await closeWindow(w);
+            }
+            """.replace("KIND", json.dumps(kind)))
+            b.m.actions.release()
+    finally:
+        b.m.actions.release()
+        b.js("""
+        await resetPins();
+        await resetDocks();
+        """)
+
+
+@test
+def a_pin_or_dock_tab_dropped_on_another_window_is_its_entrys_tab_there(b):
+    size = b.js("return [win.outerWidth, win.outerHeight, win.screenX, win.screenY];")
+    b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    shell.pins.pinTab(await openPage("Into pin"));
+    shell.docks.dockTab(await openPage("Into dock"));
+    await openPage("Into plain");
+    let other = await windowBeside();
+    await pinsMatch(other);
+    await docksMatch(other);
+    """)
+    try:
+        for kind in ("pin", "dock"):
+            start = b.js("""
+            return KIND == "pin" ? middle((await pinButtons())[0]) : middle((await dockRows())[0]);
+            """.replace("KIND", json.dumps(kind)))
+            hold_drag(b, start)
+            b.js("""
+            let other = browserWindows().find(w => w != win);
+            let [value, title] = KIND == "pin" ? ["orbitoPin", "Into pin"] : ["orbitoDock", "Into dock"];
+            let pinId = storedPins()[0].id;
+            let dockId = storedDockEntries()[0].id;
+            let lists = JSON.stringify([storedPins(), storedDocks()]);
+            let before = browserWindows();
+            pointerAt("pointermove", overPage(other));
+            await wait(() => tearOffHint() == "Move to this window", `${title}: the hint for the other window`);
+            pointerAt("pointerup", overPage(other));
+            await wait(() => other.gBrowser.selectedTab.label == title, `${title}: selected there`);
+            await sleep(300);
+            await pinsMatch(other);
+            await docksMatch(other);
+            await pinsMatch();
+            await docksMatch();
+            check(browserWindows().length == before.length, `${title}: a new window opened`);
+            // Loaded there, the entry's tab in place of the one the window
+            // had; an unloaded one here in its place.
+            let moved = other.gBrowser.selectedTab;
+            check(loaded(moved), `${title}: the moved tab is not loaded`);
+            for (let [x, where] of [[win, "the window"], [other, "the other window"]]) {
+              check(tabsMarked("orbitoPin", pinId, x).length == 1 && tabsMarked("orbitoDock", dockId, x).length == 1,
+                `${title}: ${where} has not one tab for each entry`);
+            }
+            let id = value == "orbitoPin" ? pinId : dockId;
+            check(tabsMarked(value, id, other)[0] == moved, `${title}: the moved tab is not the entry's`);
+            check(!loaded(tabsMarked(value, id)[0]), `${title}: the window's tab for the entry is loaded`);
+            check(JSON.stringify([storedPins(), storedDocks()]) == lists, `${title}: the lists changed`);
+            check(!other.gBrowser.tabs.some(t => t.label == title && t != moved), `${title}: the one there before stayed`);
+            """.replace("KIND", json.dumps(kind)))
+            b.m.actions.release()
+    finally:
+        b.m.actions.release()
+        b.js("""
+        for (let w of browserWindows().filter(w => w != win)) {
+          await closeWindow(w);
+        }
+        await resetPins();
+        await resetDocks();
+        let [width, height, x, y] = SIZE;
+        win.resizeTo(width, height);
+        win.moveTo(x, y);
+        await wait(() => win.outerWidth == width && win.outerHeight == height, "the window's size back");
+        """.replace("SIZE", json.dumps(size)))
 
 
 @test

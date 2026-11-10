@@ -18,7 +18,8 @@
  * closes in any case when another device removed the Pin (Firefox Sync).
  * What it shares with the Docks is in shell/list-tabs.mjs.
  * Closing a Pin's tab keeps the Pin: an unloaded tab of its URL takes the
- * tab's place.
+ * tab's place. So does moving it to another window, where it is pinned
+ * again as that window's tab for the Pin, and the one there before it goes.
  *
  * Private windows show and open the Pins but add none: a Pin made there
  * would write a private page's address to the profile. A tab pinned there
@@ -257,6 +258,15 @@ export class Pins extends ListTabs {
     return tab.pinned;
   }
 
+  /**
+   * A Pin's tab moved in from another window comes unpinned (as the tab a
+   * window opens with, or among unpinned tabs): pinned again, it is the
+   * Pin's tab here, and the one this window had goes (sync()).
+   */
+  claim(tab) {
+    gBrowser.pinTab(tab);
+  }
+
   /** A Pin's tab goes at its place in the list, before others pinned. */
   placeTab(tab, index) {
     gBrowser.moveTabTo(tab, { tabIndex: index });
@@ -306,12 +316,20 @@ export class Pins extends ListTabs {
   /**
    * After Session Restore: the unloaded tabs this window had made for Pins
    * and Session Restore unpinned to put its own tabs first go; pinned tabs
-   * from before Pins become Pins.
+   * from before Pins become Pins. Once the task is over: a tab restores as
+   * it is selected, as one is in place of a Pin's tab leaving for another
+   * window (gBrowser.adoptTab), which has given its values away by then but
+   * is not yet closing.
    */
   restored() {
-    if (!this.ready) {
-      return;
-    }
+    setTimeout(() => {
+      if (this.ready && !this.restore.restoring && !window.closed) {
+        this.#restored();
+      }
+    }, 0);
+  }
+
+  #restored() {
     for (let tab of gBrowser.tabs) {
       if (!tab.pinned && this.#made.has(tab) && this.idOf(tab)) {
         this.letGo(tab);

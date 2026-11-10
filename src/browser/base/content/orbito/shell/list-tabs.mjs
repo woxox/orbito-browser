@@ -14,7 +14,12 @@
  * the stored list (take()), says which entries want tabs, in order
  * (wanted()), which tabs may stand for one (isEligible()) and where an
  * entry's tab goes (placeTab()), and what is left of a tab whose entry is
- * gone (keeps(), release()).
+ * gone (keeps(), release()). It may take on a tab moved in from another
+ * window that came as it cannot be an entry's tab (claim()).
+ *
+ * An entry's tab moved to another window takes its id along (SessionStore
+ * moves a tab's values with it): there it is the entry's tab, in place of
+ * the one the window had, and here an unloaded tab takes its place.
  */
 
 import { RestoreWatch } from "chrome://browser/content/orbito/shell/spaces.mjs";
@@ -32,6 +37,13 @@ const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
 const LOCAL_ICON = /^(chrome|about|resource|data):/;
 
 const WINDOW_EVENTS = ["SSWindowStateBusy", "SSWindowStateReady"];
+
+/**
+ * How often, and how long at most, a window opened to take a tab or group
+ * from another waits for it before making its own tabs (ms).
+ */
+const ADOPT_POLL = 50;
+const ADOPT_WAIT = 10000;
 
 const newId = () => crypto.randomUUID();
 
@@ -93,7 +105,7 @@ export class ListTabs {
   init() {
     this.take(OrbitoShellStore.get(this.key));
     Services.obs.addObserver(this.#observer, STORE_CHANGED, true);
-    for (let type of this.tabEvents) {
+    for (let type of ["TabOpen", ...this.tabEvents]) {
       gBrowser.tabContainer.addEventListener(type, this);
     }
     for (let type of WINDOW_EVENTS) {
@@ -106,14 +118,28 @@ export class ListTabs {
     );
     // Session Restore takes the window on at load (gBrowserInit.onLoad);
     // tabs can only be given a state after that.
-    window.addEventListener(
-      "load",
-      () => {
-        this.#ready = true;
-        this.sync();
-      },
-      { once: true }
-    );
+    window.addEventListener("load", () => this.#start(), { once: true });
+  }
+
+  /**
+   * Makes the window's tabs once a window opened to take a tab or a tab
+   * group from another (gBrowser.replaceTabsWithWindow) has it, which can
+   * be well after load (gBrowserInit.onLoad waits for a paint): the moved
+   * tab takes the place of the blank one the window opened with, and a
+   * group goes at index 0, which would put it among the pinned tabs made
+   * here before it.
+   */
+  #start(since = Date.now()) {
+    if (
+      gBrowserInit.getTabToAdopt() &&
+      !window.closed &&
+      Date.now() - since < ADOPT_WAIT
+    ) {
+      setTimeout(() => this.#start(since), ADOPT_POLL);
+      return;
+    }
+    this.#ready = true;
+    this.sync();
   }
 
   /**
@@ -164,7 +190,13 @@ export class ListTabs {
       let tabs = new Map();
       for (let tab of gBrowser.tabs) {
         let id = this.idOf(tab);
-        if (!id || tab.closing || !this.isEligible(tab)) {
+        if (!id || tab.closing) {
+          continue;
+        }
+        if (!this.isEligible(tab) && ids.has(id)) {
+          this.claim(tab);
+        }
+        if (!this.isEligible(tab)) {
           continue;
         }
         if (!ids.has(id)) {
@@ -264,10 +296,36 @@ export class ListTabs {
     switch (event.type) {
       case "TabClose":
         // The entry stays: an unloaded tab takes the closed one's place.
-        if (!this.busy && this.entryOf(event.target)) {
+        // One moved to another window has given its values to its tab there
+        // (SessionStore) by now, so it no longer says which entry it was.
+        if (
+          !this.busy &&
+          (this.entryOf(event.target) || event.detail?.adoptedBy)
+        ) {
           setTimeout(() => this.sync(), 0);
         }
         break;
+      case "TabOpen": {
+        // A tab moved in from another window (gBrowser.adoptTab, a group's
+        // tabs too) gets its values as it opens: it may be an entry's tab
+        // here now, in place of the one the window had. SessionStore moves
+        // them again once the other window's tab closes, which drops any
+        // the tab got there in between (its Space, as another is selected
+        // in its place): the id is kept from now. (A window opened for a
+        // tab takes it with no TabOpen; it waits for the tab before it
+        // makes its own, #start().)
+        if (!this.busy && event.detail?.adoptedTab) {
+          let tab = event.target;
+          let id = this.idOf(tab);
+          setTimeout(() => {
+            if (id && !tab.closing && !this.idOf(tab)) {
+              SessionStore.setCustomTabValue(tab, this.value, id);
+            }
+            this.sync();
+          }, 0);
+        }
+        break;
+      }
       // Session Restore marks the window busy around each tab it restores,
       // the tabs made here too: those are not waited for.
       case "SSWindowStateBusy":
@@ -309,6 +367,17 @@ export class ListTabs {
   isEligible() {
     throw new Error("Not implemented");
   }
+
+  /**
+   * A tab marked with a listed entry's id that cannot be its tab
+   * (isEligible()) may be made one here. Only a tab moved in from another
+   * window is such a tab: it keeps its values but not whether it was
+   * pinned. Nothing in a window makes one, as a tab that stops being
+   * eligible loses the value then (Pins on TabUnpinned and SSTabRestoring,
+   * Docks on TabPinned and TabGrouped), and so does one let go (letGo()).
+   * Left as it is, it stays a tab of no entry here.
+   */
+  claim() {}
 
   /** Puts an entry's tab in its place, index in wanted(). */
   placeTab() {

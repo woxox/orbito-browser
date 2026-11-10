@@ -14,6 +14,7 @@ import {
 } from "chrome://browser/content/orbito/shell/orbito-pins.mjs";
 import { ListMotion } from "chrome://browser/content/orbito/shell/motion.mjs";
 import { isDockFolder } from "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs";
+import { TearOff } from "chrome://browser/content/orbito/shell/tear-off.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -68,9 +69,10 @@ const PREVIEW = Symbol("preview");
  * keeps the name typed (a blank one keeps the old), Escape the old one.
  *
  * A tab dragged from the tab list onto the Dock is docked there; dragging a
- * row moves it in the Dock, and dropping a tab's row on the tab list
- * undocks it. A Dock tab held over another Dock tab's row for a moment
- * puts the two in a new folder there ("New folder N"), which pops in, or
+ * row moves it in the Dock, dropping a tab's row on the tab list undocks
+ * it, and letting it go outside the window moves the tab into the Orbito
+ * window there or opens it in a new one (shell/tear-off.mjs). A Dock tab held over another Dock tab's row for a
+ * moment puts the two in a new folder there ("New folder N"), which pops in, or
  * the dragged one in the other's folder. A tab dropped on the middle of a
  * folder's header goes in the folder, at its end; between the rows of an open folder's tabs, in the
  * folder there; elsewhere, out of any. A folder moves at the top of the
@@ -479,7 +481,9 @@ export class OrbitoDock extends MozLitElement {
   }
 
   // Dragging a row: dropped in the Dock it moves there, a tab's dropped on
-  // the tab list is undocked.
+  // the tab list is undocked, and outside the window it moves into another
+  // or opens in a new one (shell/tear-off.mjs), where the Dock is in the same
+  // place; not a folder.
 
   #onPointerDown(event, item) {
     // A private window changes no Dock.
@@ -491,7 +495,12 @@ export class OrbitoDock extends MozLitElement {
     ) {
       return;
     }
-    this.#press = { item, x: event.clientX, y: event.clientY };
+    this.#press = {
+      item,
+      row: event.currentTarget,
+      x: event.clientX,
+      y: event.clientY,
+    };
     window.addEventListener("pointermove", this, true);
     window.addEventListener("pointerup", this, true);
     window.addEventListener("pointercancel", this, true);
@@ -508,22 +517,29 @@ export class OrbitoDock extends MozLitElement {
       if (Math.hypot(event.clientX - x, event.clientY - y) < DRAG_THRESHOLD) {
         return;
       }
+      let { item, row } = this.#press;
       this.#drag = {
-        item: this.#press.item,
+        item,
         spot: null,
         undock: false,
         // {tab, armed, timer}: the Dock tab it is held over.
         hold: null,
+        tearOff:
+          typeof item == "string" ? null : new TearOff(item, { row, x, y }),
       };
       this.toggleAttribute("dragging", true);
     }
     let { clientX: x, clientY: y } = event;
     let { item } = this.#drag;
-    let spot = this.dropSpotAt(x, y, item);
-    this.#holdOver(this.#holdTargetAt(x, y));
+    // Out of the window, a drop would take the tab out: nothing in it shows
+    // where it would land.
+    let out = !!this.#drag.tearOff?.update(event);
+    let spot = out ? null : this.dropSpotAt(x, y, item);
+    this.#holdOver(out ? null : this.#holdTargetAt(x, y));
     let list = this.#tabList.getBoundingClientRect();
     // A folder is not undocked.
     let undock =
+      !out &&
       !spot &&
       typeof item != "string" &&
       x >= list.left &&
@@ -612,6 +628,9 @@ export class OrbitoDock extends MozLitElement {
     window.addEventListener("click", swallow, { capture: true, once: true });
     setTimeout(() => window.removeEventListener("click", swallow, true), 0);
     event.preventDefault();
+    if (drag.tearOff?.drop(event)) {
+      return;
+    }
     let { item, spot, undock } = drag;
     if (typeof item == "string") {
       if (spot) {
@@ -640,6 +659,7 @@ export class OrbitoDock extends MozLitElement {
 
   #endDrag() {
     clearTimeout(this.#drag?.hold?.timer);
+    this.#drag?.tearOff?.end();
     this.#press = null;
     this.#drag = null;
     this.removeAttribute("dragging");

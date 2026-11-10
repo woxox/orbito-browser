@@ -14,6 +14,7 @@ import {
 } from "chrome://browser/content/orbito/shell/orbito-pins.mjs";
 import { ORBITO_LOGO } from "chrome://browser/content/orbito/shell/orbito-logo.mjs";
 import { ListMotion } from "chrome://browser/content/orbito/shell/motion.mjs";
+import { TearOff } from "chrome://browser/content/orbito/shell/tear-off.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -107,8 +108,10 @@ const HOLD_EDGE = 8;
  * Clicking a row selects its tab, its close button closes it, and rows and
  * group headers can be dragged to move them in gBrowser; a tab dropped on
  * the Pin grid becomes a Pin, one dropped on the Dock a Dock tab, and one
- * held over another tab for a moment groups the two. A Pin or Dock row
- * dropped on the list leaves the grid or the Dock for where it was dropped.
+ * held over another tab for a moment groups the two. A tab or group let go
+ * outside the window moves into the Orbito window there, or opens in a new
+ * one (shell/tear-off.mjs); not an Orbit's tabs, which are its task's. A Pin or Dock row dropped on the list
+ * leaves the grid or the Dock for where it was dropped.
  * Where a drop in the list would land, a guide bar shows in the gap. The
  * context menu (the menu key or Shift+F10 too) pins or docks a tab. The list is a single tab stop: the arrow keys move
  * between rows and headers, Enter or Space selects a tab or toggles a group,
@@ -548,7 +551,12 @@ export class OrbitoTabList extends MozLitElement {
     if (event.button != 0 || event.target.closest(".close") || this.#press) {
       return;
     }
-    this.#press = { item, x: event.clientX, y: event.clientY };
+    this.#press = {
+      item,
+      row: event.currentTarget,
+      x: event.clientX,
+      y: event.clientY,
+    };
     window.addEventListener("pointermove", this, true);
     window.addEventListener("pointerup", this, true);
     window.addEventListener("pointercancel", this, true);
@@ -570,6 +578,7 @@ export class OrbitoTabList extends MozLitElement {
         dock: null,
         // {tab, armed, timer}: the tab it is held over.
         hold: null,
+        tearOff: this.#tearOff(this.#press),
       };
       this.toggleAttribute("dragging", true);
       // The dragged row dims.
@@ -578,11 +587,18 @@ export class OrbitoTabList extends MozLitElement {
     let isTab = gBrowser.isTab(this.#drag.item);
     let grid = isTab ? this.#pinGrid : null;
     let dock = isTab ? this.#dock : null;
+    // Out of the window, a drop would take the item out: nothing in it shows
+    // where it would land.
+    let out = !!this.#drag.tearOff?.update(event);
     // The grid's drop place may lie over the Dock's when both are empty
     // (orbito.css): the grid comes first.
-    let pin = grid?.dropIndexAt(event.clientX, event.clientY) ?? -1;
+    let pin = out
+      ? -1
+      : (grid?.dropIndexAt(event.clientX, event.clientY) ?? -1);
     let docked =
-      pin == -1 ? (dock?.dropSpotAt(event.clientX, event.clientY) ?? null) : null;
+      !out && pin == -1
+        ? (dock?.dropSpotAt(event.clientX, event.clientY) ?? null)
+        : null;
     Object.assign(this.#drag, { pin, dock: docked });
     let tab = this.#drag.item;
     if (grid && grid.tabDrag?.index !== pin) {
@@ -591,7 +607,7 @@ export class OrbitoTabList extends MozLitElement {
     if (dock && dock.tabDrag?.spot !== docked) {
       dock.tabDrag = { spot: docked, tab };
     }
-    if (pin != -1 || docked) {
+    if (out || pin != -1 || docked) {
       this.#holdOver(null);
       if (this.#drag.target) {
         // The guide bar goes.
@@ -614,6 +630,31 @@ export class OrbitoTabList extends MozLitElement {
       this.requestUpdate();
     }
     this.#holdOver(this.#groupTargetAt(event.clientX, event.clientY));
+  }
+
+  /**
+   * What a press on a row turns into once it is dragged out of the window:
+   * a tab, or a group, not one of an Orbit's tabs. The new window's first
+   * row, where the item goes, is to be under the pointer: as far below where
+   * this list's first row would be unscrolled as the press is in the row
+   * (a group's box, for a group).
+   */
+  #tearOff({ item, row, x, y }) {
+    if (gBrowser.isTab(item) && this.#orbitOf(item)) {
+      return null;
+    }
+    let scroller = this.renderRoot.querySelector(".scroll");
+    let first = this.renderRoot.querySelector(
+      ".list > :is(.tab, .group, .orbit)"
+    );
+    let box = gBrowser.isTabGroup(item) ? row.closest(".group") : row;
+    let top = first.getBoundingClientRect().top + scroller.scrollTop;
+    return new TearOff(item, {
+      row,
+      x,
+      y,
+      offsetY: top + y - box.getBoundingClientRect().top,
+    });
   }
 
   /**
@@ -716,6 +757,9 @@ export class OrbitoTabList extends MozLitElement {
     window.addEventListener("click", swallow, { capture: true, once: true });
     setTimeout(() => window.removeEventListener("click", swallow, true), 0);
     event.preventDefault();
+    if (drag.tearOff?.drop(event)) {
+      return;
+    }
     if (drag.pin != -1) {
       window.OrbitoShell.pins.pinTab(drag.item, drag.pin);
       return;
@@ -739,6 +783,7 @@ export class OrbitoTabList extends MozLitElement {
       }
     }
     clearTimeout(this.#drag?.hold?.timer);
+    this.#drag?.tearOff?.end();
     this.#press = null;
     this.#drag = null;
     this.removeAttribute("dragging");

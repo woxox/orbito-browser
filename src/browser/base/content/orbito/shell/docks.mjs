@@ -24,7 +24,9 @@
  * device removed the entry, by Firefox Sync). Closing a Dock tab
  * keeps its place: an unloaded tab of the entry's URL takes it (Arc's way),
  * so the page goes back to where it was docked and takes no memory until it
- * is selected again.
+ * is selected again. Moving a Dock tab to another window leaves the same in
+ * its place; there it is that window's tab for the entry, and the one there
+ * before it goes.
  *
  * A Dock can hold folders of entries (shell/OrbitoDocks.sys.mjs), made from
  * a Dock tab's menu ("Move to new folder") or by holding a dragged Dock tab

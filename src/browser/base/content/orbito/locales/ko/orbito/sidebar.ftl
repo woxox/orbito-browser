@@ -31,6 +31,8 @@ orbito-tabs-hold-add-to-group = 그룹에 넣기
 orbito-tabs-new-group-name = 새 그룹 { $number }
 orbito-tabs-group-title = { $name }: 탭 { $count }개
 orbito-tabs-close-group = 그룹 닫기
+orbito-tabs-tear-off = 새 창으로 열기
+orbito-tabs-move-to-window = 이 창으로 옮기기
 
 ## Spaces
 

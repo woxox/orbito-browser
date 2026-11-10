@@ -6,6 +6,7 @@ import { html, repeat } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { ORBITO_LOGO } from "chrome://browser/content/orbito/shell/orbito-logo.mjs";
 import { ListMotion } from "chrome://browser/content/orbito/shell/motion.mjs";
+import { TearOff } from "chrome://browser/content/orbito/shell/tear-off.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -68,10 +69,12 @@ export function isMenuKey(event) {
  * The Pin grid at the top of the Sidebar, the same in every Space: a button
  * per pinned tab of the window (OrbitoShell.pins), four to a row, in
  * gBrowser's order. A click selects the tab, which loads its page the first
- * time. Dragging a Pin moves it; dropping it on the tab list unpins it, and
- * a tab dragged from the tab list onto the grid becomes a Pin. Where a drop
- * would land, a see-through copy of the dragged tab takes the slot. The
- * context menu (the menu key or Shift+F10 too) unpins.
+ * time. Dragging a Pin moves it; dropping it on the tab list unpins it,
+ * letting it go outside the window moves its tab into the Orbito window
+ * there or opens it in a new one (shell/tear-off.mjs), and a tab dragged from the tab list onto the grid
+ * becomes a Pin. Where a drop would land, a see-through copy of the dragged
+ * tab takes the slot. The context menu (the menu key or Shift+F10 too)
+ * unpins.
  *
  * The grid is one tab stop: the arrow keys move between Pins (Up and Down by
  * a row), Home and End to the first and last, Enter or Space select.
@@ -294,13 +297,20 @@ export class OrbitoPins extends MozLitElement {
   }
 
   // Dragging a Pin: dropped in the grid it moves among the pinned tabs, on
-  // the tab list it is unpinned.
+  // the tab list it is unpinned, outside the window it moves into another
+  // or opens in a new one (shell/tear-off.mjs), where the grid is in the
+  // same place.
 
   #onPointerDown(event, tab) {
     if (event.button != 0 || this.#press) {
       return;
     }
-    this.#press = { tab, x: event.clientX, y: event.clientY };
+    this.#press = {
+      tab,
+      row: event.currentTarget,
+      x: event.clientX,
+      y: event.clientY,
+    };
     window.addEventListener("pointermove", this, true);
     window.addEventListener("pointerup", this, true);
     window.addEventListener("pointercancel", this, true);
@@ -317,13 +327,29 @@ export class OrbitoPins extends MozLitElement {
       if (Math.hypot(event.clientX - x, event.clientY - y) < DRAG_THRESHOLD) {
         return;
       }
-      this.#drag = { tab: this.#press.tab, index: -1, unpin: false };
+      let { tab, row } = this.#press;
+      this.#drag = {
+        tab,
+        index: -1,
+        unpin: false,
+        // A Pin's chip is as wide as a row of the tab list.
+        tearOff: new TearOff(tab, {
+          row,
+          width: this.getBoundingClientRect().width,
+          x,
+          y,
+        }),
+      };
       this.toggleAttribute("dragging", true);
     }
     let { clientX: x, clientY: y } = event;
-    let index = this.dropIndexAt(x, y, this.#drag.tab);
+    // Out of the window, a drop would take the tab out: nothing in it shows
+    // where it would land.
+    let out = this.#drag.tearOff.update(event);
+    let index = out ? -1 : this.dropIndexAt(x, y, this.#drag.tab);
     let list = this.#tabList.getBoundingClientRect();
     let unpin =
+      !out &&
       index == -1 &&
       x >= list.left &&
       x <= list.right &&
@@ -352,6 +378,9 @@ export class OrbitoPins extends MozLitElement {
     window.addEventListener("click", swallow, { capture: true, once: true });
     setTimeout(() => window.removeEventListener("click", swallow, true), 0);
     event.preventDefault();
+    if (drag.tearOff.drop(event)) {
+      return;
+    }
     let { tab, index, unpin } = drag;
     if (!tab.isConnected || !tab.pinned) {
       return;
@@ -375,6 +404,7 @@ export class OrbitoPins extends MozLitElement {
   }
 
   #endDrag() {
+    this.#drag?.tearOff.end();
     this.#press = null;
     this.#drag = null;
     this.removeAttribute("dragging");

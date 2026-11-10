@@ -2,7 +2,7 @@ diff --git a/browser/base/jar.mn b/browser/base/jar.mn
 index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7ac4d2d22 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -5,6 +5,179 @@ browser.jar:
+@@ -5,6 +5,180 @@ browser.jar:
  %  content browser %content/browser/ contentaccessible=yes
  
          content/browser/aboutDialog-appUpdater.js     (content/aboutDialog-appUpdater.js)
@@ -123,6 +123,7 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7
 +        content/browser/orbito/shell/orbito-sidebar.css (content/orbito/shell/orbito-sidebar.css)
 +        content/browser/orbito/shell/orbito-tab-list.mjs (content/orbito/shell/orbito-tab-list.mjs)
 +        content/browser/orbito/shell/orbito-tab-list.css (content/orbito/shell/orbito-tab-list.css)
++        content/browser/orbito/shell/tear-off.mjs (content/orbito/shell/tear-off.mjs)
 +        content/browser/orbito/shell/orbito-top-bar.mjs (content/orbito/shell/orbito-top-bar.mjs)
 +        content/browser/orbito/shell/orbito-top-bar.css (content/orbito/shell/orbito-top-bar.css)
 +        content/browser/orbito/shell/orbito-window-controls.mjs (content/orbito/shell/orbito-window-controls.mjs)

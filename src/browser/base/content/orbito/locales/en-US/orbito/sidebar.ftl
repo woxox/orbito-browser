@@ -43,6 +43,12 @@ orbito-tabs-group-title =
        *[other] { $name }: { $count } tabs
     }
 orbito-tabs-close-group = Close group
+# Under a tab, tab group, Pin or Dock tab dragged out of the window:
+# dropping it there opens it in a new window.
+orbito-tabs-tear-off = Open in new window
+# Under one dragged over another Orbito window: dropping it there moves it
+# into that window.
+orbito-tabs-move-to-window = Move to this window
 
 ## Spaces
 
