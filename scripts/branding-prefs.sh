@@ -15,11 +15,15 @@ done
 
 # Dev builds (no ORBITO_RELEASE) are "Orbito DEV" with their own bundle ID, so
 # macOS keeps them apart from an installed release (Dock, permissions, open-with).
+# On Linux the remoting name does the same: it is the Wayland app_id / WM_CLASS
+# and the name a running instance answers links under.
 # These are confvars: only the branding's configure.sh can set them, not mozconfig.
 if [ -z "${ORBITO_RELEASE:-}" ]; then
   branding="$ROOT/engine/browser/branding/release"
   sed -i.bak -e 's/^MOZ_APP_DISPLAYNAME="Orbito"$/MOZ_APP_DISPLAYNAME="Orbito DEV"/' \
     -e 's/^MOZ_MACBUNDLE_ID="orbito"$/MOZ_MACBUNDLE_ID="orbito-dev"/' "$branding/configure.sh"
+  grep -q '^MOZ_APP_REMOTINGNAME=' "$branding/configure.sh" ||
+    echo 'MOZ_APP_REMOTINGNAME="orbito-dev"' >> "$branding/configure.sh"
   sed -i.bak -E -e 's/^(-brand-short(er)?-name) = Orbito$/\1 = Orbito DEV/' \
     -e 's/^-brand-full-name = Orbito Browser$/-brand-full-name = Orbito DEV/' \
     "$branding/locales/en-US/brand.ftl"
@@ -30,4 +34,5 @@ if [ -z "${ORBITO_RELEASE:-}" ]; then
     -e 's/^(<!ENTITY +brandFullName +)"Orbito Browser">$/\1"Orbito DEV">/' \
     "$branding/locales/en-US/brand.dtd"
   rm -f "$branding"/configure.sh.bak "$branding"/locales/en-US/brand.{ftl,properties,dtd}.bak
+  cp -R "$ROOT/configs/branding-dev/release/." "$branding/"
 fi

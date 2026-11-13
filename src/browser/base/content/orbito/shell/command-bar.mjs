@@ -65,6 +65,32 @@ export class CommandBar {
   #controller = null;
   /** The urlbar view whose onQueryResults is wrapped. */
   #view = null;
+  /** The urlbar whose autofill is wrapped (#wrapAutofill()). */
+  #input = null;
+  /**
+   * The autofill shown past the caret while an IME composes, which the
+   * input can't take without ending the composition: the text it was found
+   * for, its result, and what it adds.
+   *
+   * @type {?{typed: string, result: object, suffix: string}}
+   */
+  #ghost = null;
+  /**
+   * The ghost an IME took away by emptying what it composes, kept for the
+   * text it commits next: justype empties the composition, ends it, and
+   * then commits the word as new text.
+   */
+  #pending = null;
+  /**
+   * "Enter" or "Tab" pressed over the ghost while composing, with its event,
+   * to act on once the composition is committed.
+   */
+  #accept = null;
+  /**
+   * The ghost last put in the input on a commit, until the next key: Tab
+   * then takes the completion, as it would have over the ghost.
+   */
+  #committed = null;
   /**
    * The Command bar's own parts in the urlbar, made on first open: what to
    * type over the empty input, the mode chip and the footer's last line.
@@ -131,6 +157,19 @@ export class CommandBar {
     gURLBar.addEventListener("beforeselect", this);
     gURLBar.addEventListener("keydown", this, true);
     gURLBar.addEventListener("focusout", this);
+    gURLBar.addEventListener("input", this);
+    gURLBar.addEventListener("popuphidden", this);
+  }
+
+  /**
+   * Whether the search engine list (the urlbar's search mode switcher) is
+   * open or opening. It is a XUL panel, and a panel takes focus from
+   * whatever has it as it opens, the input or its button: focus goes
+   * nowhere, but the bar stays open for a pick from the list.
+   */
+  get #switcherOpen() {
+    let state = gURLBar.querySelector(".searchmode-switcher-panel")?.state;
+    return state == "showing" || state == "open";
   }
 
   /**
@@ -197,6 +236,8 @@ export class CommandBar {
     } finally {
       document.documentElement.removeAttribute("orbito-command-bar");
       gURLBar.inputField.removeAttribute("aria-description");
+      this.#setGhost(null);
+      this.#pending = this.#accept = this.#committed = null;
       this.#returnFocus = null;
       this.#browser = null;
       this.#closing = false;
@@ -209,6 +250,7 @@ export class CommandBar {
       this.#returnFocus = deepActiveElement();
       this.#browser = gBrowser.selectedBrowser;
       this.#overrideWhereToOpen();
+      this.#wrapAutofill();
       this.#labelGroups();
       this.#addParts();
       lazy.deviceTypes().then(devices => {
@@ -262,6 +304,12 @@ export class CommandBar {
       );
 
     let placeholder = make("span", "orbito-command-bar-placeholder");
+    let ghost = make(
+      "span",
+      "orbito-command-bar-ghost",
+      make("span", "", make("span", ""), make("span", ""))
+    );
+    ghost.hidden = true;
     let mode = make("span", "orbito-command-bar-mode");
     let opensIn = make("span", "");
     let footer = make(
@@ -273,7 +321,7 @@ export class CommandBar {
       make("span", "orbito-command-bar-spacer"),
       opensIn
     );
-    for (let el of [placeholder, mode, footer]) {
+    for (let el of [ghost, placeholder, mode, footer]) {
       el.setAttribute("aria-hidden", "true");
     }
     // The rows' hints are drawn by command-bar.css, which takes the words
@@ -281,10 +329,10 @@ export class CommandBar {
     for (let [kind, id] of Object.entries(ROW_HINTS)) {
       gURLBar.style.setProperty(`--orbito-command-bar-hint-${kind}`, cssString(t(id)));
     }
-    gURLBar.inputField.after(placeholder);
+    gURLBar.inputField.after(ghost, placeholder);
     gURLBar.querySelector(".urlbar-input-container").append(mode);
     gURLBar.panel.append(footer);
-    this.#parts = { placeholder, mode, opensIn };
+    this.#parts = { ghost, placeholder, mode, opensIn };
   }
 
   /**
@@ -302,6 +350,182 @@ export class CommandBar {
       let where = whereToOpen(event);
       return where == "current" && this.mode == "new" ? "tab" : where;
     };
+  }
+
+  /**
+   * Autofills while an IME composes too, as Chrome does: the urlbar asks
+   * for autofill only once the composition is committed, since writing the
+   * completion into the input would end it. While composing, the completion
+   * shows past the caret instead (#setGhost()), and goes into the input once
+   * the composition is committed, or is taken with Enter or Tab.
+   */
+  #wrapAutofill() {
+    let input = gURLBar;
+    if (this.#input == input) {
+      return;
+    }
+    this.#input = input;
+    let startQuery = input.startQuery.bind(input);
+    input.startQuery = (options = {}) => {
+      let { event } = options;
+      if (
+        this.isOpen &&
+        input.isComposing &&
+        event?.type == "input" &&
+        !event.inputType?.startsWith("delete")
+      ) {
+        options = { ...options, allowAutofill: true };
+      }
+      return startQuery(options);
+    };
+    // A completion autofilled before the composition started must not be
+    // put back over it.
+    let onFirstResult = input.onFirstResult.bind(input);
+    input.onFirstResult = queryContext => {
+      if (input.isComposing) {
+        input._autofillPlaceholder = null;
+      }
+      onFirstResult(queryContext);
+    };
+    let autofillFirstResult = input._autofillFirstResult.bind(input);
+    input._autofillFirstResult = result => {
+      if (input.isComposing) {
+        this.#setGhost(this.isOpen ? result : null);
+      } else {
+        autofillFirstResult(result);
+      }
+    };
+  }
+
+  /**
+   * Shows result's autofill past the caret, or nothing for null or when it
+   * doesn't complete what is in the input.
+   */
+  #setGhost(result) {
+    let field = gURLBar.inputField;
+    let typed = field.value;
+    let value = result?.autofill?.value ?? "";
+    this.#ghost =
+      typed &&
+      value.length > typed.length &&
+      value.toLocaleLowerCase().startsWith(typed.toLocaleLowerCase()) &&
+      field.selectionStart == typed.length &&
+      field.selectionEnd == typed.length
+        ? { typed, result, suffix: value.slice(typed.length) }
+        : null;
+    let el = this.#parts?.ghost;
+    if (!el) {
+      return;
+    }
+    el.hidden = !this.#ghost;
+    if (this.#ghost) {
+      let line = el.firstChild;
+      line.firstChild.textContent = typed;
+      line.lastChild.textContent = this.#ghost.suffix;
+      line.style.translate = `${-field.scrollLeft}px`;
+    }
+  }
+
+  /** Keeps the ghost through input while composing. */
+  #onComposingInput(event) {
+    if (event.data) {
+      if (this.#ghost) {
+        // Typing more of the completion keeps it.
+        this.#setGhost(this.#ghost.result);
+      }
+    } else if (this.#ghost) {
+      this.#pending ??= this.#ghost;
+      this.#setGhost(null);
+    }
+  }
+
+  /**
+   * After text is committed: puts the ghost in the input when the input
+   * then has the text it was found for, and does what Enter or Tab pressed
+   * over it asked. A composition ended with nothing committed, as justype
+   * ends one before committing its word, waits for the text that follows:
+   * filling the input in between would put the completion before that text.
+   */
+  #commitGhost(event) {
+    if (event.inputType == "insertCompositionText" && !event.data) {
+      if (this.#ghost) {
+        this.#pending ??= this.#ghost;
+        this.#setGhost(null);
+      }
+      return;
+    }
+    let ghost = this.#ghost ?? this.#pending;
+    let accept = this.#accept;
+    this.#setGhost(null);
+    this.#pending = this.#accept = this.#committed = null;
+    if (
+      !ghost ||
+      !event.data ||
+      gURLBar.inputField.value.toLocaleLowerCase() !=
+        ghost.typed.toLocaleLowerCase()
+    ) {
+      return;
+    }
+    gURLBar.setValueFromResult({ result: ghost.result });
+    if (accept?.key == "Tab") {
+      let end = gURLBar.inputField.value.length;
+      gURLBar.setSelectionRange(end, end);
+    } else if (accept?.key == "Enter") {
+      gURLBar.handleCommand(accept.event);
+    } else {
+      this.#committed = ghost;
+    }
+  }
+
+  /**
+   * Tab right after a commit put the ghost in the input takes the
+   * completion, as Tab over the ghost does; justype commits before the key
+   * reaches the input. Enter needs nothing: the input has the completion.
+   */
+  #takeCommitted(event) {
+    let ghost = this.#committed;
+    this.#committed = null;
+    let field = gURLBar.inputField;
+    if (
+      event.key == "Tab" &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      field.selectionStart == ghost.typed.length &&
+      field.selectionEnd == field.value.length &&
+      field.value.length > ghost.typed.length
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      gURLBar.setSelectionRange(field.value.length, field.value.length);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Enter or Tab over the ghost while composing. An IME that takes the key
+   * reports it as "Process" and commits on its own; a key it lets through
+   * would reach the urlbar mid-composition, so it commits here instead.
+   */
+  #acceptGhost(event) {
+    let key = event.key == "Process" ? event.code : event.key;
+    if (key == "NumpadEnter") {
+      key = "Enter";
+    }
+    if (key != "Enter" && key != "Tab") {
+      if (event.key == "ArrowUp" || event.key == "ArrowDown") {
+        this.#setGhost(null);
+      }
+      return;
+    }
+    this.#accept = { key, event };
+    if (event.key != "Process") {
+      event.preventDefault();
+      event.stopPropagation();
+      gURLBar.editor.forceCompositionEnd();
+    }
   }
 
   /**
@@ -383,6 +607,22 @@ export class CommandBar {
         }
         break;
       case "keydown":
+        if (
+          this.#ghost &&
+          event.isComposing &&
+          event.target == gURLBar.inputField
+        ) {
+          this.#acceptGhost(event);
+          break;
+        }
+        if (
+          this.#committed &&
+          !event.isComposing &&
+          event.target == gURLBar.inputField &&
+          this.#takeCommitted(event)
+        ) {
+          break;
+        }
         // Escape closes at once, rather than first closing the results and
         // then reverting the text as the urlbar does. Menus inside the
         // urlbar (the result menu, the search engine list) close first.
@@ -397,14 +637,44 @@ export class CommandBar {
           this.close();
         }
         break;
+      case "input":
+        if (gURLBar.isComposing) {
+          this.#onComposingInput(event);
+        } else {
+          this.#commitGhost(event);
+        }
+        break;
       case "focusout":
         // Focus left on its own: a pick loaded a page or switched tabs, or
         // the Assistant panel took a question. Wait for it to land, and
         // stay open while the window is merely in the background.
         if (this.isOpen && !this.#closing && !gURLBar.contains(event.relatedTarget)) {
           setTimeout(() => {
-            if (this.isOpen && !gURLBar.contains(document.activeElement)) {
+            if (
+              this.isOpen &&
+              !gURLBar.contains(document.activeElement) &&
+              !this.#switcherOpen
+            ) {
               this.close({ restoreFocus: false, revert: this.mode == "new" });
+            }
+          });
+        }
+        break;
+      case "popuphidden":
+        // The search engine list closed. Once the pick, if any, has done
+        // its work: focus that went elsewhere (Search settings opened a tab)
+        // closes the bar, and focus that is still nowhere (Escape, a second
+        // press of the list's button) goes back to the input.
+        if (event.target.classList.contains("searchmode-switcher-panel")) {
+          setTimeout(() => {
+            let active = document.activeElement;
+            if (!this.isOpen || this.#switcherOpen || gURLBar.contains(active)) {
+              return;
+            }
+            if (active && active != document.body && active != document.documentElement) {
+              this.close({ restoreFocus: false, revert: this.mode == "new" });
+            } else {
+              gURLBar.focus();
             }
           });
         }

@@ -185,6 +185,9 @@ const NAME = /^[\p{L}\p{N}][\p{L}\p{N}_.-]*(?: [\p{L}\p{N}_.-]+)*$/u;
 const MAX_NAME = 64;
 const TOOL = /^[\w.-]+$/;
 
+/** The built-in commands that start a new Thread, by their names after "/". */
+export const NEW_THREAD_COMMANDS = ["new", "clear"];
+
 /**
  * Checks a name for a skill the user writes.
  *
@@ -194,6 +197,11 @@ export function checkSkillName(name) {
   if (!NAME.test(name) || name.length > MAX_NAME) {
     throw new Error(
       `A skill name is at most ${MAX_NAME} letters, digits, single spaces, -, _ or ., and starts with a letter or digit.`
+    );
+  }
+  if (NEW_THREAD_COMMANDS.includes(name)) {
+    throw new Error(
+      "/new and /clear start a new Thread, so a skill cannot be named new or clear."
     );
   }
 }

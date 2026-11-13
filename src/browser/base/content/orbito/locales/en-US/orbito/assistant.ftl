@@ -40,6 +40,8 @@ orbito-assistant-open-settings-page = Open settings page
 orbito-assistant-approval-needed = Approval needed
 orbito-assistant-allow = Allow
 orbito-assistant-deny = Deny
+# An approval answer's tooltip: its label and the key that answers it.
+orbito-assistant-answer-title = { $label } ({ $shortcut })
 orbito-assistant-approval = Approval
 orbito-assistant-approval-allowed = Allowed.
 orbito-assistant-approval-denied = Denied.
@@ -188,6 +190,7 @@ orbito-assistant-chip-dismiss = Dismiss
 # $label is the suggestion's label.
 orbito-assistant-chip-dismiss-label = Dismiss { $label }
 orbito-assistant-skills = Skills
+orbito-assistant-command-new-thread = Start a new Thread
 orbito-assistant-input-placeholder = Ask about this page...
 orbito-assistant-input = Ask the assistant
 # $effort is the thinking depth, e.g. "Medium".

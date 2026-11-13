@@ -6,6 +6,10 @@ import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import "chrome://browser/content/orbito/shell/orbito-tab-list.mjs";
 import {
+  DRAG_TYPE,
+  ForeignDrop,
+} from "chrome://browser/content/orbito/shell/tear-off.mjs";
+import {
   motionEase,
   motionMs,
   reducedMotion,
@@ -62,8 +66,8 @@ const clampWidth = width =>
  * pref says, without a handle. Collapsed, it is out of the layout and peeks
  * over the page while the pointer is on the window's left edge or on it, or
  * focus is in it. A peek opened without the pointer (⌘S, the Top bar's
- * button) stays until Escape, a click outside, a tab is picked or the
- * Command bar opens.
+ * button) stays until Escape, a click outside, a tab is picked away from
+ * the pointer or the Command bar opens.
  */
 export class OrbitoSidebar extends MozLitElement {
   static properties = {
@@ -81,6 +85,11 @@ export class OrbitoSidebar extends MozLitElement {
   };
 
   #peekTimer = null;
+  // Whether a Sidebar row's drag, from any window, is over the edge strip
+  // or the peek, which holds the peek open.
+  #dragInside = false;
+  // Takes rows dragged from other windows.
+  #foreignDrop = null;
   // The handle's drag: where it started.
   #resize = null;
   #narrowQuery = window.matchMedia(NARROW_QUERY);
@@ -124,7 +133,18 @@ export class OrbitoSidebar extends MozLitElement {
     }
     // Before the click lands, in case it lands on something the peek covers.
     window.addEventListener("mousedown", this, true);
+    // Before the drag's own listeners (shell/tear-off.mjs) take it.
+    for (let type of ["dragover", "dragleave", "drop"]) {
+      window.addEventListener(type, this, true);
+    }
     gBrowser.tabContainer.addEventListener("TabSelect", this);
+    if (window.toolbar.visible) {
+      this.updateComplete.then(() => {
+        if (this.isConnected && !this.#foreignDrop) {
+          this.#foreignDrop = new ForeignDrop(this.tabList);
+        }
+      });
+    }
   }
 
   disconnectedCallback() {
@@ -136,8 +156,13 @@ export class OrbitoSidebar extends MozLitElement {
       window.removeEventListener(type, this);
     }
     window.removeEventListener("mousedown", this, true);
+    for (let type of ["dragover", "dragleave", "drop"]) {
+      window.removeEventListener(type, this, true);
+    }
     gBrowser.tabContainer.removeEventListener("TabSelect", this);
     clearTimeout(this.#peekTimer);
+    this.#foreignDrop?.destroy();
+    this.#foreignDrop = null;
   }
 
   #readPrefs() {
@@ -191,10 +216,16 @@ export class OrbitoSidebar extends MozLitElement {
         this.#readPrefs();
         break;
       case "TabSelect":
+        if (!this.matches(":hover")) {
+          this.hidePeek();
+        }
+        break;
       case "OrbitoCommandBarOpen":
         this.hidePeek();
         break;
       case "mousedown":
+        // No drag goes on once the button is pressed again.
+        this.#dragInside = false;
         // A click outside the peek (not on what toggles it) ends it.
         if (
           this.peeking &&
@@ -209,6 +240,11 @@ export class OrbitoSidebar extends MozLitElement {
         ) {
           this.hidePeek();
         }
+        break;
+      case "dragover":
+      case "dragleave":
+      case "drop":
+        this.#onDrag(event);
         break;
       case "keydown":
         // Escape anywhere in the window, unless something took it already.
@@ -347,12 +383,53 @@ export class OrbitoSidebar extends MozLitElement {
   }
 
   /**
+   * A Sidebar row dragged over the window, from it or another (whose
+   * pointer events this window does not get): the collapsed Sidebar peeks
+   * when it reaches the edge strip, as the strip's mouseenter would, and
+   * stays while it is over the peek. The platform may send no dragover
+   * while the pointer rests, so the peek stays until the drag goes
+   * elsewhere or leaves the window.
+   */
+  #onDrag(event) {
+    if (!event.dataTransfer?.types.includes(DRAG_TYPE)) {
+      return;
+    }
+    let path = event.composedPath();
+    let inside =
+      event.type == "dragover" &&
+      this.collapsed &&
+      (path.some(el => el.id == "orbito-sidebar-edge") ||
+        (this.peeking && path.includes(this)));
+    // A dragleave with a target in the window is followed by its dragover.
+    if (event.type == "dragleave" && event.relatedTarget) {
+      return;
+    }
+    if (inside) {
+      this.#dragInside = true;
+      this.peek();
+    } else if (this.#dragInside) {
+      this.#dragInside = false;
+      // Dropped on it, it stays to show where the row went, until the
+      // pointer leaves it or a click elsewhere.
+      if (event.type != "drop") {
+        this.endPeek();
+      }
+    }
+  }
+
+  // Whether something dragged keeps the peek: the resize handle, a row of
+  // the tab list, or a row over the peek, from any window.
+  get #isHeld() {
+    return !!(this.#resize || this.tabList.dragging || this.#dragInside);
+  }
+
+  /**
    * Hides the peeking Sidebar now; focus in it goes to the page. Not while
-   * a tab or the handle is being dragged.
+   * a tab or the handle is being dragged, here or from another window.
    */
   hidePeek() {
     clearTimeout(this.#peekTimer);
-    if (!this.peeking || this.#resize || this.tabList.dragging) {
+    if (!this.peeking || this.#isHeld) {
       return;
     }
     let hadFocus = this.matches(":focus-within");
@@ -364,7 +441,8 @@ export class OrbitoSidebar extends MozLitElement {
 
   /**
    * Hides the peeking Sidebar a moment after the pointer and focus have left
-   * it, and not while a tab or the handle is being dragged.
+   * it, and not while a tab or the handle is being dragged, here or from
+   * another window.
    */
   endPeek() {
     clearTimeout(this.#peekTimer);
@@ -372,7 +450,7 @@ export class OrbitoSidebar extends MozLitElement {
       return;
     }
     this.#peekTimer = setTimeout(() => {
-      if (this.#resize || this.tabList.dragging) {
+      if (this.#isHeld) {
         this.endPeek();
       } else if (!this.matches(":hover") && !this.matches(":focus-within")) {
         this.peeking = false;

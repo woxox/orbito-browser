@@ -570,7 +570,10 @@ export class OrbitoNewTab extends MozLitElement {
     this.#typed = text;
     this.#dismissed = false;
     this.completed = false;
+    // Completing past the caret mid-composition would break the IME's
+    // composition, so only committed text completes.
     this.#completes =
+      !event.isComposing &&
       event.inputType?.startsWith("insert") &&
       this.input.selectionEnd == text.length;
     this.#suggest();

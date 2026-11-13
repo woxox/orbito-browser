@@ -6,7 +6,11 @@ import { html, repeat } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { ORBITO_LOGO } from "chrome://browser/content/orbito/shell/orbito-logo.mjs";
 import { ListMotion } from "chrome://browser/content/orbito/shell/motion.mjs";
-import { TearOff } from "chrome://browser/content/orbito/shell/tear-off.mjs";
+import {
+  pressWithoutFocus,
+  SidebarDrag,
+  TearOff,
+} from "chrome://browser/content/orbito/shell/tear-off.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -28,9 +32,6 @@ const TAB_EVENTS = [
 /** Pins in a row of the grid. */
 export const PIN_COLUMNS = 4;
 
-// How far a press moves before it becomes a drag.
-const DRAG_THRESHOLD = 4;
-
 // Stands in the grid's items for the copy of a dragged tab.
 const PREVIEW = Symbol("preview");
 
@@ -48,6 +49,38 @@ export function tabIcon(tab) {
     src=${gBrowser.getIcon(tab) || DEFAULT_ICON}
     alt=""
   />`;
+}
+
+// The arrow a Pin's or Dock tab's icon turns into to go back (entryIcon), as
+// the Top bar's back button's.
+const BACK_ARROW = html`<svg class="arrow" viewBox="0 0 16 16" aria-hidden="true">
+  <path d="M10 3 5 8l5 5" />
+</svg>`;
+
+/**
+ * A Pin's or Dock tab's icon in the Sidebar (tabIcon), which is a button
+ * back to the entry's URL once the tab has gone from it (list, the window's
+ * Pins or Docks, says so): the icon turns into a back arrow under the
+ * pointer. A press on it selects no tab and starts no drag.
+ */
+export function entryIcon(tab, list) {
+  if (!list.isAway(tab)) {
+    return tabIcon(tab);
+  }
+  let label = t("orbito-saved-page-reset");
+  return html`<button
+    class="back"
+    tabindex="-1"
+    aria-label=${label}
+    title=${label}
+    @mousedown=${event => event.preventDefault()}
+    @click=${event => {
+      event.stopPropagation();
+      list.resetTab(tab);
+    }}
+  >
+    ${tabIcon(tab)}${BACK_ARROW}
+  </button>`;
 }
 
 /**
@@ -69,12 +102,15 @@ export function isMenuKey(event) {
  * The Pin grid at the top of the Sidebar, the same in every Space: a button
  * per pinned tab of the window (OrbitoShell.pins), four to a row, in
  * gBrowser's order. A click selects the tab, which loads its page the first
- * time. Dragging a Pin moves it; dropping it on the tab list unpins it,
- * letting it go outside the window moves its tab into the Orbito window
- * there or opens it in a new one (shell/tear-off.mjs), and a tab dragged from the tab list onto the grid
- * becomes a Pin. Where a drop would land, a see-through copy of the dragged
+ * time. Dragging a Pin (with the platform's drag and drop, which draws it
+ * under the pointer) moves it; dropping it on the tab list unpins it,
+ * dropping it on another Orbito window moves its tab there, and letting it
+ * go where no window takes it opens it in a new one (shell/tear-off.mjs).
+ * A tab dragged from the tab list onto the grid becomes a Pin. Where a drop would land, a see-through copy of the dragged
  * tab takes the slot. The context menu (the menu key or Shift+F10 too)
- * unpins.
+ * unpins. A Pin whose tab has gone from the Pin's URL has its icon as a
+ * button back there (entryIcon); its menu goes back too, or makes the page
+ * the Pin's.
  *
  * The grid is one tab stop: the arrow keys move between Pins (Up and Down by
  * a row), Home and End to the first and last, Enter or Space select.
@@ -98,9 +134,8 @@ export class OrbitoPins extends MozLitElement {
 
   // The Pin the keyboard is on, by its tab; the selected one when unset.
   #focusedTab = null;
-  // A press on a Pin that may become a drag, then the drag: the tab, and
-  // where it would land (before or after a Pin's tab, or the tab list).
-  #press = null;
+  // The drag of a Pin: the tab, where it would land (before or after a
+  // Pin's tab, or the tab list), and its SidebarDrag.
   #drag = null;
   // Where the Pins were as the grid last showed without the copy of a
   // dragged tab: {box, pins: [{tab, rect}]}. Drops are placed by
@@ -153,23 +188,6 @@ export class OrbitoPins extends MozLitElement {
 
   handleEvent(event) {
     switch (event.type) {
-      case "pointermove":
-        this.#onPointerMove(event);
-        break;
-      case "pointerup":
-        this.#onPointerUp(event);
-        break;
-      case "pointercancel":
-        this.#endDrag();
-        break;
-      case "keydown":
-        // Escape cancels a drag.
-        if (event.key == "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          this.#endDrag();
-        }
-        break;
       default:
         this.requestUpdate();
     }
@@ -297,55 +315,39 @@ export class OrbitoPins extends MozLitElement {
   }
 
   // Dragging a Pin: dropped in the grid it moves among the pinned tabs, on
-  // the tab list it is unpinned, outside the window it moves into another
-  // or opens in a new one (shell/tear-off.mjs), where the grid is in the
-  // same place.
+  // the tab list it is unpinned, on another window it moves there, and
+  // where no window takes it it opens in a new one (shell/tear-off.mjs).
 
-  #onPointerDown(event, tab) {
-    if (event.button != 0 || this.#press) {
+  #onDragStart(event, tab) {
+    if (this.#drag) {
+      event.preventDefault();
       return;
     }
-    this.#press = {
-      tab,
-      row: event.currentTarget,
-      x: event.clientX,
-      y: event.clientY,
-    };
-    window.addEventListener("pointermove", this, true);
-    window.addEventListener("pointerup", this, true);
-    window.addEventListener("pointercancel", this, true);
-    window.addEventListener("keydown", this, true);
+    this.#drag = { tab, index: -1, unpin: false };
+    this.#drag.native = new SidebarDrag(event, {
+      item: tab,
+      tearOff: new TearOff(tab, { x: event.clientX, y: event.clientY }),
+      onOver: over => this.#onDragOver(over),
+      onDrop: () => this.#onDrop(),
+      onEnd: () => this.#endDrag(),
+    });
+    this.toggleAttribute("dragging", true);
+    this.requestUpdate();
   }
 
   get #tabList() {
     return window.OrbitoShell.sidebar.tabList;
   }
 
-  #onPointerMove(event) {
+  // A dragover in the window, or null once the drag has left it.
+  #onDragOver(event) {
     if (!this.#drag) {
-      let { x, y } = this.#press;
-      if (Math.hypot(event.clientX - x, event.clientY - y) < DRAG_THRESHOLD) {
-        return;
-      }
-      let { tab, row } = this.#press;
-      this.#drag = {
-        tab,
-        index: -1,
-        unpin: false,
-        // A Pin's chip is as wide as a row of the tab list.
-        tearOff: new TearOff(tab, {
-          row,
-          width: this.getBoundingClientRect().width,
-          x,
-          y,
-        }),
-      };
-      this.toggleAttribute("dragging", true);
+      return;
     }
-    let { clientX: x, clientY: y } = event;
-    // Out of the window, a drop would take the tab out: nothing in it shows
-    // where it would land.
-    let out = this.#drag.tearOff.update(event);
+    // Out of the window, nothing in it shows where it would land.
+    let out = !event;
+    let x = event?.clientX;
+    let y = event?.clientY;
     let index = out ? -1 : this.dropIndexAt(x, y, this.#drag.tab);
     let list = this.#tabList.getBoundingClientRect();
     let unpin =
@@ -367,18 +369,11 @@ export class OrbitoPins extends MozLitElement {
     );
   }
 
-  #onPointerUp(event) {
+  // A drop in the window.
+  #onDrop() {
     let drag = this.#drag;
     this.#endDrag();
     if (!drag) {
-      return;
-    }
-    // The press ended a drag, not a click on the Pin.
-    let swallow = e => e.stopPropagation();
-    window.addEventListener("click", swallow, { capture: true, once: true });
-    setTimeout(() => window.removeEventListener("click", swallow, true), 0);
-    event.preventDefault();
-    if (drag.tearOff.drop(event)) {
       return;
     }
     let { tab, index, unpin } = drag;
@@ -404,16 +399,12 @@ export class OrbitoPins extends MozLitElement {
   }
 
   #endDrag() {
-    this.#drag?.tearOff.end();
-    this.#press = null;
+    let drag = this.#drag;
     this.#drag = null;
+    drag?.native.end();
     this.removeAttribute("dragging");
     this.#tabList?.removeAttribute("unpin-drop");
     this.#tabList?.landOutside(null, null);
-    window.removeEventListener("pointermove", this, true);
-    window.removeEventListener("pointerup", this, true);
-    window.removeEventListener("pointercancel", this, true);
-    window.removeEventListener("keydown", this, true);
     this.requestUpdate();
   }
 
@@ -429,13 +420,9 @@ export class OrbitoPins extends MozLitElement {
       ?selected=${selected}
       ?dragged=${this.#drag?.tab == tab}
       .tab=${tab}
-      @mousedown=${event => {
-        // As the tab list's rows, a click selects without taking focus.
-        if (event.button == 0) {
-          event.preventDefault();
-        }
-      }}
-      @pointerdown=${event => this.#onPointerDown(event, tab)}
+      draggable="true"
+      @mousedown=${pressWithoutFocus}
+      @dragstart=${event => this.#onDragStart(event, tab)}
       @click=${() => this.#select(tab)}
       @contextmenu=${event => {
         event.preventDefault();
@@ -443,7 +430,7 @@ export class OrbitoPins extends MozLitElement {
       }}
       @focus=${() => (this.#focusedTab = tab)}
     >
-      ${tabIcon(tab)}
+      ${entryIcon(tab, this.pins)}
     </div>`;
   }
 

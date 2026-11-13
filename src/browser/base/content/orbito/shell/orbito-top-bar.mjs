@@ -462,8 +462,8 @@ export class OrbitoTopBar extends MozLitElement {
   }
 
   /**
-   * A press on the URL display (macOS mousedown, or on Windows the drag
-   * region's press, which has no pointer position).
+   * A press on the URL display (mousedown on macOS and Linux, or on Windows
+   * the drag region's press, which has no pointer position).
    *
    * @param {MouseEvent} [event]
    */
@@ -508,9 +508,22 @@ export class OrbitoTopBar extends MozLitElement {
     if (event.button != 0) {
       return;
     }
-    // Focus stays where it was, so closing the Command bar goes back there.
-    event.preventDefault();
     this.#pressed(event);
+    // Focus stays where it was, so closing the Command bar goes back there.
+    if (AppConstants.platform != "linux") {
+      event.preventDefault();
+      return;
+    }
+    // GTK starts no window drag from a press whose default was prevented,
+    // so on Linux the press focuses the URL display, which gives focus back.
+    let focused = Services.focus.focusedElement;
+    if (focused == this.urlDisplay) {
+      return;
+    }
+    let giveBack = () => (focused ? focused.focus() : this.urlDisplay.blur());
+    this.urlDisplay.addEventListener("focus", giveBack, { once: true });
+    // The press's focus comes before any timer, so none later is given back.
+    setTimeout(() => this.urlDisplay.removeEventListener("focus", giveBack));
   }
 
   #onURLKey(event) {

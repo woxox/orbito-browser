@@ -52,6 +52,21 @@ const PASSED_ENVIRONMENT = new Set([
   "HTTP_PROXY",
   "HTTPS_PROXY",
   "NO_PROXY",
+  // Without these, xdg-open finds no browser to open the login page on
+  // Linux, and the login waits for a page that never opened.
+  "DISPLAY",
+  "WAYLAND_DISPLAY",
+  "XAUTHORITY",
+  "XDG_RUNTIME_DIR",
+  "XDG_CURRENT_DESKTOP",
+  "XDG_SESSION_TYPE",
+  "XDG_DATA_DIRS",
+  "XDG_DATA_HOME",
+  "XDG_CONFIG_DIRS",
+  "XDG_CONFIG_HOME",
+  "DESKTOP_SESSION",
+  "DBUS_SESSION_BUS_ADDRESS",
+  "BROWSER",
 ]);
 
 // How long a call of a browser tool may take, waiting for approval

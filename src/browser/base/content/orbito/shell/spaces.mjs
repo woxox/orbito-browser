@@ -174,7 +174,34 @@ export class Spaces {
       },
       { once: true }
     );
+    this.#keepWindowWithHiddenTabs();
     this.#showCurrent();
+  }
+
+  /**
+   * Firefox closes the window with its last visible tab, hidden tabs aside
+   * (Tabbrowser's #isLastTabInWindow): closing a Space's last tab would
+   * close the other Spaces' tabs with it. While another Space has a tab,
+   * Firefox leaves a new tab in the window instead, which goes in the
+   * Space shown.
+   */
+  #keepWindowWithHiddenTabs() {
+    let removeTab = gBrowser.removeTab;
+    gBrowser.removeTab = (tab, options = {}) => {
+      let elsewhere =
+        options.closeWindowWithLastTab == null &&
+        gBrowser.tabs.some(
+          other =>
+            other != tab &&
+            !other.closing &&
+            !other.pinned &&
+            this.spaceOf(other) != this.current
+        );
+      if (elsewhere) {
+        options = { ...options, closeWindowWithLastTab: false };
+      }
+      return removeTab.call(gBrowser, tab, options);
+    };
   }
 
   /** The Space this window shows: {id, name}. */

@@ -711,6 +711,37 @@ for backend in ("openai", "chatgpt"):
     js_test(f"{backend}_runs_reads_at_once_and_the_rest_in_order", runs_reads_at_once(backend))
 
 
+def answers_by_key(allow):
+    key = (
+        '{ key: "Enter", [win.AppConstants.platform == "macosx" ? "metaKey" : "ctrlKey"]: true }'
+        if allow
+        else '{ key: "Escape" }'
+    )
+    return f"""
+    let url = `${{MOCK}}/page/${{encodeURIComponent("Keyed {allow}")}}`;
+    use("claude", "mock-call:open_tab:" + JSON.stringify({{ url }}));
+    await openPage("Key opener {allow}");
+    let tabs = win.gBrowser.tabs.length;
+    let panel = win.OrbitoAssistant.panel;
+    let id = askPanel("Open the page");
+    let button = await wait(() => panelButton("Allow"), "the approval");
+    check(button.getAttribute("aria-keyshortcuts") == (win.AppConstants.platform == "macosx" ? "Meta+Enter" : "Control+Enter"), button.outerHTML);
+    check(button.title.includes(win.AppConstants.platform == "macosx" ? "⌘↵" : "Ctrl+Enter"), button.title);
+    let key = new win.KeyboardEvent("keydown", {{ ...{key}, bubbles: true, cancelable: true, composed: true }});
+    panel.input.dispatchEvent(key);
+    check(key.defaultPrevented, "the key was not taken");
+    let messages = await finished(id);
+    let approval = partsOf(messages, "approval")[0];
+    check(approval?.result === {"true" if allow else "false"}, JSON.stringify(approval));
+    check(win.gBrowser.tabs.length == tabs + {1 if allow else 0}, "tabs: " + win.gBrowser.tabs.length);
+    check(!panelButton("Allow"), "the approval is still shown");
+    """
+
+
+js_test("the_accel_enter_key_allows_from_the_input", answers_by_key(True))
+js_test("escape_denies_from_the_input", answers_by_key(False))
+
+
 @test
 def stopping_cancels_the_approval(b):
     b.js("""

@@ -38,6 +38,8 @@ orbito-assistant-open-settings-page = 설정 페이지 열기
 orbito-assistant-approval-needed = 승인 요청
 orbito-assistant-allow = 허용
 orbito-assistant-deny = 거절
+# An approval answer's tooltip: its label and the key that answers it.
+orbito-assistant-answer-title = { $label } ({ $shortcut })
 orbito-assistant-approval = 승인
 orbito-assistant-approval-allowed = 승인해서 실행했어요
 orbito-assistant-approval-denied = 거절해서 작업을 멈췄어요
@@ -150,6 +152,7 @@ orbito-assistant-chip-dismiss = 닫기
 # $label is the suggestion's label.
 orbito-assistant-chip-dismiss-label = { $label } 닫기
 orbito-assistant-skills = 스킬
+orbito-assistant-command-new-thread = 새 Thread 시작
 orbito-assistant-input-placeholder = 이 페이지에 대해 묻기
 orbito-assistant-input = Assistant에게 질문
 # $effort is the thinking depth, e.g. "Medium".

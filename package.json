@@ -16,6 +16,7 @@
     "build:remote": "scripts/remote/build.sh",
     "build:artifact": "python3 scripts/agent-runtime.py && python3 scripts/recall-model.py && ORBITO_ARTIFACT_BUILD=1 MOZ_ARTIFACT_FILE=\"$PWD/dist/remote/aarch64/target.dmg:$PWD/dist/remote/aarch64/target.update_framework_artifacts.zip:$PWD/dist/remote/aarch64/target.xpt_artifacts.zip\" surfer build",
     "build:artifact:win": "python3 scripts/agent-runtime.py && python3 scripts/recall-model.py && SURFER_MOZCONFIG_ONLY=1 surfer build && cd engine && ORBITO_ARTIFACT_BUILD=1 MOZ_ARTIFACT_FILE=\"$(pwd -W)/../dist/remote/windows-x86_64/target.zip;$(pwd -W)/../dist/remote/windows-x86_64/target.xpt_artifacts.zip\" python3 ./mach build",
+    "build:artifact:linux": "python3 scripts/agent-runtime.py && python3 scripts/recall-model.py && ORBITO_ARTIFACT_BUILD=1 MOZ_ARTIFACT_FILE=\"$PWD/dist/remote/linux-x86_64/target.tar.xz:$PWD/dist/remote/linux-x86_64/target.xpt_artifacts.zip\" surfer build",
     "start:artifact": "cd engine && ORBITO_ARTIFACT_BUILD=1 python3 ./mach run --noprofile",
     "start": "cd engine && python3 ./mach run --noprofile",
     "export": "surfer export",

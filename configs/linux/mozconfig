@@ -1,1 +1,16 @@
 ac_add_options --enable-eme=widevine
+
+# Remote Linux builds (scripts/remote/build.sh) skip debug symbols: with them the
+# objdir outgrows the build server's disk.
+if test "$ORBITO_NO_DEBUG_SYMBOLS"; then
+  ac_add_options --disable-debug-symbols
+fi
+
+# Use builds produced by the remote server instead of compiling C++/Rust locally.
+# MOZ_ARTIFACT_FILE (or MOZ_ARTIFACT_URL) must point at the server's target.tar.xz.
+if test "$ORBITO_ARTIFACT_BUILD"; then
+  ac_add_options --enable-artifact-builds
+  # Test binaries aren't part of the server's tarball.
+  ac_add_options --disable-tests
+  mk_add_options MOZ_OBJDIR=./obj-artifact
+fi

@@ -9,12 +9,17 @@ import {
 } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import {
+  entryIcon,
   isMenuKey,
   tabIcon,
 } from "chrome://browser/content/orbito/shell/orbito-pins.mjs";
 import { ListMotion } from "chrome://browser/content/orbito/shell/motion.mjs";
 import { isDockFolder } from "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs";
-import { TearOff } from "chrome://browser/content/orbito/shell/tear-off.mjs";
+import {
+  pressWithoutFocus,
+  SidebarDrag,
+  TearOff,
+} from "chrome://browser/content/orbito/shell/tear-off.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -39,8 +44,6 @@ const TAB_EVENTS = [
 // the Space shown changed.
 const WINDOW_EVENTS = ["OrbitoDocksChange", "OrbitoSpacesChange"];
 
-// How far a press moves before it becomes a drag.
-const DRAG_THRESHOLD = 4;
 // How long a dragged Dock tab is held over another before a drop puts the
 // two in a folder, and how far from a row's top and bottom the pointer must
 // be for that, as the tab list's (orbito-tab-list.mjs).
@@ -58,7 +61,8 @@ const PREVIEW = Symbol("preview");
  * page if it rests (closed back to where it was docked, or not selected
  * yet; those rows are dimmed). Closing one (its × button) keeps its row:
  * the tab goes back to the docked page, unloaded. A row at rest has a −
- * button instead, which takes it out of the Dock.
+ * button instead, which takes it out of the Dock. A row whose tab has gone
+ * from the entry's URL has its icon as a button back there (entryIcon).
  *
  * A folder is a box as the tab list's gray tab groups are (group.css),
  * holding its header and its tabs' rows. Its header opens and closes it
@@ -70,8 +74,10 @@ const PREVIEW = Symbol("preview");
  *
  * A tab dragged from the tab list onto the Dock is docked there; dragging a
  * row moves it in the Dock, dropping a tab's row on the tab list undocks
- * it, and letting it go outside the window moves the tab into the Orbito
- * window there or opens it in a new one (shell/tear-off.mjs). A Dock tab held over another Dock tab's row for a
+ * it, dropping it on another Orbito window moves the tab there, and letting
+ * it go where no window takes it opens it in a new one (shell/tear-off.mjs,
+ * with the platform's drag and drop, which draws the row under the
+ * pointer). A Dock tab held over another Dock tab's row for a
  * moment puts the two in a new folder there ("New folder N"), which pops in, or
  * the dragged one in the other's folder. A tab dropped on the middle of a
  * folder's header goes in the folder, at its end; between the rows of an open folder's tabs, in the
@@ -79,7 +85,8 @@ const PREVIEW = Symbol("preview");
  * Dock only. Where a drop would land, a see-through copy of the dragged
  * row takes the place (the folder is marked when it would go in a
  * closed one, its box when it would go in it). The context menu (the menu key or Shift+F10 too) docks and
- * undocks, and puts a tab in a folder or takes it out, as well.
+ * undocks, puts a tab in a folder or takes it out, and takes a tab back to
+ * its entry's URL or makes the page it shows the entry's, as well.
  *
  * The Dock is one tab stop: Up and Down move between rows, Home and End to
  * the first and last, Enter or Space select a tab or open or close a
@@ -111,10 +118,8 @@ export class OrbitoDock extends MozLitElement {
   // The row the keyboard is on, by its tab or its folder's id; the
   // selected tab's when unset.
   #focusedItem = null;
-  // A press on a row that may become a drag, then the drag: the tab or
-  // folder id, and where it would land (a spot in the Dock, or the tab
-  // list).
-  #press = null;
+  // The drag of a row: the tab or folder id, where it would land (a spot
+  // in the Dock, or the tab list), and its SidebarDrag.
   #drag = null;
   // Where the rows were as the Dock last showed without the copy of a
   // dragged row: {box, rows: [{item, id, in, folder, rect}]}. Drops are
@@ -212,23 +217,6 @@ export class OrbitoDock extends MozLitElement {
 
   handleEvent(event) {
     switch (event.type) {
-      case "pointermove":
-        this.#onPointerMove(event);
-        break;
-      case "pointerup":
-        this.#onPointerUp(event);
-        break;
-      case "pointercancel":
-        this.#endDrag();
-        break;
-      case "keydown":
-        // Escape cancels a drag.
-        if (event.key == "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          this.#endDrag();
-        }
-        break;
       default:
         this.requestUpdate();
     }
@@ -481,59 +469,51 @@ export class OrbitoDock extends MozLitElement {
   }
 
   // Dragging a row: dropped in the Dock it moves there, a tab's dropped on
-  // the tab list is undocked, and outside the window it moves into another
-  // or opens in a new one (shell/tear-off.mjs), where the Dock is in the same
-  // place; not a folder.
+  // the tab list is undocked, on another window it moves there, and where
+  // no window takes it it opens in a new one (shell/tear-off.mjs); not a
+  // folder, which stays in the window.
 
-  #onPointerDown(event, item) {
+  #onDragStart(event, item) {
     // A private window changes no Dock.
-    if (
-      event.button != 0 ||
-      event.target.closest(".close, .rename") ||
-      this.#press ||
-      !this.docks.canAdd
-    ) {
+    if (this.#drag || !this.docks.canAdd) {
+      event.preventDefault();
       return;
     }
-    this.#press = {
+    this.#drag = {
       item,
-      row: event.currentTarget,
-      x: event.clientX,
-      y: event.clientY,
+      spot: null,
+      undock: false,
+      // {tab, armed, timer}: the Dock tab it is held over.
+      hold: null,
     };
-    window.addEventListener("pointermove", this, true);
-    window.addEventListener("pointerup", this, true);
-    window.addEventListener("pointercancel", this, true);
-    window.addEventListener("keydown", this, true);
+    this.#drag.native = new SidebarDrag(event, {
+      item,
+      tearOff:
+        typeof item == "string"
+          ? null
+          : new TearOff(item, { x: event.clientX, y: event.clientY }),
+      onOver: over => this.#onDragOver(over),
+      onDrop: () => this.#onDrop(),
+      onEnd: () => this.#endDrag(),
+    });
+    this.toggleAttribute("dragging", true);
+    this.requestUpdate();
   }
 
   get #tabList() {
     return window.OrbitoShell.sidebar.tabList;
   }
 
-  #onPointerMove(event) {
+  // A dragover in the window, or null once the drag has left it.
+  #onDragOver(event) {
     if (!this.#drag) {
-      let { x, y } = this.#press;
-      if (Math.hypot(event.clientX - x, event.clientY - y) < DRAG_THRESHOLD) {
-        return;
-      }
-      let { item, row } = this.#press;
-      this.#drag = {
-        item,
-        spot: null,
-        undock: false,
-        // {tab, armed, timer}: the Dock tab it is held over.
-        hold: null,
-        tearOff:
-          typeof item == "string" ? null : new TearOff(item, { row, x, y }),
-      };
-      this.toggleAttribute("dragging", true);
+      return;
     }
-    let { clientX: x, clientY: y } = event;
+    let x = event?.clientX;
+    let y = event?.clientY;
     let { item } = this.#drag;
-    // Out of the window, a drop would take the tab out: nothing in it shows
-    // where it would land.
-    let out = !!this.#drag.tearOff?.update(event);
+    // Out of the window, nothing in it shows where it would land.
+    let out = !event;
     let spot = out ? null : this.dropSpotAt(x, y, item);
     this.#holdOver(out ? null : this.#holdTargetAt(x, y));
     let list = this.#tabList.getBoundingClientRect();
@@ -617,18 +597,11 @@ export class OrbitoDock extends MozLitElement {
     }
   }
 
-  #onPointerUp(event) {
+  // A drop in the window.
+  #onDrop() {
     let drag = this.#drag;
     this.#endDrag();
     if (!drag) {
-      return;
-    }
-    // The press ended a drag, not a click on the row.
-    let swallow = e => e.stopPropagation();
-    window.addEventListener("click", swallow, { capture: true, once: true });
-    setTimeout(() => window.removeEventListener("click", swallow, true), 0);
-    event.preventDefault();
-    if (drag.tearOff?.drop(event)) {
       return;
     }
     let { item, spot, undock } = drag;
@@ -658,17 +631,13 @@ export class OrbitoDock extends MozLitElement {
   }
 
   #endDrag() {
-    clearTimeout(this.#drag?.hold?.timer);
-    this.#drag?.tearOff?.end();
-    this.#press = null;
+    let drag = this.#drag;
     this.#drag = null;
+    drag?.native.end();
+    clearTimeout(drag?.hold?.timer);
     this.removeAttribute("dragging");
     this.#tabList?.removeAttribute("undock-drop");
     this.#tabList?.landOutside(null, null);
-    window.removeEventListener("pointermove", this, true);
-    window.removeEventListener("pointerup", this, true);
-    window.removeEventListener("pointercancel", this, true);
-    window.removeEventListener("keydown", this, true);
     this.requestUpdate();
   }
 
@@ -698,13 +667,9 @@ export class OrbitoDock extends MozLitElement {
       .item=${tab}
       .tab=${tab}
       .in=${folder}
-      @mousedown=${event => {
-        // As the tab list's rows, a click selects without taking focus.
-        if (event.button == 0) {
-          event.preventDefault();
-        }
-      }}
-      @pointerdown=${event => this.#onPointerDown(event, tab)}
+      draggable="true"
+      @mousedown=${pressWithoutFocus}
+      @dragstart=${event => this.#onDragStart(event, tab)}
       @click=${() => this.#select(tab)}
       @auxclick=${event => {
         if (event.button == 1) {
@@ -717,7 +682,7 @@ export class OrbitoDock extends MozLitElement {
       }}
       @focus=${() => (this.#focusedItem = tab)}
     >
-      ${tabIcon(tab)}
+      ${entryIcon(tab, this.docks)}
       <span class="label">${name}</span>
       ${resting
         ? html`<button
@@ -771,12 +736,13 @@ export class OrbitoDock extends MozLitElement {
     >
       <div
         class="group-head"
+        draggable=${renaming ? "false" : "true"}
         @mousedown=${event => {
-          if (event.button == 0 && !event.target.closest(".rename")) {
-            event.preventDefault();
+          if (!event.target.closest(".rename")) {
+            pressWithoutFocus(event);
           }
         }}
-        @pointerdown=${event => this.#onPointerDown(event, folder.id)}
+        @dragstart=${event => this.#onDragStart(event, folder.id)}
         @click=${event => {
           if (!inField(event)) {
             this.docks.setOpen(folder.id);

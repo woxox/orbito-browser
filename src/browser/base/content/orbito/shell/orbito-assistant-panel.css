@@ -115,13 +115,17 @@ svg {
   height: 28px;
   border-radius: 8px;
 
-  &:hover,
+  &:hover:not(:disabled),
   &[aria-expanded="true"] {
     background-color: var(--orbito-surface-hover);
   }
 
-  &:hover:active {
+  &:hover:active:not(:disabled) {
     background-color: var(--orbito-surface-active);
+  }
+
+  &:disabled {
+    opacity: 0.4;
   }
 }
 
@@ -1017,8 +1021,9 @@ details.thought {
   }
 }
 
-/* The code the step runs, all of it: it scrolls rather than hides any. */
-.approval-code {
+/* The code the step runs, all of it: it scrolls rather than hides any.
+ * Under .approval so it outranks the reply's `.message pre` margin. */
+.approval .approval-code {
   max-height: 240px;
   margin: 8px 0 2px 17px;
   padding: 8px 10px;

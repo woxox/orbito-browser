@@ -26,7 +26,9 @@
  * so the page goes back to where it was docked and takes no memory until it
  * is selected again. Moving a Dock tab to another window leaves the same in
  * its place; there it is that window's tab for the entry, and the one there
- * before it goes.
+ * before it goes. A Dock tab gone to another page goes back to the entry's
+ * URL (its row's icon, or its menu), or makes the page the entry's, which
+ * keeps its place and folder (its menu).
  *
  * A Dock can hold folders of entries (shell/OrbitoDocks.sys.mjs), made from
  * a Dock tab's menu ("Move to new folder") or by holding a dragged Dock tab
@@ -57,6 +59,7 @@ import {
   renameDockFolder,
   sameDock,
   ungroupDockFolder,
+  updateDock,
   withDockList,
 } from "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs";
 import {
@@ -129,6 +132,7 @@ export class Docks extends ListTabs {
     super.init();
     window.addEventListener("OrbitoSpacesChange", this);
     window.addEventListener("load", () => this.#readClosed(), { once: true });
+    window.addEventListener("load", () => this.#skipResting(), { once: true });
     this.pins.addMenuItem({
       id: "orbito-tab-menu-dock",
       label: t("orbito-dock-add"),
@@ -142,6 +146,9 @@ export class Docks extends ListTabs {
       run: tab =>
         this.isResting(tab) ? this.removeResting(tab) : this.undockTab(tab),
     });
+    for (let item of this.entryMenuItems("orbito-tab-menu-dock-entry")) {
+      this.pins.addMenuItem(item);
+    }
     this.pins.addMenuItem({
       id: "orbito-tab-menu-dock-new-folder",
       label: t("orbito-dock-folder-new-with-tab"),
@@ -228,12 +235,90 @@ export class Docks extends ListTabs {
     return this.dockOf(tab);
   }
 
+  withEntry(id, page) {
+    return updateDock(this.lists, id, page);
+  }
+
   /**
    * Whether a tab is a Dock tab at rest: closed back to its entry's URL, or
    * not selected since the window made it, so its page is not loaded.
    */
   isResting(tab) {
     return (this.#asleep.has(tab) || !isLoaded(tab)) && !!this.dockOf(tab);
+  }
+
+  /**
+   * Dock tabs at rest are left out of what picks a tab for the user: the
+   * tab Firefox selects when the selected one closes, Ctrl+Tab and
+   * Ctrl+PageDown/PageUp (each visible tab in turn), and Ctrl+Tab's list of
+   * recently used tabs. Being there, they would load one after another as
+   * each closes, or be stepped through, though the user never opened them.
+   * A Dock tab closing goes back to the tab used last (the Dock's tabs sit
+   * above the list, so the one beside it means nothing); another closing
+   * keeps Firefox's rules. Only when nothing else is left does a Dock tab
+   * at rest come in, for the Spaces to open a new tab in its place
+   * (shell/spaces.mjs).
+   */
+  #skipResting() {
+    let resting = tab => !tab.selected && this.isResting(tab);
+    let findTabToBlurTo = gBrowser._findTabToBlurTo;
+    gBrowser._findTabToBlurTo = (tab, exclude = []) => {
+      if (!tab.selected) {
+        return null;
+      }
+      let skip = [
+        ...exclude,
+        ...gBrowser.visibleTabs.filter(other => other != tab && resting(other)),
+      ];
+      if (this.dockOf(tab)) {
+        let last = gBrowser.visibleTabs
+          .filter(
+            other => other != tab && !other.closing && !skip.includes(other)
+          )
+          .reduce(
+            (best, other) =>
+              !best || other.lastAccessed > best.lastAccessed ? other : best,
+            null
+          );
+        if (last) {
+          return last;
+        }
+      }
+      return (
+        findTabToBlurTo.call(gBrowser, tab, skip) ??
+        findTabToBlurTo.call(gBrowser, tab, [...exclude])
+      );
+    };
+
+    let tabs = gBrowser.tabContainer;
+    let advanceSelectedTab = tabs.advanceSelectedTab;
+    tabs.advanceSelectedTab = function (...args) {
+      let findNextTab = this.findNextTab;
+      let own = Object.hasOwn(this, "findNextTab");
+      this.findNextTab = (start, opts = {}) =>
+        findNextTab.call(this, start, {
+          ...opts,
+          filter: tab => !resting(tab) && (opts.filter?.(tab) ?? true),
+        });
+      try {
+        return advanceSelectedTab.apply(this, args);
+      } finally {
+        if (own) {
+          this.findNextTab = findNextTab;
+        } else {
+          delete this.findNextTab;
+        }
+      }
+    };
+
+    if (window.ctrlTab) {
+      Object.defineProperty(window.ctrlTab, "tabList", {
+        configurable: true,
+        get() {
+          return this._recentlyUsedTabs?.filter(tab => !resting(tab));
+        },
+      });
+    }
   }
 
   /** A Space's Dock tabs (the one shown by default), in the Dock's order. */

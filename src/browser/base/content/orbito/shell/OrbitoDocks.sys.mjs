@@ -9,7 +9,9 @@
  * a folder {id, title, children: [entry]}, which holds entries only (no
  * folder in a folder), in order. An entry's URL is the one it was docked
  * with: the tab goes back to it when closed, whatever page it went to
- * since. An item's id is unique across every Space, folders' and entries'
+ * since, until the user replaces it with the page the tab shows
+ * (updateDock), the entry keeping its id and place. An item's id is unique
+ * across every Space, folders' and entries'
  * alike. These functions take the lists and give new ones; they never
  * change what they get. Which Dock entry a tab stands for is kept by the
  * Shell (shell/docks.mjs).
@@ -22,7 +24,7 @@
  *   OrbitoShellStore.set(DOCKS_KEY, docks);
  */
 
-import { checkPins, orderPins } from "./OrbitoPins.sys.mjs";
+import { checkPins, orderPins, updatePin } from "./OrbitoPins.sys.mjs";
 
 /** The OrbitoShellStore key of the Dock lists. */
 export const DOCKS_KEY = "docks";
@@ -208,6 +210,29 @@ export function moveDock(
   return found
     ? addDock(docks, space ?? found.space, found.entry, { folder, index })
     : docks;
+}
+
+/**
+ * The lists with an entry's page ({url, title, icon}) replaced, wherever it
+ * is, the entry keeping its id and place.
+ */
+export function updateDock(docks, id, page) {
+  let found = findDock(docks, id);
+  if (!found || isDockFolder(found.entry)) {
+    return docks;
+  }
+  let list = docks[found.space];
+  return withDockList(
+    docks,
+    found.space,
+    found.folder
+      ? list.map(item =>
+          item.id == found.folder
+            ? { ...item, children: updatePin(item.children, id, page) }
+            : item
+        )
+      : updatePin(list, id, page)
+  );
 }
 
 /** The lists with a folder named anew (a blank title keeps the old one). */

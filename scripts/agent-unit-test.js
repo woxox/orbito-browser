@@ -40,7 +40,7 @@ await (async () => {
   const { memoryPrompt, RECALL_LINE } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/OrbitoMemoryPrompt.sys.mjs"
   );
-  const { checkSkillName, matchSkill, parseSkill, skillBlock, skillDraft, skillFile } = ChromeUtils.importESModule(
+  const { checkSkillName, matchSkill, NEW_THREAD_COMMANDS, parseSkill, skillBlock, skillDraft, skillFile } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/OrbitoSkills.sys.mjs"
   );
   const { suggestions } = ChromeUtils.importESModule(
@@ -58,10 +58,10 @@ await (async () => {
   const { checkDomain, dot, excerpt, fuse, pageChunks, quantize, excludedDomains, isExcludedHost, pageHash, pageKey, pageRank, pageTerms, normalized, pageScore, recallableURL, retentionCutoff, searchWords } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs"
   );
-  const { addPin, checkPins, movePin, orderPins, removePin, sameOrder } = ChromeUtils.importESModule(
+  const { addPin, checkPins, movePin, orderPins, removePin, sameOrder, updatePin } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/shell/OrbitoPins.sys.mjs"
   );
-  const { addDock, checkDocks, dockEntries, dockFolder, dockList, findDock, isDockFolder, keepSpaces, moveDock, moveDocks, orderDock, removeDock, renameDockFolder, sameDock, ungroupDockFolder, withDockList } = ChromeUtils.importESModule(
+  const { addDock, checkDocks, dockEntries, dockFolder, dockList, findDock, isDockFolder, keepSpaces, moveDock, moveDocks, orderDock, removeDock, renameDockFolder, sameDock, ungroupDockFolder, updateDock, withDockList } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs"
   );
   const { addSpace, checkSpaces, defaultSpaceName, MAX_SPACES, removedSpaces, removeSpace, renameSpace, resolveSpace, spaceAt, stepSpace, switchDirection } = ChromeUtils.importESModule(
@@ -924,6 +924,14 @@ import pdfplumber
     }
   });
 
+  test("checkSkillName leaves /new and /clear to the commands", () => {
+    assertEquals(NEW_THREAD_COMMANDS, ["new", "clear"]);
+    for (let name of NEW_THREAD_COMMANDS) {
+      assertThrows(() => checkSkillName(name), "start a new Thread");
+    }
+    checkSkillName("news");
+  });
+
   test("skillFile writes a SKILL.md that reads back the same", () => {
     let skill = {
       name: "회의록 정리",
@@ -1284,6 +1292,16 @@ import pdfplumber
     assertEquals(ids(PINS), "a,b,c");
   });
 
+  test("updatePin replaces a Pin's page, keeping its id and place", () => {
+    let page = { url: "https://new.test/", title: "New", icon: "" };
+    let next = updatePin(PINS, "b", page);
+    assertEquals(next[1], { id: "b", ...page });
+    assertEquals(ids(next), "a,b,c");
+    assertEquals(next[0], PINS[0]);
+    assertEquals(PINS[1].url, "https://b.test/");
+    assertEquals(updatePin(PINS, "zz", page), PINS);
+  });
+
   test("orderPins follows a window's tabs and sameOrder compares", () => {
     assertEquals(ids(orderPins(PINS, ["c", "a", "b"])), "c,a,b");
     // Ids of no Pin are left out; Pins missing from the ids keep their order
@@ -1410,6 +1428,23 @@ import pdfplumber
     assertEquals(renameDockFolder(docks, "a", "X"), docks);
     assertEquals(shape(ungroupDockFolder(docks, "f").s1), "a b c");
     assertEquals(ungroupDockFolder(docks, "a"), docks);
+  });
+
+  test("updateDock replaces an entry's page at the top or in a folder, nothing else", () => {
+    let docks = { s1: [PINS[0], folderOf("f", [PINS[1]])], s2: [PINS[2]] };
+    let page = { url: "https://new.test/", title: "New", icon: "" };
+    let top = updateDock(docks, "a", page);
+    assertEquals(top.s1[0], { id: "a", ...page });
+    assertEquals(shape(top.s1), "a f(b)");
+    assertEquals(top.s2, docks.s2);
+    let inFolder = updateDock(docks, "b", page);
+    assertEquals(inFolder.s1[1], folderOf("f", [{ id: "b", ...page }]));
+    assertEquals(inFolder.s1[0], PINS[0]);
+    assertEquals(updateDock(docks, "c", page).s2, [{ id: "c", ...page }]);
+    // A folder has no page; an id of nothing changes nothing.
+    assertEquals(updateDock(docks, "f", page), docks);
+    assertEquals(updateDock(docks, "zz", page), docks);
+    assertEquals(docks.s1[1].children[0].url, "https://b.test/");
   });
 
   test("orderDock follows a window's tabs as far as folders allow, sameDock compares", () => {

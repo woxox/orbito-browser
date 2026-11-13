@@ -20,6 +20,12 @@
  * An entry's tab moved to another window takes its id along (SessionStore
  * moves a tab's values with it): there it is the entry's tab, in place of
  * the one the window had, and here an unloaded tab takes its place.
+ *
+ * An entry keeps the URL it was added with. Its tab, gone elsewhere
+ * (isAway()), can go back to it (resetTab()) or make the page it shows the
+ * entry's (replaceEntry()), the entry keeping its id and place; the tab
+ * menu has both (entryMenuItems()), the Pin grid and the Dock a button in
+ * the tab's icon for the first.
  */
 
 import { RestoreWatch } from "chrome://browser/content/orbito/shell/spaces.mjs";
@@ -31,6 +37,9 @@ const { OrbitoShellStore, STORE_CHANGED } = ChromeUtils.importESModule(
 );
 const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
+);
+const { t } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
 );
 
 /** Icons a tab can be given back without a page to load them (setIcon). */
@@ -64,13 +73,38 @@ export class ListTabs {
    * not, as the entry's own tab would there.
    */
   #dropped = new Set();
+  /**
+   * Ids of entries whose URL was replaced, here or elsewhere: their tabs
+   * at rest still stand at the old one.
+   */
+  #replaced = new Set();
+
+  /**
+   * An entry's tab going to another page may go away from its entry's URL,
+   * or back to it, with no change of title (pushState) to show it: the
+   * views hear of it as of a change of the list.
+   */
+  #progress = {
+    onLocationChange: (browser, webProgress) => {
+      let tab = webProgress.isTopLevel && gBrowser.getTabForBrowser(browser);
+      if (tab && this.entryOf(tab)) {
+        window.dispatchEvent(new CustomEvent(this.changeEvent));
+      }
+    },
+  };
 
   // Held weakly by the observer service, so a closed window does not leak.
   #observer = {
     observe: (subject, topic, key) => {
       if (key == this.key) {
         let before = this.ids();
+        let urls = this.#urls();
         this.take(OrbitoShellStore.get(this.key));
+        for (let [id, url] of this.#urls()) {
+          if (urls.has(id) && urls.get(id) != url) {
+            this.#replaced.add(id);
+          }
+        }
         if (subject?.wrappedJSObject?.remote) {
           let after = new Set(this.ids());
           before
@@ -111,9 +145,13 @@ export class ListTabs {
     for (let type of WINDOW_EVENTS) {
       window.addEventListener(type, this);
     }
+    gBrowser.addTabsProgressListener(this.#progress);
     window.addEventListener(
       "unload",
-      () => Services.obs.removeObserver(this.#observer, STORE_CHANGED),
+      () => {
+        Services.obs.removeObserver(this.#observer, STORE_CHANGED);
+        gBrowser.removeTabsProgressListener(this.#progress);
+      },
       { once: true }
     );
     // Session Restore takes the window on at load (gBrowserInit.onLoad);
@@ -186,21 +224,36 @@ export class ListTabs {
     }
     this.quietly(() => {
       let wanted = this.wanted();
-      let ids = new Set(wanted.map(({ entry }) => entry.id));
+      let urls = this.#urls(wanted);
       let tabs = new Map();
       for (let tab of gBrowser.tabs) {
         let id = this.idOf(tab);
         if (!id || tab.closing) {
           continue;
         }
-        if (!this.isEligible(tab) && ids.has(id)) {
+        if (!this.isEligible(tab) && urls.has(id)) {
           this.claim(tab);
         }
         if (!this.isEligible(tab)) {
           continue;
         }
-        if (!ids.has(id)) {
+        if (!urls.has(id)) {
           this.letGo(tab);
+          continue;
+        }
+        // At rest at its entry's old URL, it has nothing to keep: a new
+        // tab at the new one takes its place.
+        if (
+          this.#replaced.has(id) &&
+          !isLoaded(tab) &&
+          !tab.selected &&
+          tab.linkedBrowser.currentURI.spec != urls.get(id)
+        ) {
+          gBrowser.removeTab(tab, {
+            animate: false,
+            skipPermitUnload: true,
+            skipSessionStore: true,
+          });
           continue;
         }
         let other = tabs.get(id);
@@ -214,6 +267,7 @@ export class ListTabs {
         }
       }
       this.#dropped.clear();
+      this.#replaced.clear();
       wanted.forEach((item, index) => {
         let tab = tabs.get(item.entry.id) ?? this.openTab(item.entry);
         this.placeTab(tab, index, item);
@@ -235,6 +289,11 @@ export class ListTabs {
   /** Stores the list; every window, this one too, follows from the store. */
   save(value) {
     OrbitoShellStore.set(this.key, value);
+  }
+
+  /** The URLs of the entries that want a tab, by id. */
+  #urls(wanted = this.wanted()) {
+    return new Map(wanted.map(({ entry }) => [entry.id, entry.url]));
   }
 
   /** How much a tab is in use: selected, loaded, or not. */
@@ -266,6 +325,63 @@ export class ListTabs {
     }
     SessionStore.setCustomTabValue(tab, this.value, entry.id);
     return tab;
+  }
+
+  /**
+   * Whether an entry's tab shows another page than the entry's URL. Not
+   * while its page is yet to load, nor on the blank page a tab has before
+   * its first one comes.
+   */
+  isAway(tab) {
+    let entry = this.entryOf(tab);
+    if (!entry || !isLoaded(tab)) {
+      return false;
+    }
+    let url = tab.linkedBrowser.currentURI.spec;
+    return url != entry.url && url != "about:blank";
+  }
+
+  /** Selects an entry's tab gone elsewhere and loads the entry's URL in it. */
+  resetTab(tab) {
+    if (!this.isAway(tab)) {
+      return;
+    }
+    gBrowser.selectedTab = tab;
+    tab.linkedBrowser.fixupAndLoadURIString(this.entryOf(tab).url, {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+  }
+
+  /**
+   * Makes the page an entry's tab gone elsewhere shows the entry's, in
+   * every window; the entry keeps its id and place. Not in a private
+   * window.
+   */
+  replaceEntry(tab) {
+    if (this.canAdd && this.isAway(tab)) {
+      this.save(this.withEntry(this.entryOf(tab).id, this.entryFrom(tab)));
+    }
+  }
+
+  /**
+   * The tab menu's items for an entry's tab gone elsewhere (resetTab(),
+   * replaceEntry()), their ids starting with prefix.
+   */
+  entryMenuItems(prefix) {
+    return [
+      {
+        id: `${prefix}-reset`,
+        label: t("orbito-saved-page-reset"),
+        shows: tab => this.isAway(tab),
+        run: tab => this.resetTab(tab),
+      },
+      {
+        id: `${prefix}-replace`,
+        label: t("orbito-saved-page-replace"),
+        shows: tab => this.canAdd && this.isAway(tab),
+        run: tab => this.replaceEntry(tab),
+      },
+    ];
   }
 
   /**
@@ -360,6 +476,14 @@ export class ListTabs {
 
   /** The listed entry a tab is the tab of, or null. */
   entryOf() {
+    throw new Error("Not implemented");
+  }
+
+  /**
+   * The list as stored with an entry's page ({url, title, icon}) replaced,
+   * the entry keeping its id and place.
+   */
+  withEntry() {
     throw new Error("Not implemented");
   }
 

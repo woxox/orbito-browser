@@ -2,93 +2,271 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html, render } from "chrome://global/content/vendor/lit.all.mjs";
-import { tabIcon } from "chrome://browser/content/orbito/shell/orbito-pins.mjs";
-
-const { t } = ChromeUtils.importESModule(
-  "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
-);
-const { BrowserWindowTracker } = ChromeUtils.importESModule(
-  "resource:///modules/BrowserWindowTracker.sys.mjs"
-);
 const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
 );
 
-/** The chip's panel: one per window, made on first use. */
-const PANEL_ID = "orbito-tear-off";
 /**
- * The see-through room around the chip in its panel, for its shadow (CSS
- * px; orbito.css pads the panel by it).
+ * The drag data type of a Sidebar row dragged with the platform's drag and
+ * drop. Its data, set with mozSetDataAt, is the SidebarDrag itself, which
+ * other windows of the process can read while the drag is over them.
  */
-const ROOM = 32;
+export const DRAG_TYPE = "application/x-orbito-sidebar-item";
 
-/**
- * Whether a pointer event in one window is in a window's visible frame. In
- * desktop pixels, which windows on screens of different scales share.
- */
-function isIn(w, { screenX, screenY }, from) {
-  let scale = from.devicePixelRatio / from.desktopToDeviceScale;
-  let theirs = w.devicePixelRatio / w.desktopToDeviceScale;
-  let x = screenX * scale - w.mozInnerScreenX * theirs;
-  let y = screenY * scale - w.mozInnerScreenY * theirs;
-  return (
-    x >= 0 && y >= 0 && x < w.innerWidth * theirs && y < w.innerHeight * theirs
-  );
+/** The SidebarDrag a drag event carries, if it is one. */
+export function sidebarDragOf(event) {
+  let dt = event.dataTransfer;
+  if (!dt?.types.includes(DRAG_TYPE)) {
+    return null;
+  }
+  try {
+    return dt.mozGetDataAt(DRAG_TYPE, 0);
+  } catch {
+    return null;
+  }
 }
 
 /**
- * A tab or a tab group dragged in the Sidebar, as far as leaving the window
- * goes. Let go outside the window's visible frame, it moves into the Orbito
- * window under the pointer, if there is one that can take it: at the end of
- * the Space shown there, selected. Else it opens in a new window, placed so
- * that its row is under the pointer there, as Firefox places a tab dragged
- * out of its tab strip (tabbrowser's drag-and-drop.js). The page area is in
- * the window: a drop there stays the Sidebar's to handle.
+ * What a draggable row does on mousedown in place of preventDefault(),
+ * which would keep the drag from starting: a click does not focus it, as
+ * Firefox's tabs do it.
+ */
+export function pressWithoutFocus(event) {
+  if (event.button != 0) {
+    return;
+  }
+  let row = event.currentTarget;
+  row.style.MozUserFocus = "ignore";
+  let reset = () => (row.style.MozUserFocus = "");
+  window.addEventListener("mouseup", reset, { capture: true, once: true });
+  row.addEventListener("dragend", reset, { once: true });
+}
+
+/**
+ * A row of the Sidebar (the tab list's, the Pin grid's or the Dock's)
+ * dragged with the platform's drag and drop, which the window under the
+ * pointer gets the events of, whichever window the drag started in: what
+ * lets a drag reach another window on Wayland too, where a window cannot
+ * know where the others are.
  *
- * While the pointer is out, a chip like the dragged row follows it where
- * the row was grabbed, with a hint under it saying which of the two a drop
- * does; it shows only when the item can leave, which it cannot when it
- * holds all the window's tabs.
+ * The platform draws the row under the pointer, from where it was grabbed.
+ * In its own window, a drop anywhere stays the window's: the row's list
+ * (through onOver and onDrop) places it as the pointer says. In another
+ * Orbito window, the window's ForeignDrop takes it (TearOff.moveInto). Let
+ * go where no window takes it, it opens in a new window (TearOff.detach).
+ */
+export class SidebarDrag {
+  #row;
+  #onOver;
+  #onDrop;
+  #onEnd;
+  #dropped = false;
+  #ended = false;
+
+  /**
+   * Starts the drag from its dragstart.
+   *
+   * @param {DragEvent} event The row's dragstart.
+   * @param {object} options
+   * @param {*} options.item What is dragged: a tab, a tab group, or a Dock
+   *   folder's id.
+   * @param {TearOff|null} options.tearOff How it leaves the window, or null
+   *   when it cannot.
+   * @param {Function} options.onOver Called with each dragover in this
+   *   window, and with null once the pointer has left it.
+   * @param {Function} options.onDrop Called with a drop in this window.
+   * @param {Function} options.onEnd Called once the drag is over, after
+   *   the drop.
+   */
+  constructor(event, { item, tearOff, onOver, onDrop, onEnd }) {
+    this.item = item;
+    this.tearOff = tearOff;
+    this.window = window;
+    this.#row = event.currentTarget;
+    this.#onOver = onOver;
+    this.#onDrop = onDrop;
+    this.#onEnd = onEnd;
+    let dt = event.dataTransfer;
+    dt.mozSetDataAt(DRAG_TYPE, this, 0);
+    dt.effectAllowed = "move";
+    let rect = this.#row.getBoundingClientRect();
+    dt.setDragImage(
+      this.#row,
+      event.clientX - rect.left,
+      event.clientY - rect.top
+    );
+    for (let type of ["dragover", "dragleave", "drop", "mousedown"]) {
+      window.addEventListener(type, this, true);
+    }
+    // Where the drag started, even once the row has left the document (a
+    // tab moved into another window).
+    this.#row.addEventListener("dragend", this);
+  }
+
+  handleEvent(event) {
+    switch (event.type) {
+      case "dragover":
+        if (sidebarDragOf(event) == this) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          this.#onOver(event);
+        }
+        break;
+      case "dragleave":
+        // Without a relatedTarget, the drag has left the window.
+        if (!event.relatedTarget && sidebarDragOf(event) == this) {
+          this.#onOver(null);
+        }
+        break;
+      case "drop":
+        if (sidebarDragOf(event) == this) {
+          event.preventDefault();
+          event.stopPropagation();
+          this.#dropped = true;
+          this.#onDrop(event);
+        }
+        break;
+      case "dragend": {
+        let dt = event.dataTransfer;
+        if (
+          !this.#dropped &&
+          !dt.mozUserCancelled &&
+          dt.dropEffect == "none"
+        ) {
+          this.tearOff?.detach(event);
+        }
+        this.end();
+        break;
+      }
+      case "mousedown":
+        // A press needs the button let go first, which cannot happen during
+        // a drag: the drag is over, whatever became of its dragend.
+        if (event.button == 0) {
+          this.end();
+        }
+        break;
+    }
+  }
+
+  /** Stops listening, and lets the row's list end its drag. */
+  end() {
+    if (this.#ended) {
+      return;
+    }
+    this.#ended = true;
+    for (let type of ["dragover", "dragleave", "drop", "mousedown"]) {
+      window.removeEventListener(type, this, true);
+    }
+    this.#row.removeEventListener("dragend", this);
+    this.#onEnd();
+  }
+}
+
+/**
+ * Takes a Sidebar row dragged from another Orbito window (SidebarDrag):
+ * a drop anywhere in this window moves it here (TearOff.moveInto), and one
+ * over the tab list where its guide bar shows, when it is a tab or a group
+ * of the list there. One per window, from the Sidebar.
+ */
+export class ForeignDrop {
+  #tabList;
+  // Where a drop in the tab list would land (as its landOutside), or null.
+  #landing = null;
+
+  constructor(tabList) {
+    this.#tabList = tabList;
+    for (let type of ["dragover", "dragleave", "drop"]) {
+      window.addEventListener(type, this, true);
+    }
+  }
+
+  destroy() {
+    for (let type of ["dragover", "dragleave", "drop"]) {
+      window.removeEventListener(type, this, true);
+    }
+    this.#land(null, null);
+  }
+
+  handleEvent(event) {
+    let drag = sidebarDragOf(event);
+    if (!drag || drag.window == window) {
+      return;
+    }
+    switch (event.type) {
+      case "dragover": {
+        if (!drag.tearOff?.canMoveInto(window)) {
+          this.#land(null, null);
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        let list = this.#tabList.getBoundingClientRect();
+        let { clientX: x, clientY: y } = event;
+        let overList =
+          drag.tearOff.landsInList &&
+          x >= list.left &&
+          x <= list.right &&
+          y >= list.top &&
+          y <= list.bottom;
+        this.#land(drag.item, overList ? y : null);
+        break;
+      }
+      case "dragleave":
+        if (!event.relatedTarget) {
+          this.#land(null, null);
+        }
+        break;
+      case "drop": {
+        if (!drag.tearOff?.canMoveInto(window)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        let landing = this.#landing;
+        this.#land(null, null);
+        drag.tearOff.moveInto(window, landing);
+        break;
+      }
+    }
+  }
+
+  #land(item, y) {
+    this.#landing = this.#tabList.landOutside(item, y);
+  }
+}
+
+/**
+ * A tab or a tab group dragged in the Sidebar, as far as leaving its
+ * window goes. Dropped on another Orbito window that can take it, it moves
+ * there: at the end of the Space shown there, selected, or where the tab
+ * list's guide bar showed it. Let go where no window takes it, it opens in
+ * a new window, placed so that its row is under the pointer there, as
+ * Firefox places a tab dragged out of its tab strip (tabbrowser's
+ * drag-and-drop.mjs); nowhere in particular on Wayland, where the pointer's
+ * place on the screen is not known. It cannot leave when it holds all the
+ * window's tabs.
  */
 export class TearOff {
   #item;
-  // Where the row was grabbed, from its top-left, and its width.
-  #grab;
-  #width;
   // From the window's top-left (window.screenX/Y, its frame's) to where
   // the pointer is to sit on the new window, in CSS px.
   #offset;
-  #icon;
 
   /**
    * @param {MozTabbrowserTab|MozTabbrowserTabGroup} item
    * @param {object} options
-   * @param {Element} options.row The row grabbed, which the chip looks like.
-   * @param {number} [options.width] The chip's width: the row's by default.
    * @param {number} options.x The press, in client coordinates.
    * @param {number} options.y
    * @param {number} [options.offsetX] Where the pointer is to sit on the new
    *   window, in this window's client coordinates: the press by default.
    * @param {number} [options.offsetY]
    */
-  constructor(item, { row, width, x, y, offsetX = x, offsetY = y }) {
-    let rect = row.getBoundingClientRect();
+  constructor(item, { x, y, offsetX = x, offsetY = y }) {
     this.#item = item;
-    this.#grab = { x: x - rect.left, y: y - rect.top };
-    this.#width = width ?? rect.width;
     this.#offset = {
       x: offsetX + window.mozInnerScreenX - window.screenX,
       y: offsetY + window.mozInnerScreenY - window.screenY,
     };
-    // A group's color, as its row's dot shows it.
-    let dot = gBrowser.isTabGroup(item) && row.querySelector(".dot");
-    this.#icon = dot
-      ? html`<span
-          class="dot"
-          style=${`background-color: ${getComputedStyle(dot).backgroundColor}`}
-        ></span>`
-      : tabIcon(item);
   }
 
   /**
@@ -103,47 +281,56 @@ export class TearOff {
     if (gBrowser.isTabGroup(item)) {
       return gBrowser.tabs.some(tab => tab.group != item);
     }
-    let elements = item.multiselected
-      ? gBrowser.selectedElements
-      : [item.splitview ?? item];
+    let elements = this.#elements;
     return gBrowser.tabs.length != elements.length;
   }
 
-  /**
-   * Follows the pointer: shows the chip at it while a drop would take the
-   * item out of the window, else hides it.
-   *
-   * @returns {boolean} Whether a drop now would take it out.
-   */
-  update(event) {
-    let to = this.#destination(event);
-    if (to) {
-      this.#show(
-        event.screenX - this.#grab.x,
-        event.screenY - this.#grab.y,
-        to.window
-      );
-    } else {
-      this.end();
-    }
-    return !!to;
+  // The tab, its split view, or the tabs selected with it.
+  get #elements() {
+    let item = this.#item;
+    return item.multiselected
+      ? gBrowser.selectedElements
+      : [item.splitview ?? item];
   }
 
   /**
-   * Moves the item into another window, or opens it in a new one, if the
-   * pointer is let go out of this one and it can leave.
-   *
-   * @returns {boolean} Whether it did.
+   * Whether another window can take the item: an Orbito window with its
+   * Sidebar (not a popup), of the same kind, as a private window and
+   * another take no tabs from each other (swapBrowsersAndCloseOther).
    */
-  drop(event) {
-    this.end();
-    let to = this.#destination(event);
-    if (!to) {
-      return false;
-    }
-    if (to.window) {
-      this.#moveInto(to.window);
+  canMoveInto(other) {
+    return (
+      other != window &&
+      !other.closed &&
+      !!other.OrbitoShell?.spaces &&
+      other.toolbar.visible &&
+      PrivateBrowsingUtils.isWindowPrivate(other) ==
+        PrivateBrowsingUtils.isWindowPrivate(window) &&
+      this.canDetach
+    );
+  }
+
+  /**
+   * Whether the item would go in the tab list where it moves to: a tab
+   * group, or one tab, neither a Pin's nor a Dock tab, and not with others.
+   */
+  get landsInList() {
+    let item = this.#item;
+    if (gBrowser.isTabGroup(item)) {
       return true;
+    }
+    return (
+      this.#elements.length == 1 &&
+      !item.splitview &&
+      !item.pinned &&
+      !window.OrbitoShell.docks?.idOf(item)
+    );
+  }
+
+  /** Opens the item in a new window, placed by where it was let go. */
+  detach(event) {
+    if (!this.canDetach) {
+      return;
     }
     let features = { suppressanimation: 1, ...this.#placeAt(event) };
     if (gBrowser.isTabGroup(this.#item)) {
@@ -152,41 +339,6 @@ export class TearOff {
     } else {
       gBrowser.replaceTabsWithWindow(this.#item, features);
     }
-    return true;
-  }
-
-  /** Hides the chip. */
-  end() {
-    let panel = document.getElementById(PANEL_ID);
-    if (panel && panel.state != "closed") {
-      panel.hidePopup();
-    }
-  }
-
-  /**
-   * Where a drop at the pointer takes the item: null when it stays (the
-   * pointer is in the window, or the item cannot leave), else {window}, the
-   * window it moves into, null for a new one.
-   */
-  #destination(event) {
-    if (isIn(window, event, window) || !this.canDetach) {
-      return null;
-    }
-    // Most recently used first, which is near enough the order on screen
-    // (it has no other way to know what lies over what). A private window
-    // and another take no tabs from each other (swapBrowsersAndCloseOther).
-    let isPrivate = PrivateBrowsingUtils.isWindowPrivate(window);
-    let other = BrowserWindowTracker.orderedWindows.find(
-      w =>
-        w != window &&
-        !w.closed &&
-        w.windowState != w.STATE_MINIMIZED &&
-        w.OrbitoShell &&
-        w.toolbar.visible &&
-        PrivateBrowsingUtils.isWindowPrivate(w) == isPrivate &&
-        isIn(w, event, window)
-    );
-    return { window: other ?? null };
   }
 
   /**
@@ -194,9 +346,11 @@ export class TearOff {
    * there, selected, as Firefox's drop on another window's tab strip
    * adopts it. A Pin's tab goes among the pinned tabs there, and a Pin's or
    * a Dock tab is the entry's tab there in place of the one the window had
-   * (shell/list-tabs.mjs), the Dock tab in its Dock's Space.
+   * (shell/list-tabs.mjs), the Dock tab in its Dock's Space. With a
+   * landing (the tab list's landOutside there), the tab or group goes
+   * there in the list instead of at the end.
    */
-  #moveInto(other) {
+  moveInto(other, landing = null) {
     let browser = other.gBrowser;
     let { docks, spaces } = other.OrbitoShell;
     let item = this.#item;
@@ -204,6 +358,11 @@ export class TearOff {
     // one is selected, which would show its Space instead.
     let space = spaces.current;
     let select;
+    // What goes where the landing is, known before the item leaves.
+    let placed = null;
+    if (!this.landsInList) {
+      landing = null;
+    }
     if (gBrowser.isTabGroup(item)) {
       let selected = item.tabs.find(tab => tab.selected) ?? item.tabs[0];
       let index = item.tabs.indexOf(selected);
@@ -212,10 +371,9 @@ export class TearOff {
       });
       spaces.moveGroup(group, space);
       select = group.tabs[index];
+      placed = group;
     } else {
-      let elements = item.multiselected
-        ? gBrowser.selectedElements
-        : [item.splitview ?? item];
+      let elements = this.#elements;
       let moved = elements.map(element =>
         gBrowser.isSplitViewWrapper(element)
           ? browser.adoptSplitView(element, { tabIndex: browser.tabs.length })
@@ -232,6 +390,10 @@ export class TearOff {
       }
       let dragged = moved[elements.indexOf(item.splitview ?? item)];
       select = dragged?.tabs?.[0] ?? dragged;
+      placed = dragged;
+    }
+    if (landing && placed) {
+      other.OrbitoShell.sidebar.tabList.dropOutside(placed, landing);
     }
     if (select) {
       browser.selectedTab = select;
@@ -273,36 +435,5 @@ export class TearOff {
       availY.value + availHeight.value - height
     );
     return { screenX: left / ourScale, screenY: top / ourScale };
-  }
-
-  /** The chip at a point, its hint for a drop into a window or a new one. */
-  #show(x, y, into) {
-    let panel = document.getElementById(PANEL_ID);
-    if (!panel) {
-      // A drag popup lets the pointer through, so the drag goes on under it
-      // outside the window.
-      panel = document.createXULElement("panel");
-      panel.id = PANEL_ID;
-      panel.setAttribute("type", "drag");
-      panel.setAttribute("noautofocus", "true");
-      panel.style.setProperty("--orbito-tear-off-room", `${ROOM}px`);
-      document.getElementById("mainPopupSet").append(panel);
-    }
-    let label = gBrowser.isTabGroup(this.#item)
-      ? this.#item.label || t("orbito-tabs-unnamed-group")
-      : this.#item.label;
-    let hint = into ? "orbito-tabs-move-to-window" : "orbito-tabs-tear-off";
-    render(
-      html`<div class="chip" style=${`width: ${this.#width}px`}>
-          ${this.#icon}<span class="label">${label}</span>
-        </div>
-        <div class="hint">${t(hint)}</div>`,
-      panel
-    );
-    if (panel.state == "open" || panel.state == "showing") {
-      panel.moveTo(x - ROOM, y - ROOM);
-    } else {
-      panel.openPopupAtScreen(x - ROOM, y - ROOM, false);
-    }
   }
 }

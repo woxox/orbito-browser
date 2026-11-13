@@ -145,6 +145,10 @@ pref("orbito.assistant.permissionMode", "ask");
 // Whether the urlbar offers "Ask Orbito" for what is typed into it. The
 // panel works either way.
 pref("orbito.assistant.urlbar", true);
+// Keeps the urlbar (the Command bar) suggesting while an IME composes, so
+// Korean shows results syllable by syllable instead of only after the word
+// is committed. Autofill still waits for the composition to end.
+pref("browser.urlbar.keepPanelOpenDuringImeComposition", true);
 // Whether the assistant remembers facts the user asks it to. Private
 // windows never read or write memories.
 pref("orbito.assistant.memory.enabled", true);

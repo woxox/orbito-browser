@@ -20,6 +20,8 @@
  * Closing a Pin's tab keeps the Pin: an unloaded tab of its URL takes the
  * tab's place. So does moving it to another window, where it is pinned
  * again as that window's tab for the Pin, and the one there before it goes.
+ * A Pin's tab gone to another page goes back to the Pin's URL, or makes
+ * the page the Pin's, from its menu; the first from the Pin grid too.
  *
  * Private windows show and open the Pins but add none: a Pin made there
  * would write a private page's address to the profile. A tab pinned there
@@ -32,6 +34,7 @@ import {
   checkPins,
   orderPins,
   sameOrder,
+  updatePin,
 } from "chrome://browser/content/orbito/shell/OrbitoPins.sys.mjs";
 import {
   isLoaded,
@@ -84,6 +87,13 @@ export class Pins extends ListTabs {
 
   ids() {
     return this.list.map(pin => pin.id);
+  }
+
+  init() {
+    super.init();
+    for (let item of this.entryMenuItems("orbito-tab-menu-pin-entry")) {
+      this.addMenuItem(item);
+    }
   }
 
   /**
@@ -227,6 +237,10 @@ export class Pins extends ListTabs {
 
   entryOf(tab) {
     return this.pinOf(tab);
+  }
+
+  withEntry(id, page) {
+    return updatePin(this.list, id, page);
   }
 
   /**

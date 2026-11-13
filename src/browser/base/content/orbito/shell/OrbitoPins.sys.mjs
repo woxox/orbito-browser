@@ -5,9 +5,11 @@
 /**
  * The Pin list: one for the whole profile, in order, each Pin
  * {id, url, title, icon}. The URL is the one the Pin was made with: a Pin's
- * tab that goes elsewhere does not change it. These functions take a list
- * and give a new one; they never change the list they get. Which Pin a tab
- * stands for is kept by the Shell (shell/pins.mjs).
+ * tab that goes elsewhere does not change it, until the user replaces it
+ * with the page the tab shows (updatePin), the Pin keeping its id and place.
+ * These functions take a list and give a new one; they never change the
+ * list they get. Which Pin a tab stands for is kept by the Shell
+ * (shell/pins.mjs).
  */
 
 /**
@@ -45,6 +47,16 @@ export function addPin(pins, pin, index = pins.length) {
 /** The list without a Pin. */
 export function removePin(pins, id) {
   return pins.filter(pin => pin.id != id);
+}
+
+/**
+ * The list with a Pin's page ({url, title, icon}) replaced, the Pin keeping
+ * its id and place.
+ */
+export function updatePin(pins, id, { url, title, icon }) {
+  return pins.some(pin => pin.id == id)
+    ? pins.map(pin => (pin.id == id ? { id, url, title, icon } : pin))
+    : pins;
 }
 
 /**

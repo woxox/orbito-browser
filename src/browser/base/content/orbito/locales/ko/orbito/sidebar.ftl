@@ -31,8 +31,6 @@ orbito-tabs-hold-add-to-group = 그룹에 넣기
 orbito-tabs-new-group-name = 새 그룹 { $number }
 orbito-tabs-group-title = { $name }: 탭 { $count }개
 orbito-tabs-close-group = 그룹 닫기
-orbito-tabs-tear-off = 새 창으로 열기
-orbito-tabs-move-to-window = 이 창으로 옮기기
 
 ## Spaces
 
@@ -86,6 +84,11 @@ orbito-dock-folder-rename = 폴더 이름 바꾸기
 orbito-dock-folder-ungroup = 폴더 풀기 (탭은 Dock에 남김)
 orbito-dock-folder-delete = 폴더와 탭 지우기
 orbito-dock-folder-title = { $name }: 탭 { $count }개
+
+## Pin and Dock tabs
+
+orbito-saved-page-reset = 저장된 페이지로 돌아가기
+orbito-saved-page-replace = 저장된 페이지를 현재 페이지로 바꾸기
 
 ## Side panel
 

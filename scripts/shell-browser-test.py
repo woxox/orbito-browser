@@ -1894,6 +1894,54 @@ def cmd_t_opens_a_tab_only_on_enter(b):
 
 
 @test
+def the_search_engine_list_keeps_the_command_bar_open(b):
+    b.js("""
+    await onlyBlankTab();
+    await openPage("Engines");
+    win.gBrowser.selectedBrowser.focus();
+    """)
+    b.keys((ACCEL, "t"))
+    # The list is a panel, which takes focus from the input as it opens;
+    # the bar stays for a pick from it.
+    button = b.js("""
+    await wait(() => commandBarShown(), "the Command bar");
+    return middle(win.gURLBar.querySelector(".searchmode-switcher"));
+    """)
+    b.pointer(button, "down", "up")
+    b.js("""
+    let panel = win.gURLBar.querySelector(".searchmode-switcher-panel");
+    await wait(() => panel.state == "open", "the search engine list");
+    await sleep(300);
+    check(commandBar.isOpen && shown(win.gURLBar), "the search engine list closed the Command bar");
+    // Dismissed without a pick, it gives the input focus back.
+    panel.hidePopup();
+    await wait(() => panel.state == "closed", "the search engine list to close");
+    await wait(() => win.gURLBar.focused, "the input to take focus back");
+    check(commandBar.isOpen, "dismissing the search engine list closed the Command bar");
+    """)
+    b.pointer(button, "down", "up")
+    item = b.js("""
+    let panel = win.gURLBar.querySelector(".searchmode-switcher-panel");
+    await wait(() => panel.state == "open", "the search engine list");
+    let item = await wait(
+      () => [...panel.querySelectorAll("panel-item[data-action=searchmode]")].find(shown),
+      "a search engine"
+    );
+    return middle(item);
+    """)
+    b.pointer(item, "down", "up")
+    b.js("""
+    await wait(() => win.gURLBar.searchMode?.engineName, "the search mode");
+    await wait(() => win.gURLBar.focused, "the input to take focus");
+    check(commandBar.isOpen, "picking a search engine closed the Command bar");
+    """)
+    b.keys(Keys.ESCAPE)
+    b.js("""
+    await wait(() => !commandBar.isOpen, "the Command bar to close");
+    """)
+
+
+@test
 def the_command_bar_shows_the_urlbar_result_groups(b):
     b.js("""
     await onlyBlankTab();
@@ -1951,6 +1999,190 @@ def the_command_bar_shows_the_urlbar_result_groups(b):
         Services.prefs.clearUserPref("browser.urlbar.suggest.searches");
         let { PlacesUtils } = ChromeUtils.importESModule("resource://gre/modules/PlacesUtils.sys.mjs");
         await PlacesUtils.bookmarks.eraseEverything();
+        """)
+
+
+@test
+def the_command_bar_suggests_while_an_ime_composes(b):
+    # Korean typed through an IME stays in a composition until the syllable
+    # (or the word) is committed; the results follow each syllable anyway.
+    b.js("""
+    await onlyBlankTab();
+    win.gBrowser.selectedBrowser.focus();
+    """)
+    try:
+        b.keys((ACCEL, "l"))
+        b.js("""
+        await wait(() => commandBarShown(), "the Command bar");
+        let tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor);
+        check(tip.beginInputTransactionForTests(win, () => {}), "no input transaction");
+        function compose(text) {
+          tip.setPendingCompositionString(text);
+          tip.appendClauseToPendingComposition(text.length, tip.ATTR_RAW_CLAUSE);
+          tip.setCaretInPendingComposition(text.length);
+          tip.flushPendingComposition();
+        }
+        compose("ㄱ");
+        compose("가");
+        check(win.gURLBar.isComposing, "the composition ended");
+        await resultWhere(r => r.result.heuristic && r.result.payload.query == "가", "a result for the composing syllable");
+        check(win.gURLBar.view.isOpen && win.gURLBar.isComposing, "the results closed the composition, or it them");
+        compose("갑");
+        await resultWhere(r => r.result.heuristic && r.result.payload.query == "갑", "a result for the next syllable");
+        check(win.gURLBar.value == "갑", `the input has ${win.gURLBar.value}`);
+        tip.commitComposition();
+        check(!win.gURLBar.isComposing, "the composition did not end");
+        await resultWhere(r => r.result.heuristic && r.result.payload.query == "갑", "a result for the committed word");
+        """)
+    finally:
+        b.js("closeCommandBar();")
+
+
+@test
+def the_command_bar_autofills_past_the_caret_while_an_ime_composes(b):
+    # An IME may keep Latin text composing too, until the word is done; the
+    # address's completion shows past the caret meanwhile, as in Chrome,
+    # and Enter or Tab takes it, before or after the IME commits.
+    b.js("""
+    await onlyBlankTab();
+    let origin = `http://zebra.test:${new URL(PAGES).port}`;
+    Services.prefs.setStringPref("network.dns.localDomains", "zebra.test");
+    let { PlacesUtils } = ChromeUtils.importESModule("resource://gre/modules/PlacesUtils.sys.mjs");
+    for (let i = 0; i < 3; i++) {
+      await PlacesUtils.history.insert({
+        url: `${origin}/page/Zebra`,
+        visits: [{ transition: PlacesUtils.history.TRANSITIONS.TYPED }],
+      });
+    }
+    await Cc["@mozilla.org/places/frecency-recalculator;1"]
+      .getService(Ci.nsIObserver).wrappedJSObject.recalculateAnyOutdatedFrecencies();
+    win.gBrowser.selectedBrowser.focus();
+    """)
+
+    # Each case opens the Command bar, composes "zebr" and checks the ghost,
+    # then ends as it says.
+    start = """
+    let origin = `http://zebra.test:${new URL(PAGES).port}`;
+    let completed = `zebra.test:${new URL(PAGES).port}/`;
+    let field = win.gURLBar.inputField;
+    await wait(() => commandBarShown(), "the Command bar");
+    let tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor);
+    // Commits when Firefox asks, as an IME does.
+    let ime = (tip, notification) => {
+      if (notification.type == "request-to-commit") {
+        tip.commitComposition();
+      } else if (notification.type == "request-to-cancel") {
+        tip.cancelComposition();
+      }
+      return true;
+    };
+    check(tip.beginInputTransactionForTests(win, ime), "no input transaction");
+    function compose(text) {
+      tip.setPendingCompositionString(text);
+      tip.appendClauseToPendingComposition(text.length, tip.ATTR_RAW_CLAUSE);
+      tip.setCaretInPendingComposition(text.length);
+      tip.flushPendingComposition();
+    }
+    function key(init) {
+      tip.keydown(new win.KeyboardEvent("", init));
+      tip.keyup(new win.KeyboardEvent("", init));
+    }
+    // How justype commits a word on Linux: it empties the composition, which
+    // GTK ends with nothing committed, then commits the word as new text.
+    function justypeCommit(word) {
+      tip.setPendingCompositionString("");
+      tip.flushPendingComposition();
+      tip.commitComposition();
+      tip.commitCompositionWith(word);
+    }
+    let ghost = win.document.querySelector(".orbito-command-bar-ghost");
+    for (let text of ["z", "ze", "zeb", "zebr"]) {
+      compose(text);
+    }
+    await wait(() => ghost.checkVisibility() && ghost.textContent == completed, "the completion past the caret");
+    check(field.value == "zebr" && win.gURLBar.isComposing, `the input has ${field.value}, composing: ${win.gURLBar.isComposing}`);
+    let suffix = ghost.firstChild.lastChild.getBoundingClientRect();
+    check(suffix.width > 0, "the completion takes no room");
+    """
+    landed = """
+    // The address has no scheme, so HTTPS-First tries https first.
+    let browser = win.gBrowser.selectedBrowser;
+    await wait(() => browser.currentURI.spec.startsWith(origin) && !browser.webProgress.isLoadingDocument, "the completed address to load");
+    await wait(() => !shell.commandBar.isOpen, "the Command bar to close");
+    """
+    try:
+        b.keys((ACCEL, "l"))
+        b.js(start + """
+        // Committing puts the completion in the input at once, selected.
+        tip.commitComposition();
+        check(!ghost.checkVisibility(), "the ghost stays");
+        check(field.value == completed && field.selectionStart == 4 && field.selectionEnd == completed.length,
+          `the input has ${field.value} selected ${field.selectionStart}-${field.selectionEnd}`);
+        // Typing on what was not completed drops it.
+        compose("x");
+        check(!ghost.checkVisibility(), "a ghost for zebrx");
+        tip.commitComposition();
+        check(field.value == "zebrx", `the input has ${field.value}`);
+        win.gURLBar.select();
+        """)
+        b.keys(Keys.BACK_SPACE)
+        b.js(start + """
+        // Tab takes the completion, without loading it.
+        key({ key: "Tab", code: "Tab", keyCode: 9 });
+        check(!win.gURLBar.isComposing, "the composition did not end");
+        check(field.value == completed && field.selectionStart == completed.length && field.selectionEnd == completed.length,
+          `the input has ${field.value} selected ${field.selectionStart}-${field.selectionEnd}`);
+        check(shell.commandBar.isOpen, "Tab closed the Command bar");
+        win.gURLBar.select();
+        """)
+        b.keys(Keys.BACK_SPACE)
+        b.js(start + """
+        // Enter that the IME lets through loads the completion.
+        key({ key: "Enter", code: "Enter", keyCode: 13 });
+        """ + landed)
+        # A load just done may leave the window without focus for keys.
+        b.js('await onlyBlankTab(); shell.commandBar.open("current");')
+        b.js(start + """
+        // Enter that the IME takes (as "Process") and commits loads it too.
+        key({ key: "Process", code: "Enter", keyCode: 229 });
+        tip.commitComposition();
+        """ + landed)
+        # A load just done may leave the window without focus for keys.
+        b.js('await onlyBlankTab(); shell.commandBar.open("current");')
+        b.js(start + """
+        // justype commits a word at a separator, which it then types: the
+        // completion goes in after the word, once, and Tab takes it.
+        justypeCommit("zebr");
+        check(field.value == completed && field.selectionStart == 4 && field.selectionEnd == completed.length,
+          `the input has ${field.value} selected ${field.selectionStart}-${field.selectionEnd}`);
+        key({ key: "Tab", code: "Tab", keyCode: 9 });
+        check(field.value == completed && field.selectionStart == completed.length,
+          `Tab left ${field.value} selected ${field.selectionStart}-${field.selectionEnd}`);
+        check(shell.commandBar.isOpen, "Tab closed the Command bar");
+        win.gURLBar.select();
+        """)
+        b.keys(Keys.BACK_SPACE)
+        b.js(start.replace('"zebr"]', '"zebr", "zebra"]').replace('field.value == "zebr"', 'field.value == "zebra"') + """
+        justypeCommit("zebra");
+        key({ key: ".", code: "Period", keyCode: 190 });
+        await wait(() => field.value == completed, "the completion after zebra.");
+        for (let text of ["t", "te", "tes", "test"]) {
+          compose(text);
+        }
+        await wait(() => ghost.checkVisibility() && ghost.textContent == completed, "the completion past test");
+        justypeCommit("test");
+        check(field.value == completed && field.selectionStart == "zebra.test".length && field.selectionEnd == completed.length,
+          `the input has ${field.value} selected ${field.selectionStart}-${field.selectionEnd}`);
+        // Enter comes after the commit, and loads what the input has.
+        key({ key: "Enter", code: "Enter", keyCode: 13 });
+        """ + landed)
+    finally:
+        b.js("""
+        closeCommandBar();
+        Services.prefs.clearUserPref("network.dns.localDomains");
+        let { PlacesUtils } = ChromeUtils.importESModule("resource://gre/modules/PlacesUtils.sys.mjs");
+        await PlacesUtils.history.clear();
+        await onlyBlankTab();
         """)
 
 
@@ -6875,6 +7107,50 @@ def the_sidebar_collapses_and_peeks_from_the_left_edge(b):
 
 
 @test
+def picking_a_tab_in_a_peeking_sidebar_keeps_it_while_the_pointer_is_on_it(b):
+    b.js("""
+    await resetSidebar();
+    await onlyBlankTab();
+    await openPage("Stay one");
+    await openPage("Stay two");
+    Services.prefs.setBoolPref("orbito.sidebar.collapsed", true);
+    await wait(() => !shell.sidebar.checkVisibility({ visibilityProperty: true }), "the collapsed Sidebar to hide");
+    """)
+    b.pointer((300, 300), (2, 300))
+    xy = b.js("""
+    await wait(() => shell.sidebar.peeking, "the Sidebar to peek");
+    await wait(() => shell.sidebar.getBoundingClientRect().left >= 8, "the Sidebar to come in");
+    return middle(rowFor(byLabel("Stay one")));
+    """)
+    b.pointer(xy, "down", "up", 600)
+    xy = b.js("""
+    check(win.gBrowser.selectedTab.label == "Stay one", "the clicked tab is not selected");
+    check(shell.sidebar.peeking, "picking a tab hid the Sidebar under the pointer");
+    return middle(tabList().newTabButton);
+    """)
+    b.pointer(xy, "down", "up", 600)
+    b.js("""
+    await wait(() => newTabPageOf(win.gBrowser.selectedTab), "the new tab page");
+    check(shell.sidebar.peeking, "a new tab hid the Sidebar under the pointer");
+    """)
+    b.pointer((700, 300))
+    b.js("""
+    await wait(() => !shell.sidebar.peeking, "the Sidebar to go with the pointer");
+    await wait(() => !shell.sidebar.checkVisibility({ visibilityProperty: true }), "the Sidebar to hide");
+    win.gBrowser.selectedBrowser.focus();
+    await wait(() => shell.focusedRegion == "page", "the page to have focus");
+    """)
+    # A peek opened from the keyboard goes as a tab is picked.
+    b.keys(Keys.F6)
+    b.js("""
+    await wait(() => shell.focusedRegion == "sidebar" && shell.sidebar.peeking, "F6 to peek the Sidebar");
+    win.gBrowser.selectedTab = byLabel("Stay two");
+    await wait(() => !shell.sidebar.peeking, "picking a tab to hide the Sidebar");
+    """)
+    b.js("await resetSidebar();")
+
+
+@test
 def the_page_moves_with_the_sidebar_as_it_collapses_and_comes_back(b):
     b.js("""
     await resetSidebar();
@@ -7089,6 +7365,41 @@ def switching_spaces_hides_the_other_spaces_tabs(b):
     } finally {
       await resetPins();
       win.gBrowser.removeTab(pinned);
+      await resetSpaces();
+    }
+    """)
+
+
+@test
+def closing_a_spaces_last_tab_keeps_the_window_for_the_other_spaces(b):
+    # With no pinned tab, the Space's last tab is the window's last visible
+    # one: Firefox would close the window, and the other Spaces' tabs with it.
+    b.js("""
+    await resetSpaces();
+    await onlyBlankTab();
+    let first = spaces().current;
+    let home = await openPage("Home tab");
+    try {
+      let second = await newSpace();
+      check(!win.gBrowser.tabs.some(t => t.pinned), "a pinned tab shows in every Space");
+      for (let close of [
+        tab => win.gBrowser.removeTab(tab, { animate: false }),
+        tab => { win.gBrowser.selectedTab = tab; win.BrowserCommands.closeTabOrWindow(); },
+      ]) {
+        let [last] = spaces().tabsIn(second.id);
+        check(spaces().tabsIn(second.id).length == 1 && win.gBrowser.visibleTabs.length == 1,
+          `${win.gBrowser.visibleTabs.length} tabs show`);
+        close(last);
+        await wait(() => !last.isConnected, "the tab to close");
+        check(!win.closed, "the window closed");
+        await wait(() => spaces().tabsIn(second.id).length == 1, "a new tab in the Space");
+        check(spaces().current == second.id, "closing its last tab left the Space");
+        let left = win.gBrowser.selectedTab;
+        check(spaceOfTab(left) == second.id && !left.hidden, `selected ${left.label} in ${spaceOfTab(left)}`);
+        check(home.isConnected && home.hidden && spaceOfTab(home) == first, "the other Space lost its tab");
+        await listMatchesGBrowser();
+      }
+    } finally {
       await resetSpaces();
     }
     """)
@@ -9864,6 +10175,64 @@ def closing_a_dock_tab_keeps_its_place_unloaded_at_the_docked_url(b):
 
 
 @test
+def closing_a_tab_or_ctrl_tab_skips_the_dock_tabs_at_rest(b):
+    b.js("""
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let pages = [];
+    for (let title of ["Rest one", "Rest two", "Rest three"]) {
+      pages.push(await openPage(title));
+    }
+    let plain = await openPage("Rest plain");
+    for (let tab of pages) {
+      shell.docks.dockTab(tab);
+    }
+    await docksMatch();
+    try {
+      // The three are closed back to rest, the plain tab selected.
+      win.gBrowser.selectedTab = plain;
+      for (let tab of pages) {
+        win.gBrowser.removeTab(tab, { animate: false });
+      }
+      await wait(() => shell.docks.tabsIn().length == 3 && shell.docks.tabsIn().every(t => shell.docks.isResting(t)),
+        "the three Dock tabs at rest");
+      await docksMatch();
+      let [one, two, three] = shell.docks.tabsIn();
+      // The first opened, then closed: back to the plain tab, not the second.
+      win.gBrowser.selectedTab = one;
+      await wait(() => one.linkedPanel && one.linkedBrowser.contentTitle == "Rest one", "the first Dock tab to load");
+      win.gBrowser.removeTab(one, { animate: false });
+      await wait(() => !one.isConnected && shell.docks.tabsIn().length == 3, "the first Dock tab's place again");
+      check(win.gBrowser.selectedTab == plain, `selected ${win.gBrowser.selectedTab.label}`);
+      check(shell.docks.isResting(two) && shell.docks.isResting(three), "a Dock tab at rest was loaded");
+      // Ctrl+Tab (each tab in turn) steps over them.
+      let other = await openPage("Rest other");
+      let seen = new Set();
+      for (let i = 0; i < 4; i++) {
+        win.gBrowser.tabContainer.advanceSelectedTab(1, true);
+        seen.add(win.gBrowser.selectedTab);
+      }
+      check(seen.has(plain) && seen.has(other) && ![...seen].some(t => shell.docks.dockOf(t)),
+        [...seen].map(t => t.label).join());
+      check(shell.docks.tabsIn().every(t => shell.docks.isResting(t)), "Ctrl+Tab loaded a Dock tab at rest");
+      // Nor are they in Ctrl+Tab's list of recently used tabs.
+      let prefs = "browser.ctrlTab.sortByRecentlyUsed";
+      Services.prefs.setBoolPref(prefs, true);
+      try {
+        await wait(() => win.ctrlTab.tabList, "Ctrl+Tab's list");
+        check(!win.ctrlTab.tabList.some(t => shell.docks.tabsIn().includes(t)),
+          win.ctrlTab.tabList.map(t => t.label).join());
+      } finally {
+        Services.prefs.clearUserPref(prefs);
+      }
+    } finally {
+      await resetDocks();
+    }
+    """)
+
+
+@test
 def a_dock_rows_button_closes_its_tab_or_at_rest_takes_it_out_of_the_dock(b):
     close = b.js("""
     await resetDocks();
@@ -9903,6 +10272,222 @@ def a_dock_rows_button_closes_its_tab_or_at_rest_takes_it_out_of_the_dock(b):
         """)
     finally:
         b.js("await resetDocks();")
+
+
+@test
+def a_pin_or_dock_tab_gone_elsewhere_goes_back_to_its_saved_page(b):
+    pin_back = b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let pinned = await openPage("Saved pin");
+    let docked = await openPage("Saved dock");
+    shell.pins.pinTab(pinned);
+    shell.docks.dockTab(docked);
+    await pinsMatch();
+    await docksMatch();
+    // At its saved page, a tab's icon is no button and its menu has no way back.
+    check(!pinButtonFor(pinned).querySelector(".back") && !dockRowFor(docked).querySelector(".back"),
+      "a back button at the saved page");
+    let items = await tabMenu(pinButtonFor(pinned));
+    check(!items.some(i => i.includes("-entry-")), `items ${items}`);
+    // Gone elsewhere in its page, with no new title, the Pin's icon is a
+    // button back.
+    win.gBrowser.selectedTab = pinned;
+    pinned.linkedBrowser.loadURI(Services.io.newURI(pageURL("Saved pin") + "#further"), {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+    let button = await wait(async () => {
+      await pinGrid().updateComplete;
+      return pinButtonFor(pinned).querySelector(".back");
+    }, "the Pin's back button");
+    check(button.title == "Go back to saved page" && await named(button) == "Go back to saved page", accessibleName(button));
+    check(storedPins()[0].url == pageURL("Saved pin"), "the Pin follows the tab's page");
+    items = await tabMenu(pinButtonFor(pinned));
+    check(items.includes("orbito-tab-menu-pin-entry-reset") && items.includes("orbito-tab-menu-pin-entry-replace")
+      && !items.some(i => i.includes("dock-entry")), `items ${items}`);
+    // Pressed while another tab is selected, it selects the Pin's tab too.
+    win.gBrowser.selectedTab = docked;
+    await pinGrid().updateComplete;
+    return middle(pinButtonFor(pinned).querySelector(".back"));
+    """)
+    try:
+        b.pointer(pin_back, "down", "up")
+        dock_back = b.js("""
+        let pinned = shell.pins.tabs[0];
+        let docked = shell.docks.tabsIn()[0];
+        await wait(() => win.gBrowser.selectedTab == pinned && pinned.linkedBrowser.currentURI.spec == pageURL("Saved pin"),
+          "the Pin's tab back at its saved page");
+        await wait(async () => {
+          await pinGrid().updateComplete;
+          return !pinButtonFor(pinned).querySelector(".back");
+        }, "the Pin's back button to go");
+        check(!pinGrid().dragging && pinned.pinned && storedPins().length == 1, "the press dragged the Pin");
+        // A Dock tab gone to another page: its row's icon is a button back.
+        win.gBrowser.selectedTab = docked;
+        docked.linkedBrowser.loadURI(Services.io.newURI(pageURL("Dock gone elsewhere")), {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
+        await wait(() => docked.linkedBrowser.contentTitle == "Dock gone elsewhere", "the Dock tab to go elsewhere");
+        let button = await wait(async () => {
+          await dock().updateComplete;
+          return dockRowFor(docked).querySelector(".back");
+        }, "the Dock row's back button");
+        // In the icon's place: the label stays where it was.
+        let left = shell.sidebar.getBoundingClientRect().left + 8;
+        check(Math.round(dockRowFor(docked).querySelector(".label").getBoundingClientRect().left - left) == 35,
+          "the back button moved the label");
+        let items = await tabMenu(dockRowFor(docked));
+        check(items.includes("orbito-tab-menu-dock-entry-reset") && items.includes("orbito-tab-menu-dock-entry-replace")
+          && !items.some(i => i.includes("pin-entry")), `items ${items}`);
+        win.gBrowser.selectedTab = pinned;
+        await dock().updateComplete;
+        return middle(dockRowFor(docked).querySelector(".back"));
+        """)
+        b.pointer(dock_back, "down", "up")
+        b.js("""
+        let docked = shell.docks.tabsIn()[0];
+        await wait(() => win.gBrowser.selectedTab == docked && docked.linkedBrowser.contentTitle == "Saved dock",
+          "the Dock tab back at its saved page");
+        check(docked.linkedBrowser.currentURI.spec == pageURL("Saved dock"), docked.linkedBrowser.currentURI.spec);
+        await wait(async () => {
+          await dock().updateComplete;
+          return !dockRowFor(docked).querySelector(".back");
+        }, "the Dock row's back button to go");
+        check(!dock().dragging && storedDock().length == 1, "the press dragged the Dock row");
+        // The menu takes it back as well.
+        docked.linkedBrowser.loadURI(Services.io.newURI(pageURL("Dock gone again")), {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
+        await wait(() => docked.linkedBrowser.contentTitle == "Dock gone again", "the Dock tab to go elsewhere again");
+        await wait(async () => {
+          await dock().updateComplete;
+          return dockRowFor(docked).querySelector(".back");
+        }, "the Dock row's back button again");
+        await tabMenu(dockRowFor(docked), "dock-entry-reset");
+        await wait(() => docked.linkedBrowser.contentTitle == "Saved dock", "the menu to take the Dock tab back");
+        check(storedDock()[0].url == pageURL("Saved dock"), "going back changed the entry");
+        """)
+    finally:
+        b.js("""
+        await resetPins();
+        await resetDocks();
+        """)
+
+
+@test
+def replacing_a_pin_or_dock_tabs_saved_page_keeps_its_place_in_every_window(b):
+    b.js("""
+    await resetPins();
+    await resetDocks();
+    await resetSpaces();
+    await onlyBlankTab();
+    let space = spaces().current;
+    let pinA = await openPage("Replace pin A");
+    shell.pins.pinTab(pinA);
+    shell.pins.pinTab(await openPage("Replace pin B"));
+    let dockA = await openPage("Replace dock A");
+    let dockB = await openPage("Replace dock B");
+    shell.docks.dockTab(dockA);
+    shell.docks.dockTab(dockB);
+    shell.docks.dockTab(await openPage("Replace dock C"));
+    await docksMatch();
+    let folder = shell.docks.newFolder(dockB);
+    await pinsMatch();
+    await wait(() => shell.docks.folderOf(dockB)?.id == folder, "the folder");
+    await docksMatch();
+    let pinOrder = () => storedPins().map(p => p.id).join();
+    let dockOrder = () => JSON.stringify(storedDock(space).map(item => item.children ? [item.id, item.children.map(e => e.id)] : item.id));
+    let pins = pinOrder();
+    let docks = dockOrder();
+    let pinId = storedPins()[0].id;
+    let dockId = shell.docks.dockOf(dockB).id;
+    let other = win.OpenBrowserWindow();
+    let privateWin = null;
+    try {
+      await wait(() => other.gBrowserInit?.delayedStartupFinished && other.OrbitoShell?.docks, "the new window");
+      await pinsMatch(other);
+      await docksMatch(other);
+      // A Pin's tab gone to another page makes it the Pin's: same id and
+      // place, its tab stays as it is.
+      win.gBrowser.selectedTab = pinA;
+      pinA.linkedBrowser.loadURI(Services.io.newURI(pageURL("Replaced pin")), {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+      await wait(() => pinA.linkedBrowser.contentTitle == "Replaced pin", "the Pin's tab to go elsewhere");
+      await wait(async () => {
+        await pinGrid().updateComplete;
+        return pinButtonFor(pinA).querySelector(".back");
+      }, "the Pin's back button");
+      await tabMenu(pinButtonFor(pinA), "pin-entry-replace");
+      await wait(() => storedPins()[0].url == pageURL("Replaced pin"), "the Pin's URL to be replaced");
+      check(storedPins()[0].id == pinId && storedPins()[0].title == "Replaced pin" && pinOrder() == pins,
+        JSON.stringify(storedPins()));
+      check(pinA.isConnected && shell.pins.pinOf(pinA)?.id == pinId && pinA.linkedBrowser.contentTitle == "Replaced pin",
+        "the Pin's tab changed");
+      await wait(async () => {
+        await pinGrid().updateComplete;
+        return !pinButtonFor(pinA).querySelector(".back");
+      }, "the Pin's back button to go");
+      // The other window's tab, at rest at the old page, makes way for one
+      // at the new page, in its place.
+      let otherPins = other.OrbitoShell.pins;
+      await wait(() => otherPins.tabs[0]?.linkedBrowser.currentURI.spec == pageURL("Replaced pin"),
+        "the other window's Pin tab at the new page");
+      await pinsMatch(other);
+      check(!otherPins.tabs[0].linkedPanel && otherPins.tabs[0].label == "Replaced pin", pinLabels(other));
+      // A Dock tab in a folder: same id, folder and place.
+      win.gBrowser.selectedTab = dockB;
+      dockB.linkedBrowser.loadURI(Services.io.newURI(pageURL("Replaced dock")), {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+      await wait(() => dockB.linkedBrowser.contentTitle == "Replaced dock", "the Dock tab to go elsewhere");
+      await wait(async () => {
+        await dock().updateComplete;
+        return dockRowFor(dockB).querySelector(".back");
+      }, "the Dock row's back button");
+      await tabMenu(dockRowFor(dockB), "dock-entry-replace");
+      let entry = () => storedDockEntries(space).find(e => e.id == dockId);
+      await wait(() => entry()?.url == pageURL("Replaced dock"), "the Dock entry's URL to be replaced");
+      check(entry().title == "Replaced dock" && dockOrder() == docks, dockOrder());
+      check(shell.docks.dockOf(dockB)?.id == dockId && shell.docks.folderOf(dockB)?.id == folder, "the Dock tab left its entry or folder");
+      await docksMatch();
+      check(!dockRowFor(dockB).querySelector(".back"), "the Dock row's back button stayed");
+      let otherDocks = other.OrbitoShell.docks;
+      let otherTab = () => otherDocks.tabsIn(space).find(t => otherDocks.dockOf(t).id == dockId);
+      await wait(() => otherTab()?.linkedBrowser.currentURI.spec == pageURL("Replaced dock"),
+        "the other window's Dock tab at the new page");
+      await docksMatch(other);
+      check(!otherTab().linkedPanel && otherDocks.folderOf(otherTab())?.id == folder, "the other window's Dock tab");
+      // A private window goes back but replaces nothing.
+      privateWin = win.OpenBrowserWindow({ private: true });
+      await wait(() => privateWin.gBrowserInit?.delayedStartupFinished && privateWin.OrbitoShell?.pins, "the private window");
+      await pinsMatch(privateWin);
+      let tab = privateWin.OrbitoShell.pins.tabs[0];
+      privateWin.gBrowser.selectedTab = tab;
+      await wait(() => tab.linkedPanel && tab.linkedBrowser.contentTitle == "Replaced pin", "the private window's Pin to load");
+      tab.linkedBrowser.loadURI(Services.io.newURI(pageURL("Replaced pin") + "#private"), {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+      await wait(() => privateWin.OrbitoShell.pins.isAway(tab), "the private window's Pin tab to go elsewhere");
+      await pinButtons(privateWin);
+      let items = await tabMenu(pinButtonFor(tab, privateWin), null, privateWin);
+      check(items.includes("orbito-tab-menu-pin-entry-reset") && !items.includes("orbito-tab-menu-pin-entry-replace"), `items ${items}`);
+      privateWin.OrbitoShell.pins.replaceEntry(tab);
+      await sleep(300);
+      check(storedPins()[0].url == pageURL("Replaced pin"), "a private window replaced a Pin's URL");
+    } finally {
+      for (let w of [other, privateWin].filter(Boolean)) {
+        await new Promise(resolve => {
+          w.addEventListener("unload", resolve, { once: true });
+          w.close();
+        });
+      }
+      await resetPins();
+      await resetDocks();
+    }
+    """)
 
 
 @test

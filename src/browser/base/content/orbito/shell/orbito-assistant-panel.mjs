@@ -24,8 +24,10 @@ const { stopShortcutText } = ChromeUtils.importESModule(
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   markdown: "chrome://browser/content/orbito/OrbitoMarkdown.sys.mjs",
+  NEW_THREAD_COMMANDS: "chrome://browser/content/orbito/OrbitoSkills.sys.mjs",
   OrbitoAssistantCore:
     "chrome://browser/content/orbito/OrbitoAssistantCore.sys.mjs",
   ClaudeAccount: "chrome://browser/content/orbito/ClaudeCLI.sys.mjs",
@@ -85,6 +87,10 @@ const ICONS = {
   </svg>`,
   threads: html`<svg viewBox="0 0 16 16" aria-hidden="true">
     <path d="M2.5 4h11M2.5 8h11M2.5 12h7" />
+  </svg>`,
+  compose: html`<svg viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M7.5 3H4a1.5 1.5 0 0 0-1.5 1.5V12A1.5 1.5 0 0 0 4 13.5h7.5A1.5 1.5 0 0 0 13 12V8.5" />
+    <path d="M11.6 2.4a1.4 1.4 0 0 1 2 2L8 10l-2.5.5L6 8z" />
   </svg>`,
   back: html`<svg class="flip" viewBox="0 0 16 16" aria-hidden="true">
     <path d="M10 3 5 8l5 5" />
@@ -188,6 +194,19 @@ function ago(time) {
   return t("orbito-assistant-threads-days-ago", {
     count: Math.floor(hours / 24),
   });
+}
+
+function isMac() {
+  return lazy.AppConstants.platform == "macosx";
+}
+
+// Command+Enter on macOS, Ctrl+Enter elsewhere, as the shell's shortcuts
+// take the accel key.
+function isAccelEnter(event) {
+  return (
+    event.key == "Enter" &&
+    (isMac() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+  );
 }
 
 // The window's events the panel follows: its Space or its Thread changed.
@@ -524,6 +543,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     window.addEventListener("OrbitoShowChange", this);
     window.addEventListener("OrbitoShowSummary", this);
     window.addEventListener("OrbitoShowReview", this);
+    this.addEventListener("keydown", this);
     this.#followShow();
   }
 
@@ -548,6 +568,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     window.removeEventListener("OrbitoShowChange", this);
     window.removeEventListener("OrbitoShowSummary", this);
     window.removeEventListener("OrbitoShowReview", this);
+    this.removeEventListener("keydown", this);
     this.#unsubscribeShow?.();
     this.#unsubscribeShow = null;
     this.#denyAll();
@@ -701,6 +722,15 @@ export class OrbitoAssistantPanel extends MozLitElement {
 
   handleEvent(event) {
     switch (event.type) {
+      case "keydown": {
+        let allowed = this.#approvalKey(event);
+        if (allowed != null) {
+          event.preventDefault();
+          event.stopPropagation();
+          this.#answer(this.threadId, allowed);
+        }
+        break;
+      }
       case "TabSelect":
         // The same Thread, for another page.
         this.#closeMenu();
@@ -1350,7 +1380,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
 
   /**
    * Asks the question. A "/name" that calls no skill is not asked: it stays
-   * in the input with a notice.
+   * in the input with a notice. "/new" and "/clear" start a new Thread.
    *
    * @param {string} [prompt] The input's text by default.
    * @param {object} [options]
@@ -1361,7 +1391,16 @@ export class OrbitoAssistantPanel extends MozLitElement {
     let core = this.#core;
     let threadId = core.threadFor(window);
     // Show Orbito blocks this window's agent.
-    if (!prompt || core.isRunning(threadId) || this.#showState) {
+    if (!prompt || this.#showState) {
+      return;
+    }
+    if (lazy.NEW_THREAD_COMMANDS.some(name => prompt == `/${name}`)) {
+      this.#setNotice("");
+      this.#setInput("");
+      this.newThread();
+      return;
+    }
+    if (core.isRunning(threadId)) {
       return;
     }
     this.#skills = [];
@@ -1409,6 +1448,40 @@ export class OrbitoAssistantPanel extends MozLitElement {
       this.#queueRefresh();
     }
     return promise;
+  }
+
+  /**
+   * The answer a key gives the approval the shown Thread waits on:
+   * Command+Enter (Ctrl+Enter off macOS) allows, Escape denies. Keys
+   * something in the panel took already (a menu, the skill list) are not
+   * answers.
+   *
+   * @returns {boolean|null} Whether it allows, or null for no answer.
+   */
+  #approvalKey(event) {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.repeat ||
+      event.altKey ||
+      event.shiftKey ||
+      this.view != "chat" ||
+      !this.#approvals.has(this.threadId)
+    ) {
+      return null;
+    }
+    if (isAccelEnter(event)) {
+      return true;
+    }
+    if (
+      event.key == "Escape" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !this.menu
+    ) {
+      return false;
+    }
+    return null;
   }
 
   // In an Orbit's task, Deny also stops the task: what it opened so far is
@@ -1698,7 +1771,13 @@ export class OrbitoAssistantPanel extends MozLitElement {
   #onInputKey(event) {
     if (this.#skillMenuKey(event)) {
       event.preventDefault();
-    } else if (event.key == "Enter" && !event.shiftKey && !event.isComposing) {
+    } else if (
+      event.key == "Enter" &&
+      !event.shiftKey &&
+      !event.isComposing &&
+      // Command+Enter answers a waiting approval instead, in handleEvent.
+      this.#approvalKey(event) == null
+    ) {
       event.preventDefault();
       this.submit();
     }
@@ -1713,13 +1792,20 @@ export class OrbitoAssistantPanel extends MozLitElement {
   }
 
   /**
-   * Shows the skills that are on whose names start with what is typed after
-   * "/", until a whole name is typed: those the Thread's Space sees.
+   * Shows /new and /clear, then the skills that are on, whose names start
+   * with what is typed after "/", until a whole name is typed: the skills
+   * that the Thread's Space sees.
    */
   async #updateSkillMenu() {
     let value = this.input.value;
     let seq = ++this.#skillSeq;
-    if (!value.startsWith("/") || value.includes("\n")) {
+    // A whole command typed hides the menu, so Enter runs it rather than
+    // picking a longer skill name such as "news".
+    if (
+      !value.startsWith("/") ||
+      value.includes("\n") ||
+      lazy.NEW_THREAD_COMMANDS.includes(value.slice(1))
+    ) {
       this.#showSkills([]);
       return;
     }
@@ -1733,8 +1819,14 @@ export class OrbitoAssistantPanel extends MozLitElement {
       return;
     }
     let typed = value.slice(1);
+    let commands = lazy.NEW_THREAD_COMMANDS;
+    let description = t("orbito-assistant-command-new-thread");
     this.#showSkills(
-      skills.filter(s => s.enabled && s.name.startsWith(typed) && s.name != typed)
+      [
+        ...commands.map(name => ({ name, description, enabled: true })),
+        // A skill made before the commands could have one's name.
+        ...skills.filter(s => !commands.includes(s.name)),
+      ].filter(s => s.enabled && s.name.startsWith(typed) && s.name != typed)
     );
   }
 
@@ -2376,6 +2468,9 @@ export class OrbitoAssistantPanel extends MozLitElement {
     let tabs = orbit ? this.#core.orbitTabs(orbit) : [];
     // A step of a skill the user enters themselves.
     let entry = approval.name == lazy.STEP_TOOL;
+    let mac = isMac();
+    let allow = entry ? t("orbito-assistant-skill-step-continue") : t("orbito-assistant-allow");
+    let deny = entry ? t("orbito-assistant-skill-step-stop") : t("orbito-assistant-deny");
     let site = approval.site;
     let meta = site
       ? html`<span class="favicons"><img src=${`page-icon:${site}`} alt="" @error=${event => (event.target.src = DEFAULT_ICON)} /></span>
@@ -2389,8 +2484,18 @@ export class OrbitoAssistantPanel extends MozLitElement {
       <div class="approval-row">
         <span class="pulse" aria-hidden="true"></span>
         <p title=${approval.text}>${approval.text}</p>
-        <button class="secondary" @click=${() => this.#answer(id, false)}>${entry ? t("orbito-assistant-skill-step-stop") : t("orbito-assistant-deny")}</button>
-        <button class="primary" @click=${() => this.#answer(id, true)}>${entry ? t("orbito-assistant-skill-step-continue") : t("orbito-assistant-allow")}</button>
+        <button
+          class="secondary"
+          aria-keyshortcuts="Escape"
+          title=${t("orbito-assistant-answer-title", { label: deny, shortcut: "Esc" })}
+          @click=${() => this.#answer(id, false)}
+        >${deny}</button>
+        <button
+          class="primary"
+          aria-keyshortcuts=${mac ? "Meta+Enter" : "Control+Enter"}
+          title=${t("orbito-assistant-answer-title", { label: allow, shortcut: mac ? "⌘↵" : "Ctrl+Enter" })}
+          @click=${() => this.#answer(id, true)}
+        >${allow}</button>
       </div>
       ${approval.code
         ? html`<pre class="approval-code">${approval.code}</pre>`
@@ -3654,6 +3759,15 @@ export class OrbitoAssistantPanel extends MozLitElement {
         ${this.#renderThreadsButton()}
         <div class="title" role="heading" aria-level="2" title=${title}>${title}</div>
         ${this.#renderDocumentsButton()}
+        <button
+          class="icon new-thread"
+          ?disabled=${!this.messages.length}
+          aria-label=${t("orbito-assistant-new-thread")}
+          title=${t("orbito-assistant-new-thread")}
+          @click=${() => this.newThread()}
+        >
+          ${ICONS.compose}
+        </button>
         <div class="anchor">
           <button
             class="icon session"

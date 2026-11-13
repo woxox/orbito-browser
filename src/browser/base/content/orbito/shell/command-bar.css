@@ -20,6 +20,7 @@
 /* The Command bar's own parts in the urlbar (command-bar.mjs) show only
  * while it is open. */
 .orbito-command-bar-placeholder,
+.orbito-command-bar-ghost,
 .orbito-command-bar-mode,
 .orbito-command-bar-footer {
   display: none;
@@ -146,6 +147,27 @@
     pointer-events: none;
     color: var(--orbito-page-text-muted);
     font-size: 17px;
+  }
+
+  /* The autofill past the caret while an IME composes: an invisible copy
+   * of the input's text, then the completion. */
+  .orbito-command-bar-ghost:not([hidden]) {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    overflow: hidden;
+    white-space: pre;
+    pointer-events: none;
+    font-size: 17px;
+
+    > span > :first-child {
+      visibility: hidden;
+    }
+
+    > span > :last-child {
+      color: var(--orbito-page-text-muted);
+    }
   }
 
   /* Which tab Enter loads in. */
