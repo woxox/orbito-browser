@@ -17,10 +17,6 @@ orbito-assistant-starter-explain = 쉽게 설명
 orbito-assistant-starter-summarize-prompt = 이 페이지를 요약해 줘.
 orbito-assistant-starter-takeaways-prompt = 이 페이지의 핵심 요점을 정리해 줘.
 orbito-assistant-starter-explain-prompt = 이 페이지가 무슨 내용인지 쉽게 설명해 줘.
-orbito-assistant-draft-skill = 이 Thread를 스킬로 저장
-orbito-assistant-drafting-skill = 스킬 초안 작성 중…
-# $error is why it failed.
-orbito-assistant-draft-skill-failed = 스킬 초안을 만들지 못했어요: { $error }
 # $name is what was typed after "/".
 orbito-assistant-unknown-skill = /{ $name } 스킬이 없어요. /를 입력하면 스킬 목록을 볼 수 있어요.
 orbito-assistant-stopped-denied = 단계를 거절해서 작업을 멈췄어요.
@@ -265,9 +261,6 @@ orbito-assistant-stopped-tab-closed = 탭이 닫혀서 멈췄어요.
 orbito-assistant-stopped-tool-calls = 에이전트가 실행할 수 없는 도구 호출을 계속해서 멈췄어요.
 # $tools lists each tool with why, e.g. "search (bad schema)".
 orbito-assistant-tools-not-offered = 일부 도구를 모델에 제공하지 못했어요: { $tools }
-orbito-assistant-thread-empty = Thread가 비어 있어요.
-# $error is why the draft is not a skill.
-orbito-assistant-draft-not-skill = 초안이 스킬 형식이 아니에요: { $error }
 orbito-assistant-skill-missing = 스킬이 스킬 폴더에 더 이상 없어요.
 orbito-assistant-skill-exists = { $name } 스킬이 이미 있어요.
 # $name is the tool's name.

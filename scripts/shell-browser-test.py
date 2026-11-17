@@ -1416,6 +1416,38 @@ def clicking_a_row_selects_its_tab_and_close_closes_it(b):
 
 
 @test
+def a_long_tab_list_fades_at_its_ends_without_a_scrollbar(b):
+    b.js("""
+    await onlyBlankTab();
+    for (let i = 0; i < 40; i++) {
+      win.gBrowser.addTab(pageURL(`Long list ${i}`), {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      });
+    }
+    await listMatchesGBrowser();
+    let root = tabList().renderRoot;
+    let scroller = root.querySelector(".scroll");
+    let fade = end => parseFloat(scroller.style.getPropertyValue(`--orbito-fade-${end}`));
+    check(scroller.scrollHeight > scroller.clientHeight, "40 tabs do not overflow the list");
+    check(win.getComputedStyle(scroller).scrollbarWidth == "none", "the platform's scrollbar shows");
+
+    scroller.scrollTop = 0;
+    await wait(() => fade("start") == 0 && fade("end") == 24, "only the end to fade at the top");
+    scroller.scrollTop = scroller.scrollHeight;
+    await wait(() => fade("start") == 24 && fade("end") == 0, "only the start to fade at the bottom");
+
+    // Nothing lies over the close button's end.
+    let row = (await rows()).at(-1);
+    let close = row.querySelector(".close").getBoundingClientRect();
+    let hit = root.elementFromPoint(close.right - 1, close.top + close.height / 2);
+    check(hit?.classList.contains("close"), `the close button's end hits ${hit?.className}`);
+
+    await onlyBlankTab();
+    await wait(() => fade("start") == 0 && fade("end") == 0, "no fade on a short list");
+    """)
+
+
+@test
 def the_url_display_follows_the_selected_tab(b):
     b.js("""
     await onlyBlankTab();
@@ -12996,18 +13028,14 @@ def the_orbito_settings_show_one_pane_at_a_time_from_the_rail(b):
     // Asked for from elsewhere: the page that is open shows it.
     OrbitoPages.openSettings(win, { pane: "recall" });
     await wait(() => open() == "recall" && current() == "recall", "the recall pane");
-    // A Space's settings, a skill draft and a task's runs show their panes.
+    // A Space's settings and a task's runs show their panes.
     OrbitoPages.openSpaceSettings(win, spaces().current);
     await wait(() => open() == "spaces", "the spaces pane");
     await wait(() => page.activeElement == page.querySelector(`.space[data-space="${spaces().current}"] input.space-name`), "focus on the Space's name");
-    OrbitoPages.openSkillDraft(win, { name: "drafted", description: "", tools: [], output: "chat", body: "Do it." });
-    await wait(() => open() == "skills" && !page.getElementById("skill-form").hidden, "the skill form");
-    await wait(() => page.activeElement == page.getElementById("skill-form").elements.namedItem("name"), "focus on the skill's name");
-    page.getElementById("skill-cancel").click();
     // Opened without a pane, it keeps the one it shows.
     OrbitoPages.openSettings(win);
     await new Promise(r => setTimeout(r, 100));
-    check(open() == "skills", open());
+    check(open() == "spaces", open());
     """)
     # A page that unloads ends the script, so it closes in one of its own.
     b.js("await onlyBlankTab();")

@@ -1535,23 +1535,6 @@ const OrbitoSettings = {
         this._renderSkills();
       }
     });
-    // A draft the panel made from a Thread ("Save as skill"), waiting
-    // now or sent while this page is open. The user saves it.
-    let takeDraft = () => {
-      let draft = OrbitoPages.takeSkillDraft();
-      if (draft) {
-        this.showPane("skills");
-        this._openSkillForm(
-          t("orbito-settings-skill-new-from-thread"),
-          draft,
-          {}
-        );
-      }
-    };
-    Services.obs.addObserver(takeDraft, OrbitoPages.SKILL_DRAFT_TOPIC);
-    window.addEventListener("unload", () =>
-      Services.obs.removeObserver(takeDraft, OrbitoPages.SKILL_DRAFT_TOPIC)
-    );
     this._renderSkills();
   },
 

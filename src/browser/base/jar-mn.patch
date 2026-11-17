@@ -2,7 +2,7 @@ diff --git a/browser/base/jar.mn b/browser/base/jar.mn
 index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7ac4d2d22 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -5,6 +5,180 @@ browser.jar:
+@@ -5,6 +5,182 @@ browser.jar:
  %  content browser %content/browser/ contentaccessible=yes
  
          content/browser/aboutDialog-appUpdater.js     (content/aboutDialog-appUpdater.js)
@@ -169,6 +169,8 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7
 +        content/browser/orbito/shell/motion.css (content/orbito/shell/motion.css)
 +        content/browser/orbito/shell/group.css (content/orbito/shell/group.css)
 +        content/browser/orbito/shell/motion.mjs (content/orbito/shell/motion.mjs)
++        content/browser/orbito/shell/scroll-edges.mjs (content/orbito/shell/scroll-edges.mjs)
++        content/browser/orbito/shell/scroll-edges.css (content/orbito/shell/scroll-edges.css)
 +        content/browser/orbito/newtab/newtab.html (content/orbito/newtab/newtab.html)
 +        content/browser/orbito/newtab/newtab.css (content/orbito/newtab/newtab.css)
 +        content/browser/orbito/newtab/orbito-new-tab.mjs (content/orbito/newtab/orbito-new-tab.mjs)

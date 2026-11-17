@@ -14,6 +14,7 @@ import {
 } from "chrome://browser/content/orbito/shell/orbito-pins.mjs";
 import { ORBITO_LOGO } from "chrome://browser/content/orbito/shell/orbito-logo.mjs";
 import { ListMotion } from "chrome://browser/content/orbito/shell/motion.mjs";
+import { ScrollEdges } from "chrome://browser/content/orbito/shell/scroll-edges.mjs";
 import {
   pressWithoutFocus,
   SidebarDrag,
@@ -159,6 +160,10 @@ export class OrbitoTabList extends MozLitElement {
     // A group made by a drag and an Orbit pop in (orbito-tab-list.css).
     entersOwn: el => el.matches(".orbit, .group[fresh]"),
   });
+  #edges = new ScrollEdges(this, {
+    scroller: ".scroll",
+    content: ".list",
+  });
 
   static queries = {
     rows: { all: ".list .tab" },
@@ -175,6 +180,7 @@ export class OrbitoTabList extends MozLitElement {
     window.addEventListener("OrbitoDocksChange", this);
     window.addEventListener("unload", this);
     lazy.OrbitoAssistantCore.addListener(this.#onCoreEvent);
+    this.#edges.update();
   }
 
   disconnectedCallback() {
@@ -192,6 +198,7 @@ export class OrbitoTabList extends MozLitElement {
     window.removeEventListener("unload", this);
     lazy.OrbitoAssistantCore.removeListener(this.#onCoreEvent);
     this.#endDrag();
+    this.#edges.disconnect();
   }
 
   #onCoreEvent = (threadId, event) => {
@@ -1044,6 +1051,7 @@ export class OrbitoTabList extends MozLitElement {
 
   updated() {
     this.#motion.play(this.#shownSpace);
+    this.#edges.update();
   }
 
   render() {
@@ -1056,7 +1064,7 @@ export class OrbitoTabList extends MozLitElement {
         rel="stylesheet"
         href="chrome://browser/content/orbito/shell/orbito-tab-list.css"
       />
-      <div class="scroll">
+      <div class="scroll edges">
         <button class="new-tab" @click=${() => this.newTab()}>
           <span class="icon"></span>
           <span class="label">${t("orbito-tabs-new-tab")}</span>

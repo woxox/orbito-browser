@@ -218,7 +218,6 @@ orbito-settings-skills-hint =
     changed, but a copy of one can, and it then replaces the built-in.
 orbito-settings-skill-new = New skill
 orbito-settings-skill-from-demo = Create from a demo
-orbito-settings-skill-new-from-thread = New skill from a Thread
 # $name is the skill's name.
 orbito-settings-skill-copy-title = Copy of /{ $name }
 orbito-settings-skill-edit-title = Edit /{ $name }

@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @import url("chrome://browser/content/orbito/shell/motion.css");
+@import url("chrome://browser/content/orbito/shell/scroll-edges.css");
 
 /* Drawn straight on the frame, as the Sidebar is: the page stays the only
  * card. Boxes (questions, approvals, the input) sit flush with the panel's
@@ -241,7 +242,6 @@ svg.flip:dir(rtl) {
   min-height: 0;
   padding: 4px 0 8px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .thread-row,
@@ -625,7 +625,6 @@ svg.flip:dir(rtl) {
   min-height: 0;
   padding: 12px 0;
   overflow-y: auto;
-  scrollbar-width: thin;
 
   &:focus-visible {
     outline: none;
@@ -1540,16 +1539,6 @@ details.skill-steps {
   font-weight: normal;
 }
 
-.draft {
-  padding-inline: 10px;
-}
-
-.draft-error {
-  margin-top: 4px;
-  color: var(--orbito-warn);
-  font-size: 12px;
-}
-
 .empty {
   display: flex;
   flex-direction: column;
@@ -1686,7 +1675,6 @@ details.skill-steps {
   min-height: 0;
   padding: 12px 10px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .show-head {

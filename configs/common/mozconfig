@@ -27,6 +27,12 @@ ac_add_options --enable-application=browser
 # Dev builds: let mach download toolchains (clang, rust, etc.)
 ac_add_options --enable-bootstrap
 
+# Remote builds (scripts/remote/build.sh) skip debug symbols: with them each
+# objdir outgrows the build server's disk (a Windows one passed 17GB).
+if test "$ORBITO_NO_DEBUG_SYMBOLS"; then
+  ac_add_options --disable-debug-symbols
+fi
+
 if test "$ORBITO_RELEASE"; then
   ac_add_options --enable-optimize
   ac_add_options --enable-release

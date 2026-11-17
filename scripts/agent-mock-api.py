@@ -90,11 +90,6 @@ stream_options.include_usage asks for it, as OpenAI does) and 20 and 9 a
 Responses one (in response.completed). GET /messages-log lists the bodies of
 the Messages requests.
 
-Whatever the model, a request whose system prompt asks for a skill draft
-(OrbitoAssistantCore.draftSkill) is answered with a SKILL.md in a code
-fence, whose description quotes the first user message of the
-conversation it was given and the tools it was offered.
-
 GET /translate-streams is how many mock-translate streams are open now
 (one closes when the client goes away, noticed at its next event).
 
@@ -291,11 +286,6 @@ def with_refs(input, results):
 def scenario(r):
     model, tools, system = r["model"], r["tools"], r["system"]
     tool_result, tool_results = r["toolResult"], r["toolResults"]
-    if "You write skills for Orbito" in system:
-        match = re.search(r"<user>\n(.*)", "\n".join(r["userTexts"]))
-        asked = match.group(1) if match else ""
-        offered = ",".join(t["name"] for t in tools) or "none"
-        return {"text": f"Here is the draft:\n\n```markdown\n---\nname: drafted skill\ndescription: 'Asked: {asked}; tools: {offered}'\n---\nDo it again.\n```\n"}
     if model in ("mock-translate", "mock-translate-slow"):
         reply = translate_reply(r["userTexts"][-1] if r["userTexts"] else "")
         if model == "mock-translate-slow":

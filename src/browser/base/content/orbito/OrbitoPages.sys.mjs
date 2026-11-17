@@ -83,8 +83,6 @@ const PROCESS_SCRIPT =
     `ChromeUtils.importESModule("chrome://browser/content/orbito/OrbitoPages.sys.mjs").OrbitoPages.register();`
   );
 
-// Tells open settings pages a skill draft is waiting.
-const SKILL_DRAFT_TOPIC = "orbito-skill-draft";
 // Tells open settings pages to show a task's runs.
 const TASK_RUNS_TOPIC = "orbito-task-runs";
 // Tells open library pages which list to show.
@@ -146,14 +144,11 @@ class NewTabPage extends AboutPage {
 }
 
 export const OrbitoPages = {
-  SKILL_DRAFT_TOPIC,
   TASK_RUNS_TOPIC,
   LIBRARY_LIST_TOPIC,
   SPACE_SETTINGS_TOPIC,
   SETTINGS_PANE_TOPIC,
   _registered: false,
-  // A skill draft for the settings page's editor, until the page takes it.
-  _skillDraft: null,
   // The task whose runs the settings page is to show, until it takes it.
   _taskRuns: null,
   // The list the library page is to show, until it takes it.
@@ -325,27 +320,6 @@ export const OrbitoPages = {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
   },
-  /**
-   * Opens the settings page with a skill draft in its editor, for the user
-   * to check and save.
-   *
-   * @param {Window} win The window asking.
-   * @param {object} draft {name, description, tools, output, body}.
-   */
-  openSkillDraft(win, draft) {
-    this._skillDraft = draft;
-    // A settings page that is open takes it now, a new one once it loads.
-    Services.obs.notifyObservers(null, SKILL_DRAFT_TOPIC);
-    this.openSettings(win);
-  },
-
-  /** The skill draft waiting for the settings page, once. */
-  takeSkillDraft() {
-    let draft = this._skillDraft;
-    this._skillDraft = null;
-    return draft;
-  },
-
   /**
    * Opens the settings page showing a scheduled task's runs.
    *

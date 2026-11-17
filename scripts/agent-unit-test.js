@@ -40,7 +40,7 @@ await (async () => {
   const { memoryPrompt, RECALL_LINE } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/OrbitoMemoryPrompt.sys.mjs"
   );
-  const { checkSkillName, matchSkill, NEW_THREAD_COMMANDS, parseSkill, skillBlock, skillDraft, skillFile } = ChromeUtils.importESModule(
+  const { checkSkillName, matchSkill, NEW_THREAD_COMMANDS, parseSkill, skillBlock, skillFile } = ChromeUtils.importESModule(
     "chrome://browser/content/orbito/OrbitoSkills.sys.mjs"
   );
   const { suggestions } = ChromeUtils.importESModule(
@@ -982,17 +982,6 @@ import pdfplumber
     assertEquals((responsesInput(history)[0]).content[0].text, expected);
     assertEquals(claudePrompt(history, "Q2").includes(`<user>\n${expected}\n</user>`), true);
     assertEquals(block.includes("Translate the page.") && block.includes("/번역"), true);
-  });
-
-  test("skillDraft finds the SKILL.md in a model's reply", () => {
-    let file = "---\nname: notes\ndescription: Take notes.\n---\nNote it.\n\n```\nexample\n```";
-    let skill = { name: "notes", description: "Take notes.", tools: [], output: "chat", body: "Note it.\n\n```\nexample\n```" };
-    assertEquals(skillDraft(file), skill);
-    assertEquals(skillDraft(`Here it is:\n\n${file}`), skill);
-    assertEquals(skillDraft(`Here it is:\n\n\`\`\`\`markdown\n${file}\n\`\`\`\`\nSave it.`), skill);
-    assertEquals((skillDraft("```md\n---\nname: a\ndescription: b\n---\nDo it.\n```")).body, "Do it.");
-    assertThrows(() => skillDraft("I cannot make a skill of this."), "no front matter");
-    assertThrows(() => skillDraft("---\nname: a\n---\nDo it."), "no description");
   });
 
   test("a skill is for all Spaces until it is kept for one, which alone sees it", async () => {

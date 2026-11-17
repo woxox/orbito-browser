@@ -14,6 +14,7 @@ import {
   motionMs,
   reducedMotion,
 } from "chrome://browser/content/orbito/shell/motion.mjs";
+import { ScrollEdges } from "chrome://browser/content/orbito/shell/scroll-edges.mjs";
 
 const { t } = ChromeUtils.importESModule(
   "chrome://browser/content/orbito/OrbitoL10n.sys.mjs"
@@ -299,8 +300,6 @@ const STARTERS = [
   ],
 ];
 
-const DRAFT_LABEL = t("orbito-assistant-draft-skill");
-
 // The suggestion chips' labels, by chip id (OrbitoSuggestions.sys.mjs).
 const CHIP_LABELS = {
   summarize: t("orbito-suggestions-summarize"),
@@ -378,7 +377,6 @@ export class OrbitoAssistantPanel extends MozLitElement {
     modelInput: ".settings .model-id",
     baseInput: ".settings .base",
     log: ".log",
-    draftError: ".draft-error",
     chips: ".chips",
     skillMenu: ".skill-menu",
     inputNotice: ".input-notice",
@@ -427,6 +425,12 @@ export class OrbitoAssistantPanel extends MozLitElement {
   // scrolls up; and where it was scrolled to last.
   #following = false;
   #scrolledTo = 0;
+  // The shown view's list: the Thread, Show Orbito, or the Thread or
+  // document list.
+  #edges = new ScrollEdges(this, {
+    scroller:
+      ":is(.threads-view, .documents-view):not([hidden]) .threads, .show, .log",
+  });
   // Whether the update shows a Thread anew (opened, switched to), whose
   // messages just show; and the log's messages and cards shown already,
   // in the log element they are in.
@@ -446,7 +450,6 @@ export class OrbitoAssistantPanel extends MozLitElement {
   // "<kind> <id>" -> what an action under a message shows: {busy, error,
   // items}.
   #ui = new Map();
-  #draft = { busy: false, error: "" };
   #hasText = false;
   #notice = "";
   #noticeTimer = 0;
@@ -545,6 +548,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     window.addEventListener("OrbitoShowReview", this);
     this.addEventListener("keydown", this);
     this.#followShow();
+    this.#edges.update();
   }
 
   disconnectedCallback() {
@@ -572,6 +576,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     this.#unsubscribeShow?.();
     this.#unsubscribeShow = null;
     this.#denyAll();
+    this.#edges.disconnect();
   }
 
   get #core() {
@@ -945,7 +950,6 @@ export class OrbitoAssistantPanel extends MozLitElement {
       this.threadId = id;
       this.#markdown.clear();
       this.#ui.clear();
-      this.#draft = { busy: false, error: "" };
     }
     if (!update || changed) {
       this.#stick = true;
@@ -1003,6 +1007,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         this.#scrollToEnd(log);
       }
     }
+    this.#edges.update();
     this.#stick = false;
     this.#quiet = false;
     // A long list of pinned steps brings the one the agent moved to into
@@ -2110,26 +2115,6 @@ export class OrbitoAssistantPanel extends MozLitElement {
     this.requestUpdate();
   }
 
-  /**
-   * Has the core draft a skill from the Thread shown and opens it in
-   * the settings page's editor.
-   */
-  async #draftSkill() {
-    this.#draft = { busy: true, error: "" };
-    this.requestUpdate();
-    try {
-      let draft = await this.#core.draftSkill(this.threadId);
-      lazy.OrbitoPages.openSkillDraft(window, draft);
-    } catch (e) {
-      this.#draft.error = t("orbito-assistant-draft-skill-failed", {
-        error: e.message,
-      });
-    } finally {
-      this.#draft.busy = false;
-      this.requestUpdate();
-    }
-  }
-
   /** @param {string} [pane] The settings page's pane to show. */
   #openSettingsPage(pane) {
     lazy.OrbitoPages.openSettings(window, { pane });
@@ -2829,7 +2814,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
 
   /** Asks what the demo is for, before it starts; the goal is optional. */
   #renderShowGoal() {
-    return html`<div class="show goal-step" role="group" aria-labelledby="show-title">
+    return html`<div class="show edges goal-step" role="group" aria-labelledby="show-title">
       <div class="show-title" id="show-title" role="heading" aria-level="3">${t("orbito-show")}</div>
       <label class="show-label" for="show-goal">${t("orbito-show-goal-label")}</label>
       <input
@@ -2859,7 +2844,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     let log = this.#show.log;
     let steps = this.#show.summary ?? [];
     let shortcut = stopShortcutText();
-    return html`<div class="show recording" role="group" aria-labelledby="show-title">
+    return html`<div class="show edges recording" role="group" aria-labelledby="show-title">
       <div class="show-head">
         <span class="rec-dot" aria-hidden="true"></span>
         <div class="show-title" id="show-title" role="heading" aria-level="3">${t("orbito-show-watching")}</div>
@@ -2892,7 +2877,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
       return this.#renderReview(review);
     }
     let failed = review?.phase == "failed";
-    return html`<div class="show stopped" role="group" aria-labelledby="show-title" aria-busy=${failed ? "false" : "true"}>
+    return html`<div class="show edges stopped" role="group" aria-labelledby="show-title" aria-busy=${failed ? "false" : "true"}>
       <div class="show-title" id="show-title" role="heading" aria-level="3">${t("orbito-show-recorded")}</div>
       <p class="show-count">${t("orbito-show-recorded-count", { count: show.log?.length ?? 0 })}</p>
       ${show.reason == "timeout"
@@ -2924,7 +2909,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
     let count = skill.steps.length;
     let canSave =
       !review.saving && skill.steps.some(step => step.text.trim() || step.direct);
-    return html`<div class="show review" role="group" aria-labelledby="show-title">
+    return html`<div class="show edges review" role="group" aria-labelledby="show-title">
       <div class="show-title" id="show-title" role="heading" aria-level="3">${show.replacing
         ? t("orbito-show-review-again", { name: show.replacing.name })
         : t("orbito-show-review")}</div>
@@ -3120,7 +3105,6 @@ export class OrbitoAssistantPanel extends MozLitElement {
     }
     let running = this.#running;
     let last = this.messages.length - 1;
-    let draft = this.#draft;
     return html`${repeat(
       this.messages,
       message => message.id,
@@ -3128,12 +3112,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         message.role == "user"
           ? this.#renderUserMessage(message)
           : this.#renderReply(message, running && i == last)
-    )}${!running && !this.#isPrivate
-      ? html`<div class="draft">
-          <button class="link" ?disabled=${draft.busy} @click=${() => this.#draftSkill()}>${draft.busy ? t("orbito-assistant-drafting-skill") : DRAFT_LABEL}</button>
-          <div class="draft-error" ?hidden=${!draft.error}>${draft.error}</div>
-        </div>`
-      : nothing}`;
+    )}`;
   }
 
   // The steps of the skill the running reply is doing, pinned above the
@@ -3290,7 +3269,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
           )}
         </div>
       </div>
-      <div class="threads" role="list" aria-label=${t("orbito-assistant-threads")}>
+      <div class="threads edges" role="list" aria-label=${t("orbito-assistant-threads")}>
         ${row(
           "",
           html`<span class="thread-icon">${ICONS.plus}</span
@@ -3376,7 +3355,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
         </button>
         <div class="view-title" role="heading" aria-level="2">${t("orbito-assistant-documents-heading")}</div>
       </div>
-      <div class="threads" role="list" aria-label=${t("orbito-assistant-documents-heading")}>
+      <div class="threads edges" role="list" aria-label=${t("orbito-assistant-documents-heading")}>
         ${this.#documents.length
           ? repeat(
               this.#documents,
@@ -3790,7 +3769,7 @@ export class OrbitoAssistantPanel extends MozLitElement {
       ${show
         ? this.#renderShow(show)
         : html`<div
-            class="log"
+            class="log edges"
             tabindex="-1"
             aria-label=${t("orbito-assistant-log")}
             aria-live="polite"

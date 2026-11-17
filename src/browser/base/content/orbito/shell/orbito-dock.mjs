@@ -14,6 +14,7 @@ import {
   tabIcon,
 } from "chrome://browser/content/orbito/shell/orbito-pins.mjs";
 import { ListMotion } from "chrome://browser/content/orbito/shell/motion.mjs";
+import { ScrollEdges } from "chrome://browser/content/orbito/shell/scroll-edges.mjs";
 import { isDockFolder } from "chrome://browser/content/orbito/shell/OrbitoDocks.sys.mjs";
 import {
   pressWithoutFocus,
@@ -143,6 +144,9 @@ export class OrbitoDock extends MozLitElement {
     // A folder made by a drag pops in (group.css).
     entersOwn: el => el.matches(".group[fresh]"),
   });
+  #edges = new ScrollEdges(this, {
+    scroller: ".list",
+  });
 
   constructor() {
     super();
@@ -202,6 +206,7 @@ export class OrbitoDock extends MozLitElement {
     for (let type of WINDOW_EVENTS) {
       window.addEventListener(type, this);
     }
+    this.#edges.update();
   }
 
   disconnectedCallback() {
@@ -213,6 +218,7 @@ export class OrbitoDock extends MozLitElement {
       window.removeEventListener(type, this);
     }
     this.#endDrag();
+    this.#edges.disconnect();
   }
 
   handleEvent(event) {
@@ -903,6 +909,7 @@ export class OrbitoDock extends MozLitElement {
       this.#spot = null;
     }
     this.#motion.play(this.#shownSpace);
+    this.#edges.update();
   }
 
   render() {
@@ -931,7 +938,7 @@ export class OrbitoDock extends MozLitElement {
         href="chrome://browser/content/orbito/shell/orbito-dock.css"
       />
       <div
-        class="list"
+        class="list edges"
         role="tablist"
         aria-orientation="vertical"
         aria-label=${t("orbito-dock-list")}

@@ -1,0 +1,20 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* A Shell list's ends (scroll-edges.mjs). The platform's scrollbar is
+ * gone: it lies over the rows' ends (the tab list's close buttons) and
+ * turns into a white track under the pointer. The rows fade out at an end
+ * that has more to scroll to, and a row focused from the keyboard scrolls
+ * in clear of the fade. */
+.edges {
+  scrollbar-width: none;
+  scroll-padding-block: 24px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--orbito-fade-start, 0px),
+    #000 calc(100% - var(--orbito-fade-end, 0px)),
+    transparent
+  );
+}

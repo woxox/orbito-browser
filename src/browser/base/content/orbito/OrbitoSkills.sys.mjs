@@ -263,24 +263,3 @@ export function skillFile({ name, description, tools = [], output = "chat", sour
   parseSkill(text);
   return text;
 }
-
-/**
- * The SKILL.md in a model's reply, which may sit in a code fence or follow a
- * sentence or two.
- *
- * @param {string} reply
- * @returns {object} The skill, as parseSkill reads it.
- * @throws {Error} Saying what is wrong, if the reply has no skill.
- */
-export function skillDraft(reply) {
-  let text = String(reply);
-  let fence = text.match(/^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^\1\s*$/m);
-  if (fence && /^---\s*$/m.test(fence[2])) {
-    text = fence[2];
-  }
-  let start = text.search(/^---\s*$/m);
-  if (start < 0) {
-    throw new Error("The draft has no front matter between --- lines.");
-  }
-  return parseSkill(text.slice(start));
-}

@@ -4,6 +4,7 @@
 
 @import url("chrome://browser/content/orbito/shell/motion.css");
 @import url("chrome://browser/content/orbito/shell/group.css");
+@import url("chrome://browser/content/orbito/shell/scroll-edges.css");
 
 /* A Dock taller than its share of the Space's body shrinks and scrolls,
  * so that it, and the tab list under it, end above the Space switcher. */

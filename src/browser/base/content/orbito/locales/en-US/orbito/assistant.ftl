@@ -18,10 +18,6 @@ orbito-assistant-starter-explain = Explain simply
 orbito-assistant-starter-summarize-prompt = Summarize this page.
 orbito-assistant-starter-takeaways-prompt = List the key takeaways from this page.
 orbito-assistant-starter-explain-prompt = Explain what this page is about in simple terms.
-orbito-assistant-draft-skill = Save this Thread as a skill
-orbito-assistant-drafting-skill = Drafting a skill…
-# $error is why it failed.
-orbito-assistant-draft-skill-failed = Could not draft a skill: { $error }
 # $name is what was typed after "/".
 orbito-assistant-unknown-skill = There is no skill named /{ $name }. Type / to see the skills.
 orbito-assistant-stopped-denied = Stopped: you denied a step.
@@ -323,9 +319,6 @@ orbito-assistant-stopped-tab-closed = Stopped: the tab was closed.
 orbito-assistant-stopped-tool-calls = Stopped: the assistant kept making tool calls that could not run.
 # $tools lists each tool with why, e.g. "search (bad schema)".
 orbito-assistant-tools-not-offered = Some tools could not be offered to the model: { $tools }
-orbito-assistant-thread-empty = The Thread is empty.
-# $error is why the draft is not a skill.
-orbito-assistant-draft-not-skill = The draft is not a skill: { $error }
 orbito-assistant-skill-missing = The skill is no longer in the skills folder.
 orbito-assistant-skill-exists = There is already a skill named { $name }.
 # $name is the tool's name.

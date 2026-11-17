@@ -211,7 +211,6 @@ orbito-settings-skills-hint =
     사본은 바꿀 수 있으며, 사본이 기본 스킬을 대신합니다.
 orbito-settings-skill-new = 새 스킬
 orbito-settings-skill-from-demo = 시연으로 만들기
-orbito-settings-skill-new-from-thread = Thread로 만든 새 스킬
 # $name is the skill's name.
 orbito-settings-skill-copy-title = /{ $name } 사본
 orbito-settings-skill-edit-title = /{ $name } 편집

@@ -4,6 +4,7 @@
 
 @import url("chrome://browser/content/orbito/shell/motion.css");
 @import url("chrome://browser/content/orbito/shell/group.css");
+@import url("chrome://browser/content/orbito/shell/scroll-edges.css");
 
 :host {
   display: flex;
