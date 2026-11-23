@@ -24,7 +24,11 @@
  * belongs to (null for none in particular). The pages Browsing recall
  * remembers (OrbitoRecall.sys.mjs) are rows of pages, with their visits in
  * page_visits: a page's text is kept once, and each visit has the Space it
- * was in (space_id, null for one before Spaces). Stores hand out copies, so
+ * was in (space_id, null for one before Spaces) and a guid, its Sync
+ * record's id. The account's other devices' visits are rows of
+ * remote_visits, which only the timeline lists, and the forgets that reach
+ * every device rows of recall_forgets (see docs/adr/0007-recall-sync.md).
+ * Stores hand out copies, so
  * callers save changes explicitly. Threads and documents of normal
  * windows live in the profile's sqlite file; private windows use a
  * MemoryStore so nothing reaches the disk. Private windows never use
@@ -38,6 +42,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   excerpt: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
   ftsQuery: "chrome://browser/content/orbito/tools/recall.sys.mjs",
   isExcludedHost: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
+  newVisitGuid: "chrome://browser/content/orbito/OrbitoRecallSync.sys.mjs",
   pageHash: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
   pageRank: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
   pageScore: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
@@ -45,7 +50,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
 });
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 // Each entry upgrades the schema from its index to the next version.
 export const MIGRATIONS = [
@@ -319,6 +324,42 @@ export const MIGRATIONS = [
     // JSON {name: value}.
     await conn.execute("ALTER TABLE tasks ADD COLUMN inputs TEXT NULL");
   },
+  async conn => {
+    // Browsing recall's visits go to the account's other devices as Sync
+    // records (OrbitoRecallSyncEngine.sys.mjs), a visit's id its guid; the
+    // other devices' visits and the forgets come back. See
+    // docs/adr/0007-recall-sync.md.
+    await conn.execute("ALTER TABLE page_visits ADD COLUMN guid TEXT NULL");
+    for (let row of await conn.execute("SELECT id FROM page_visits")) {
+      await conn.execute("UPDATE page_visits SET guid = :guid WHERE id = :id", {
+        guid: lazy.newVisitGuid(),
+        id: row.getResultByName("id"),
+      });
+    }
+    await conn.execute(
+      "CREATE UNIQUE INDEX page_visits_guid ON page_visits (guid)"
+    );
+    await conn.execute(`
+      CREATE TABLE remote_visits (
+        guid TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        title TEXT NOT NULL,
+        visited_at INTEGER NOT NULL,
+        dwell_ms INTEGER NULL,
+        space_id TEXT NULL,
+        device_id TEXT NOT NULL,
+        device_name TEXT NOT NULL
+      )`);
+    await conn.execute(
+      "CREATE INDEX remote_visits_time ON remote_visits (visited_at)"
+    );
+    await conn.execute("CREATE INDEX remote_visits_url ON remote_visits (url)");
+    await conn.execute(`
+      CREATE TABLE recall_forgets (
+        url TEXT PRIMARY KEY,
+        at INTEGER NOT NULL
+      )`);
+  },
 ];
 
 const PAGE_INDEXES = ["pages_fts", "pages_fts_words"];
@@ -351,6 +392,21 @@ async function forgetPages(conn, ids) {
       await conn.execute(sql, { pageId });
     }
   }
+}
+
+// Keeps the later of a URL's forget and at.
+async function upsertForget(conn, url, at) {
+  await conn.execute(
+    `INSERT INTO recall_forgets (url, at) VALUES (:url, :at)
+     ON CONFLICT (url) DO UPDATE SET at = max(at, excluded.at)`,
+    { url, at }
+  );
+}
+
+// A timeline entry's device: null for this one's, or {id, name}.
+function deviceOf(row) {
+  let id = row.getResultByName("device_id");
+  return id == null ? null : { id, name: row.getResultByName("device_name") };
 }
 
 // A quantized vector as a BLOB's bytes and back.
@@ -1040,7 +1096,8 @@ export class SqliteStore {
    * @param {number} visitedAt
    * @param {object} [options]
    * @param {?string} [options.space] The Space of the visit's tab.
-   * @returns {Promise<{pageId: number, visitId: number, reindexed: boolean}>}
+   * @returns {Promise<{pageId: number, visitId: number, guid: string,
+   *   reindexed: boolean}>}
    */
   async savePage({ url, title, text }, visitedAt, { space = null } = {}) {
     let hash = lazy.pageHash(title, text);
@@ -1085,24 +1142,30 @@ export class SqliteStore {
           { visitedAt, pageId }
         );
       }
+      let guid = lazy.newVisitGuid();
       let [visit] = await conn.execute(
-        `INSERT INTO page_visits (page_id, visited_at, space_id)
-         VALUES (:pageId, :visitedAt, :space) RETURNING id`,
-        { pageId, visitedAt, space }
+        `INSERT INTO page_visits (page_id, visited_at, space_id, guid)
+         VALUES (:pageId, :visitedAt, :space, :guid) RETURNING id`,
+        { pageId, visitedAt, space, guid }
       );
-      saved = { pageId, visitId: visit.getResultByName("id"), reindexed };
+      saved = { pageId, visitId: visit.getResultByName("id"), guid, reindexed };
     });
     return saved;
   }
 
-  /** Records how long a visit from savePage lasted. */
+  /**
+   * Records how long a visit from savePage lasted: the visit's guid, or
+   * null for one forgotten since.
+   */
   async setVisitDwell(visitId, dwellMs) {
-    await (
+    let [row] = await (
       await this.#db()
-    ).execute("UPDATE page_visits SET dwell_ms = :dwellMs WHERE id = :visitId", {
-      visitId,
-      dwellMs,
-    });
+    ).execute(
+      `UPDATE page_visits SET dwell_ms = :dwellMs WHERE id = :visitId
+       RETURNING guid`,
+      { visitId, dwellMs }
+    );
+    return row?.getResultByName("guid") ?? null;
   }
 
   /**
@@ -1346,26 +1409,44 @@ export class SqliteStore {
     };
   }
 
-  /** Forgets the pages on the domains, or under them, with their visits. */
+  /**
+   * Forgets the pages on the domains, or under them, with their visits, and
+   * the other devices' visits to them.
+   */
   async deletePagesOf(domains) {
     if (!domains.length) {
       return;
     }
     let conn = await this.#db();
+    let excluded = url =>
+      lazy.isExcludedHost(URL.parse(url)?.hostname ?? "", domains);
     await conn.executeTransaction(async () => {
       let ids = [];
       for (let row of await conn.execute("SELECT id, url FROM pages")) {
-        let host = URL.parse(row.getResultByName("url"))?.hostname ?? "";
-        if (lazy.isExcludedHost(host, domains)) {
+        if (excluded(row.getResultByName("url"))) {
           ids.push(row.getResultByName("id"));
         }
       }
       await forgetPages(conn, ids);
+      for (let row of await conn.execute(
+        "SELECT DISTINCT url FROM remote_visits"
+      )) {
+        let url = row.getResultByName("url");
+        if (excluded(url)) {
+          await conn.execute("DELETE FROM remote_visits WHERE url = :url", {
+            url,
+          });
+        }
+      }
     });
   }
 
-  /** Forgets a page with its visits. */
-  async deletePage(url) {
+  /**
+   * Forgets a page with its visits, this device's and the others'. With
+   * forgetAt, the visits to it until then are to be forgotten on every
+   * device too (a forget, see recallForgets).
+   */
+  async deletePage(url, { forgetAt = null } = {}) {
     let conn = await this.#db();
     await conn.executeTransaction(async () => {
       let rows = await conn.execute("SELECT id FROM pages WHERE url = :url", {
@@ -1375,6 +1456,10 @@ export class SqliteStore {
         conn,
         rows.map(row => row.getResultByName("id"))
       );
+      await conn.execute("DELETE FROM remote_visits WHERE url = :url", { url });
+      if (forgetAt != null) {
+        await upsertForget(conn, url, forgetAt);
+      }
     });
   }
 
@@ -1393,43 +1478,237 @@ export class SqliteStore {
   }
 
   /**
-   * The timeline: the remembered pages by the local days they were visited
-   * on, latest first, one entry per page and day, at most limit of them,
-   * from the entries whose latest visit is before before:
-   * [{url, title, start, day, visited_at, dwell_ms}], start being the first
-   * characters of the page's text, day the local date (YYYY-MM-DD),
-   * visited_at the latest visit that day and dwell_ms the time spent on it
-   * that day.
+   * The timeline's visits: this device's to the remembered pages and the
+   * other devices', latest first, those from after (inclusive) to before
+   * (exclusive), at most limit of them (-1 for all): [{url, title, start,
+   * visited_at, dwell_ms, device}], start being the first characters of
+   * the page's text ("" for another device's), dwell_ms the time spent on
+   * it (null when not known) and device null for this device's, or {id,
+   * name}.
+   *
+   * @param {object} [options]
+   * @param {?string} [options.device] "local" for this device's visits
+   *   only, another device's id for its visits only, or undefined for all.
    */
-  async listPageDays({ before = Number.MAX_SAFE_INTEGER, limit = 50 } = {}) {
+  async listVisits({
+    before = Number.MAX_SAFE_INTEGER,
+    after = 0,
+    limit = 200,
+    device,
+  } = {}) {
+    let parts = [];
+    if (device === undefined || device == "local") {
+      parts.push(`
+        SELECT p.url, p.title, substr(p.text, 1, 400) AS start,
+          v.visited_at, v.dwell_ms, NULL AS device_id, NULL AS device_name
+        FROM page_visits v JOIN pages p ON p.id = v.page_id
+        WHERE v.visited_at < :before AND v.visited_at >= :after`);
+    }
+    if (device != "local") {
+      parts.push(`
+        SELECT url, title, '' AS start, visited_at, dwell_ms,
+          device_id, device_name
+        FROM remote_visits
+        WHERE visited_at < :before AND visited_at >= :after
+        ${device === undefined ? "" : "AND device_id = :device"}`);
+    }
     let rows = await (
       await this.#db()
     ).execute(
-      `SELECT p.url, p.title, substr(p.text, 1, 400) AS start,
-         date(v.visited_at / 1000, 'unixepoch', 'localtime') AS day,
-         max(v.visited_at) AS visited_at,
-         sum(coalesce(v.dwell_ms, 0)) AS dwell_ms
-       FROM page_visits v JOIN pages p ON p.id = v.page_id
-       GROUP BY p.id, day
-       HAVING max(v.visited_at) < :before
+      `${parts.join(" UNION ALL ")}
        ORDER BY visited_at DESC
        LIMIT :limit`,
-      { before, limit }
+      device === undefined || device == "local"
+        ? { before, after, limit }
+        : { before, after, limit, device }
     );
-    return rows.map(row =>
-      Object.fromEntries(
-        ["url", "title", "start", "day", "visited_at", "dwell_ms"].map(name => [
+    return rows.map(row => ({
+      ...Object.fromEntries(
+        ["url", "title", "start", "visited_at", "dwell_ms"].map(name => [
           name,
           row.getResultByName(name),
         ])
-      )
+      ),
+      device: deviceOf(row),
+    }));
+  }
+
+  /**
+   * The devices whose visits are kept here, by name: [{id, name}], name
+   * being the one of the device's latest visit.
+   */
+  async listRemoteDevices() {
+    let rows = await (
+      await this.#db()
+    ).execute(
+      `SELECT device_id, device_name, max(visited_at) AS visited_at
+       FROM remote_visits GROUP BY device_id ORDER BY device_name, device_id`
     );
+    return rows.map(deviceOf);
+  }
+
+  /**
+   * The other devices' visits to pages whose title or URL has text, a
+   * timeline entry per page and device (see listVisits, without start),
+   * latest first, at most limit of them.
+   *
+   * @param {string} text
+   * @param {object} [options]
+   * @param {?string} [options.device] A device's id for its visits only.
+   * @param {number} [options.limit]
+   */
+  async searchRemoteVisits(text, { device, limit = 50 } = {}) {
+    let pattern = `%${String(text).replace(/[\\%_]/g, c => "\\" + c)}%`;
+    let rows = await (
+      await this.#db()
+    ).execute(
+      `SELECT url, title, max(visited_at) AS visited_at,
+         device_id, device_name
+       FROM remote_visits
+       WHERE (title LIKE :pattern ESCAPE '\\' OR url LIKE :pattern ESCAPE '\\')
+         ${device === undefined ? "" : "AND device_id = :device"}
+       GROUP BY url, device_id
+       ORDER BY visited_at DESC
+       LIMIT :limit`,
+      device === undefined ? { pattern, limit } : { pattern, limit, device }
+    );
+    return rows.map(row => ({
+      url: row.getResultByName("url"),
+      title: row.getResultByName("title"),
+      visited_at: row.getResultByName("visited_at"),
+      device: deviceOf(row),
+    }));
+  }
+
+  /* Sync (OrbitoRecallSyncEngine.sys.mjs) */
+
+  /** The guids of this device's visits. */
+  async recallVisitGuids() {
+    let rows = await (
+      await this.#db()
+    ).execute("SELECT guid FROM page_visits WHERE guid IS NOT NULL");
+    return rows.map(row => row.getResultByName("guid"));
+  }
+
+  /**
+   * One of this device's visits, {url, title, visited_at, dwell_ms,
+   * space_id}, or null.
+   */
+  async recallVisit(guid) {
+    let [row] = await (
+      await this.#db()
+    ).execute(
+      `SELECT p.url, p.title, v.visited_at, v.dwell_ms, v.space_id
+       FROM page_visits v JOIN pages p ON p.id = v.page_id
+       WHERE v.guid = :guid`,
+      { guid }
+    );
+    return row
+      ? Object.fromEntries(
+          ["url", "title", "visited_at", "dwell_ms", "space_id"].map(name => [
+            name,
+            row.getResultByName(name),
+          ])
+        )
+      : null;
+  }
+
+  /**
+   * The forgets kept here: Map(url -> at), every visit to url at or before
+   * at being forgotten on every device.
+   */
+  async recallForgets() {
+    let rows = await (
+      await this.#db()
+    ).execute("SELECT url, at FROM recall_forgets");
+    return new Map(
+      rows.map(row => [row.getResultByName("url"), row.getResultByName("at")])
+    );
+  }
+
+  /**
+   * Applies what another device's records change (see incomingActions):
+   * whether any of this device's visits went.
+   */
+  async applyRecallSync({ upsert, remove, forgets, purge }) {
+    let conn = await this.#db();
+    let local = false;
+    await conn.executeTransaction(async () => {
+      for (let guid of remove) {
+        await conn.execute("DELETE FROM remote_visits WHERE guid = :guid", {
+          guid,
+        });
+      }
+      for (let visit of upsert) {
+        await conn.execute(
+          `INSERT INTO remote_visits (guid, url, title, visited_at, dwell_ms,
+             space_id, device_id, device_name)
+           VALUES (:guid, :url, :title, :visited_at, :dwell_ms, :space_id,
+             :device_id, :device_name)
+           ON CONFLICT (guid) DO UPDATE SET url = excluded.url,
+             title = excluded.title, visited_at = excluded.visited_at,
+             dwell_ms = excluded.dwell_ms, space_id = excluded.space_id,
+             device_id = excluded.device_id,
+             device_name = excluded.device_name`,
+          visit
+        );
+      }
+      for (let { url, at } of forgets) {
+        await upsertForget(conn, url, at);
+      }
+      for (let { url, at } of purge) {
+        await conn.execute(
+          "DELETE FROM remote_visits WHERE url = :url AND visited_at <= :at",
+          { url, at }
+        );
+        let [page] = await conn.execute(
+          "SELECT id FROM pages WHERE url = :url",
+          { url }
+        );
+        if (!page) {
+          continue;
+        }
+        let pageId = page.getResultByName("id");
+        let [gone] = await conn.execute(
+          `SELECT count(*) AS n FROM page_visits
+           WHERE page_id = :pageId AND visited_at <= :at`,
+          { pageId, at }
+        );
+        if (!gone.getResultByName("n")) {
+          continue;
+        }
+        local = true;
+        await conn.execute(
+          `DELETE FROM page_visits
+           WHERE page_id = :pageId AND visited_at <= :at`,
+          { pageId, at }
+        );
+        let [left] = await conn.execute(
+          "SELECT 1 FROM page_visits WHERE page_id = :pageId LIMIT 1",
+          { pageId }
+        );
+        if (!left) {
+          await forgetPages(conn, [pageId]);
+        }
+      }
+    });
+    return local;
+  }
+
+  /** Deletes the other devices' visits and the forgets kept here. */
+  async deleteRemoteRecall() {
+    let conn = await this.#db();
+    await conn.executeTransaction(async () => {
+      await conn.execute("DELETE FROM remote_visits");
+      await conn.execute("DELETE FROM recall_forgets");
+    });
   }
 
   /**
    * Deletes everything the assistant kept from what the user did: the
    * Threads, memories, documents, scheduled tasks' runs and
-   * remembered pages. Scheduled tasks themselves stay.
+   * remembered pages, with the other devices' visits and the forgets.
+   * Scheduled tasks themselves stay.
    */
   async deleteAllData() {
     let conn = await this.#db();
@@ -1443,6 +1722,8 @@ export class SqliteStore {
         "page_chunks",
         "page_visits",
         "pages",
+        "remote_visits",
+        "recall_forgets",
         "task_runs",
         "artifacts_fts",
         "artifact_versions",
@@ -1477,7 +1758,8 @@ export class SqliteStore {
   /**
    * Deletes what is kept in a Space: its Threads with their messages, its
    * memories, its documents with their versions, its tasks with their runs
-   * and its page visits, with the pages no other visit is left of. The
+   * and its page visits, with the pages no other visit is left of, and the
+   * other devices' visits in it. The
    * documents of other Spaces its Threads made stay, no longer linked to
    * them.
    */
@@ -1506,6 +1788,7 @@ export class SqliteStore {
            (SELECT id FROM tasks WHERE space_id = :space)`,
         "DELETE FROM tasks WHERE space_id = :space",
         "DELETE FROM page_visits WHERE space_id = :space",
+        "DELETE FROM remote_visits WHERE space_id = :space",
       ]) {
         await conn.execute(sql, { space });
       }
@@ -1524,15 +1807,19 @@ export class SqliteStore {
   }
 
   /**
-   * Forgets the visits before a time, and the pages last visited before
-   * it.
+   * Forgets the visits before a time (the other devices' too), the pages
+   * last visited before it and the forgets of before it.
    */
   async prunePages(before) {
     let conn = await this.#db();
     await conn.executeTransaction(async () => {
-      await conn.execute("DELETE FROM page_visits WHERE visited_at < :before", {
-        before,
-      });
+      for (let sql of [
+        "DELETE FROM page_visits WHERE visited_at < :before",
+        "DELETE FROM remote_visits WHERE visited_at < :before",
+        "DELETE FROM recall_forgets WHERE at < :before",
+      ]) {
+        await conn.execute(sql, { before });
+      }
       await conn.execute(
         `DELETE FROM page_chunks WHERE page_id IN
            (SELECT id FROM pages WHERE last_visit_at < :before)`,

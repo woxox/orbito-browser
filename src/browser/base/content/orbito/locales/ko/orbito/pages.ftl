@@ -51,6 +51,10 @@ orbito-timeline-hint = 브라우징 기억이 보관한, 읽은 페이지입니�
 orbito-timeline-search =
     .placeholder = 읽은 페이지 검색
     .aria-label = 읽은 페이지 검색
+orbito-timeline-device =
+    .aria-label = 기기
+orbito-timeline-all-devices = 모든 기기
+orbito-timeline-this-device = 이 기기
 orbito-timeline-today = 오늘
 orbito-timeline-yesterday = 어제
 orbito-timeline-read-briefly = 1분 미만 읽음
@@ -60,11 +64,38 @@ orbito-timeline-read-minutes = { $minutes }분 읽음
 # Variables:
 #   $hours (Number), $minutes (Number): time spent on the page
 orbito-timeline-read-hours = { $hours }시간 { $minutes }분 읽음
+# Variables:
+#   $minutes (Number): minutes spent reading
+orbito-timeline-duration-minutes = { $minutes }분
+# Variables:
+#   $hours (Number), $minutes (Number): time spent reading
+orbito-timeline-duration-hours = { $hours }시간 { $minutes }분
+orbito-timeline-duration-brief = 1분 미만
+# Variables:
+#   $pages (Number): how many pages
+#   $duration (String): the time spent reading them
+orbito-timeline-summary = { $pages }페이지 · { $duration }
+orbito-timeline-hours-label = 시간대별 읽은 시간
+# Variables:
+#   $domain (String): the site read the longest
+#   $more (Number): how many other sites the session read
+orbito-timeline-session-title = { $domain } 외 { $more }곳
+orbito-timeline-reopen = 모두 열기
+orbito-timeline-forget-session = 모두 지우기
+# Variables:
+#   $pages (Number): how many pages the reading session read
+orbito-timeline-forget-session-question = 이 { $pages }개 페이지를 기억에서 지울까요? 다른 때 읽은 기록도 함께 지워집니다.
+# Variables:
+#   $pages (Number): how many pages the reading session read
+orbito-timeline-forget-session-everywhere-question = 이 { $pages }개 페이지를 모든 기기의 기억에서 지울까요? 다른 때 읽은 기록도 함께 지워집니다.
 orbito-timeline-empty = 아직 페이지가 없어요. 한동안 읽은 페이지가 여기에 나와요.
 orbito-timeline-no-match = 일치하는 페이지가 없어요.
 orbito-timeline-summarize = 요약
 orbito-timeline-summarizing = 요약 중…
 orbito-timeline-forget-question = 이 페이지를 기억에서 지울까요?
+# While Sync sends Browsing recall's visits: the account's other devices
+# forget it too.
+orbito-timeline-forget-everywhere-question = 이 페이지를 모든 기기의 기억에서 지울까요?
 orbito-timeline-cancel = 취소
 orbito-timeline-forget = 지우기
 # Variables:

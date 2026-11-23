@@ -26,6 +26,11 @@
  * are embedded in batches while the user is idle,
  * last visited first, catching up on what piled up; the embeddings are
  * kept in memory for searching once a search needs them.
+ *
+ * Visits also go to the account's other devices with Firefox Sync, and
+ * theirs come here for the timeline only (OrbitoRecallSyncEngine.sys.mjs,
+ * docs/adr/0007-recall-sync.md). Forgetting a page from the timeline
+ * forgets it on every device; nothing else that forgets does.
  */
 
 const lazy = {};
@@ -35,6 +40,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   excerptFrom: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
   excludedDomains: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
   isExcludedHost: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
+  forgetId: "chrome://browser/content/orbito/OrbitoRecallSync.sys.mjs",
   fuse: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
   hasPasswordField: "chrome://browser/content/orbito/OrbitoSubframes.sys.mjs",
   OrbitoAssistantCore:
@@ -53,12 +59,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SUGGEST_FLOOR: "chrome://browser/content/orbito/OrbitoRecallSearch.sys.mjs",
   setInterval: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
+  SYNC_CHANGED: "chrome://browser/content/orbito/OrbitoRecallSync.sys.mjs",
 });
 
 export const ENABLED_PREF = "orbito.recall.enabled";
 export const EXCLUDED_PREF = "orbito.recall.excludedDomains";
 export const RETENTION_PREF = "orbito.recall.retentionDays";
 const DWELL_PREF = "orbito.recall.dwellSeconds";
+export const SYNC_ENGINE_PREF = "services.sync.engine.orbitorecall";
 
 const PRUNE_INTERVAL = 86400000;
 
@@ -455,17 +463,88 @@ export const OrbitoRecall = {
   },
 
   /**
-   * The timeline's entries, a page per day it was visited, latest first;
-   * see SqliteStore.listPageDays.
+   * The timeline's visits of whole local days, latest first, from those
+   * before before: about limit of them, more to end on the start of a day
+   * (see SqliteStore.listVisits). next is where the next ones start, the
+   * start of the oldest day given, or null when there are no more.
+   *
+   * @param {object} [options]
+   * @param {number} [options.before]
+   * @param {number} [options.limit]
+   * @param {?string} [options.device] See SqliteStore.listVisits.
+   * @returns {Promise<{visits: object[], next: ?number}>}
    */
-  timeline(options) {
-    return this._store.listPageDays(options);
+  async timeline({ before = Number.MAX_SAFE_INTEGER, limit = 200, device } = {}) {
+    let visits = await this._store.listVisits({ before, limit, device });
+    if (visits.length < limit) {
+      return { visits, next: null };
+    }
+    // The oldest day may go on past the limit: take all of it.
+    let oldest = new Date(visits.at(-1).visited_at);
+    let start = new Date(
+      oldest.getFullYear(),
+      oldest.getMonth(),
+      oldest.getDate()
+    ).getTime();
+    let end = new Date(
+      oldest.getFullYear(),
+      oldest.getMonth(),
+      oldest.getDate() + 1
+    ).getTime();
+    let day = await this._store.listVisits({
+      before: Math.min(before, end),
+      after: start,
+      limit: -1,
+      device,
+    });
+    return {
+      visits: [...visits.filter(v => v.visited_at >= end), ...day],
+      next: start,
+    };
   },
 
-  /** Forgets a page, as the timeline does. */
+  /** The other devices whose visits the timeline lists: [{id, name}]. */
+  devices() {
+    return this._store.listRemoteDevices();
+  },
+
+  /**
+   * The other devices' visits to pages whose title or URL has text, for
+   * the timeline's search; see SqliteStore.searchRemoteVisits.
+   */
+  searchOtherDevices(text, options) {
+    return this._store.searchRemoteVisits(text, options);
+  },
+
+  /**
+   * Whether Sync sends the visits and forgets: its Browsing recall engine
+   * on and an account signed in.
+   */
+  get syncing() {
+    return (
+      Services.prefs.getBoolPref(SYNC_ENGINE_PREF, false) &&
+      !!Services.prefs.getStringPref("services.sync.username", "")
+    );
+  },
+
+  /**
+   * Forgets a page, as the timeline does, the other devices' visits to it
+   * too; while syncing, every device forgets the visits to it until now.
+   */
   async forget(url) {
-    await this._store.deletePage(url);
+    let everywhere = this.syncing;
+    await this._store.deletePage(url, {
+      forgetAt: everywhere ? Date.now() : null,
+    });
     this.resetIndex();
+    if (everywhere) {
+      this._syncChanged(lazy.forgetId(url));
+    }
+  },
+
+  /** Tells Sync's tracker that a record changed. */
+  _syncChanged(id) {
+    Services.obs.notifyObservers(null, lazy.SYNC_CHANGED, id);
   },
 
   /* What the user reads */
@@ -638,6 +717,11 @@ export const OrbitoRecall = {
     if (visit.visitId != null) {
       this._store
         .setVisitDwell(visit.visitId, visit.shownMs)
+        .then(guid => {
+          if (guid && this.enabled) {
+            this._syncChanged(guid);
+          }
+        })
         .catch(console.error);
     }
   },
@@ -682,13 +766,14 @@ export const OrbitoRecall = {
     if (visit.ended || lazy.pageKey(page.url) != visit.key || !page.text) {
       return;
     }
-    let { visitId } = await this._store.savePage(
+    let { visitId, guid } = await this._store.savePage(
       { url: visit.key, title: page.title || visit.key, text: page.text },
       visit.startedAt,
       // The tab's Space now, or for a pinned tab the one its window shows.
       { space: lazy.OrbitoTools.context({ tab }).space }
     );
     visit.visitId = visitId;
+    this._syncChanged(guid);
     if (visit.ended || visit.shownSince == null) {
       this._writeDwell(visit);
     }

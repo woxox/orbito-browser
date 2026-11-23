@@ -55,6 +55,10 @@ orbito-timeline-hint = The pages you read, as Browsing recall remembers them. Ma
 orbito-timeline-search =
     .placeholder = Search the pages you read
     .aria-label = Search the pages you read
+orbito-timeline-device =
+    .aria-label = Device
+orbito-timeline-all-devices = All devices
+orbito-timeline-this-device = This device
 orbito-timeline-today = Today
 orbito-timeline-yesterday = Yesterday
 orbito-timeline-read-briefly = read for less than a minute
@@ -64,11 +68,53 @@ orbito-timeline-read-minutes = read for { $minutes } min
 # Variables:
 #   $hours (Number), $minutes (Number): time spent on the page
 orbito-timeline-read-hours = read for { $hours } h { $minutes } min
+# Variables:
+#   $minutes (Number): minutes spent reading
+orbito-timeline-duration-minutes = { $minutes } min
+# Variables:
+#   $hours (Number), $minutes (Number): time spent reading
+orbito-timeline-duration-hours = { $hours } h { $minutes } min
+orbito-timeline-duration-brief = under a minute
+# A day's or a reading session's pages and reading time.
+# Variables:
+#   $pages (Number): how many pages
+#   $duration (String): the time spent reading them, as "12 min"
+orbito-timeline-summary = { $pages ->
+    [one] 1 page
+   *[other] { $pages } pages
+  } · { $duration }
+orbito-timeline-hours-label = Reading time by hour
+# A reading session named by its most read site.
+# Variables:
+#   $domain (String): the site read the longest
+#   $more (Number): how many other sites the session read
+orbito-timeline-session-title = { $domain } and { $more ->
+    [one] 1 other
+   *[other] { $more } others
+  }
+orbito-timeline-reopen = Open all
+orbito-timeline-forget-session = Forget all
+# Variables:
+#   $pages (Number): how many pages the reading session read
+orbito-timeline-forget-session-question = { $pages ->
+    [one] Forget this page? Its other visits go too.
+   *[other] Forget these { $pages } pages? Their other visits go too.
+  }
+# While Sync sends Browsing recall's visits.
+# Variables:
+#   $pages (Number): how many pages the reading session read
+orbito-timeline-forget-session-everywhere-question = { $pages ->
+    [one] Forget this page on all your devices? Its other visits go too.
+   *[other] Forget these { $pages } pages on all your devices? Their other visits go too.
+  }
 orbito-timeline-empty = No pages yet. Pages you read for a while show up here.
 orbito-timeline-no-match = No pages you read match.
 orbito-timeline-summarize = Summarize
 orbito-timeline-summarizing = Summarizing…
 orbito-timeline-forget-question = Forget this page?
+# While Sync sends Browsing recall's visits: the account's other devices
+# forget it too.
+orbito-timeline-forget-everywhere-question = Forget this page on all your devices?
 orbito-timeline-cancel = Cancel
 orbito-timeline-forget = Forget
 # Variables:

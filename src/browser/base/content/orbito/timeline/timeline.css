@@ -2,46 +2,332 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#search {
-  width: 100%;
-  box-sizing: border-box;
+/* One column of days, as wide as a settings pane. */
+main {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 32px 32px 64px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+main > .hint {
+  margin-block-end: 16px;
+}
+
+#filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   margin: 0 0 8px;
 }
 
-.day h2 {
-  font-size: 1.1em;
-  margin-block: 24px 12px;
+#search {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
 }
 
-.item-title {
-  display: block;
+#device {
+  flex: none;
+  max-width: 40%;
   margin: 0;
+}
+
+/* Each device's color: this one the accent, others four more. */
+[data-color="local"] {
+  --device: var(--orbito-accent);
+}
+
+[data-color="1"] {
+  --device: light-dark(oklch(0.66 0.15 60), oklch(0.76 0.13 60));
+}
+
+[data-color="2"] {
+  --device: light-dark(oklch(0.56 0.1 190), oklch(0.74 0.1 190));
+}
+
+[data-color="3"] {
+  --device: light-dark(oklch(0.58 0.17 350), oklch(0.76 0.12 350));
+}
+
+[data-color="4"] {
+  --device: light-dark(oklch(0.54 0.12 145), oklch(0.76 0.12 145));
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--device);
+}
+
+/* A day: its head, then its reading sessions down a time rail. */
+.day {
+  margin-top: 24px;
+}
+
+.day-head {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--orbito-page-sunk);
+}
+
+.day-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.day h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.day-summary,
+.session-summary {
+  font-size: 13px;
+  color: var(--orbito-page-text-muted);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 0 auto;
   padding: 0;
-  min-height: 0;
-  border: none;
-  background: none;
-  color: var(--link-color, LinkText);
+  list-style: none;
+  font-size: 12px;
+  color: var(--orbito-page-text-muted);
+
+  > li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+/* The day's reading by hour: a bar an hour, a part a device. */
+.hours {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  align-items: end;
+  height: 44px;
+  margin-top: 12px;
+}
+
+.hour {
+  display: flex;
+  flex-direction: column-reverse;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 2px;
+  background: linear-gradient(to top, var(--orbito-page-line) 3px, transparent 3px);
+
+  &.read {
+    background: linear-gradient(to top, var(--orbito-page-faint) 4px, transparent 4px);
+  }
+}
+
+.part {
+  flex: none;
+  height: calc(var(--fill) * 100%);
+  min-height: 4px;
+  background: var(--device);
+}
+
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--orbito-page-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A reading session: its times, a dot on the rail, its pages. */
+.session {
+  display: grid;
+  grid-template-columns: 64px 12px minmax(0, 1fr);
+  column-gap: 12px;
+}
+
+.session-time {
+  display: flex;
+  flex-direction: column;
+  padding-top: 9px;
+  text-align: end;
+  font-size: 12.5px;
   font-weight: 600;
-  text-align: start;
+  font-variant-numeric: tabular-nums;
+
+  > .until {
+    font-weight: 400;
+    color: var(--orbito-page-text-muted);
+  }
+}
+
+.session-rail {
+  position: relative;
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    left: 1px;
+    width: 6px;
+    height: 6px;
+    border: 2px solid var(--orbito-accent);
+    border-radius: 50%;
+    background: var(--orbito-page);
+  }
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 28px;
+    bottom: -12px;
+    left: 5px;
+    width: 2px;
+    background: var(--orbito-page-line);
+  }
+}
+
+.session:last-child .session-rail::after {
+  bottom: 0;
+}
+
+.session-box {
+  min-width: 0;
+  overflow: clip;
+  border: 1px solid var(--orbito-page-line);
+  border-radius: 12px;
+  background: var(--orbito-page);
+}
+
+.session-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 4px 6px 4px 14px;
+  border-bottom: 1px solid var(--orbito-page-line);
+}
+
+.session-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 650;
   overflow-wrap: anywhere;
-  cursor: pointer;
+}
+
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.results > .entries {
+  padding: 0;
+  border: 1px solid var(--orbito-page-line);
+  border-radius: 12px;
+}
+
+/* A page: its device's dot, title and meta, and how long it was read;
+ * its actions over that when pointed at or focused. Over settings.css's
+ * .page, its pane grid. */
+#days .page {
+  position: relative;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 96px;
+  column-gap: 10px;
+  align-items: start;
+  max-width: none;
+  margin: 0;
+  padding: 8px 14px;
+  background: var(--orbito-page);
+
+  &:hover,
+  &:focus-within {
+    background: var(--orbito-page-sunk);
+  }
+
+  > .dot {
+    margin-top: 7px;
+  }
+}
+
+.item-main {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.dwell {
+  grid-column: 3;
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--orbito-page-sunk);
+
+  > span {
+    display: block;
+    width: calc(var(--fill) * 100%);
+    height: 100%;
+    background: var(--device);
+  }
+}
+
+/* A link to the page, set as its title (settings.css's button.link). */
+button.item-title {
+  display: block;
+  max-width: 100%;
+  color: var(--orbito-page-text);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: start;
+  text-decoration: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
 
   &:hover {
+    color: var(--orbito-accent);
     text-decoration: underline;
   }
 }
 
 .item-meta {
-  margin-block: 4px;
+  margin-block: 2px 0;
   overflow-wrap: anywhere;
 }
 
-/* Two lines of the page's text. */
+/* A line of the page's text. */
 .excerpt {
-  margin-block: 4px 0;
+  margin-block: 2px 0;
+  font-size: 13px;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   overflow: hidden;
   overflow-wrap: anywhere;
 }
@@ -62,7 +348,44 @@
 }
 
 .actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 4px;
+
+  > span {
+    margin-inline: 8px 4px;
+    font-size: 13px;
+  }
+}
+
+.session-actions {
+  margin-inline-start: auto;
+}
+
+/* Over the reading time, shown when the page is pointed at or focused;
+ * the question takes a line of its own. */
+#days .page > .actions {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: inherit;
+  opacity: 0;
+}
+
+#days .page:is(:hover, :focus-within) > .actions,
+#days .page > .actions:has(.confirm-forget:not([hidden])) {
+  opacity: 1;
+}
+
+#days .page:is(:hover, :focus-within) > .dwell {
+  visibility: hidden;
+}
+
+#days .page > .actions:has(.confirm-forget:not([hidden])) {
+  position: static;
+  grid-column: 2 / -1;
+  margin-top: 4px;
 }
 
 #more {

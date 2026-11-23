@@ -10,7 +10,7 @@
 # pnpm start:artifact, cd engine && ./mach python ../scripts/...
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MAIN="$(cd "$(git -C "$ROOT" rev-parse --git-common-dir)/.." && pwd)"
+MAIN="${ORBITO_MAIN:-$(cd "$(git -C "$ROOT" rev-parse --git-common-dir)/.." && pwd)}"
 if [ "$ROOT" = "$MAIN" ]; then
   echo "Run this in a worktree, not the main checkout." >&2
   exit 1
@@ -37,6 +37,8 @@ find "$ROOT/engine" -type l -print0 |
   while IFS= read -r -d '' link; do
     target="$(readlink "$link")"
     case "$target" in
+      # A worktree inside the main checkout: already pointed here.
+      "$ROOT"/*) ;;
       "$MAIN"/*) ln -sfn "$ROOT${target#"$MAIN"}" "$link" ;;
     esac
   done

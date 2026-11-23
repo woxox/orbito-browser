@@ -1,8 +1,8 @@
 diff --git a/browser/base/jar.mn b/browser/base/jar.mn
-index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7ac4d2d22 100644
+index b2b5db6040bfa4b0a6923b49669238191fcee1c4..3f98ed31f08a0fb6b25f8c19c730f22339524de8 100644
 --- a/browser/base/jar.mn
 +++ b/browser/base/jar.mn
-@@ -5,6 +5,182 @@ browser.jar:
+@@ -5,6 +5,185 @@ browser.jar:
  %  content browser %content/browser/ contentaccessible=yes
  
          content/browser/aboutDialog-appUpdater.js     (content/aboutDialog-appUpdater.js)
@@ -104,6 +104,9 @@ index b2b5db6040bfa4b0a6923b49669238191fcee1c4..7894c0faaedc13ae1abfe1bb17da1fb7
 +        content/browser/orbito/OrbitoInterlineEngines.sys.mjs (content/orbito/OrbitoInterlineEngines.sys.mjs)
 +        content/browser/orbito/OrbitoRecall.sys.mjs (content/orbito/OrbitoRecall.sys.mjs)
 +        content/browser/orbito/OrbitoRecallSearch.sys.mjs (content/orbito/OrbitoRecallSearch.sys.mjs)
++        content/browser/orbito/OrbitoRecallSync.sys.mjs (content/orbito/OrbitoRecallSync.sys.mjs)
++        content/browser/orbito/OrbitoRecallSyncEngine.sys.mjs (content/orbito/OrbitoRecallSyncEngine.sys.mjs)
++        content/browser/orbito/OrbitoTimelineSessions.sys.mjs (content/orbito/OrbitoTimelineSessions.sys.mjs)
 +        content/browser/orbito/OrbitoEmbedder.sys.mjs (content/orbito/OrbitoEmbedder.sys.mjs)
 +        content/browser/orbito/OrbitoRecallUrlbarProvider.sys.mjs (content/orbito/OrbitoRecallUrlbarProvider.sys.mjs)
 +        content/browser/orbito/actors/OrbitoRecallParent.sys.mjs (content/orbito/actors/OrbitoRecallParent.sys.mjs)

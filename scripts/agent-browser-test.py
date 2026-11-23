@@ -2456,9 +2456,9 @@ def the_database_records_its_schema_version(b):
     b.js('use("openai", "mock"); await openPage("Schema"); await finished(askPanel("Hi"));')
     db = b.db()
     try:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 13
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 14
         tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        assert {"threads", "messages", "memories", "memories_fts", "artifacts", "artifact_versions", "artifacts_fts", "threads_fts", "pages", "page_visits", "page_chunks", "pages_fts", "pages_fts_words"} <= tables, tables
+        assert {"threads", "messages", "memories", "memories_fts", "artifacts", "artifact_versions", "artifacts_fts", "threads_fts", "pages", "page_visits", "page_chunks", "pages_fts", "pages_fts_words", "remote_visits", "recall_forgets"} <= tables, tables
         title = db.execute("SELECT title FROM threads ORDER BY created_at DESC").fetchone()[0]
         assert title == "Hi", title
     finally:
@@ -6791,9 +6791,12 @@ def a_schema_6_profile_moves_to_the_latest_and_keeps_its_data_but_conversations(
     if Path(path + "-wal").exists():
         shutil.copy(path + "-wal", str(copy) + "-wal")
     db = sqlite3.connect(copy)
-    # On to the latest: 13 gives tasks their skill's inputs.
-    assert version == 13 and db.execute("PRAGMA user_version").fetchone()[0] == version
+    # On to the latest: 13 gives tasks their skill's inputs, 14 every visit a
+    # Sync guid.
+    assert version == 14 and db.execute("PRAGMA user_version").fetchone()[0] == version
     assert "inputs" in [row[1] for row in db.execute("PRAGMA table_info(tasks)")]
+    guids = [row[0] for row in db.execute("SELECT guid FROM page_visits")]
+    assert guids and all(guids) and len(set(guids)) == len(guids), guids
     db.close()
 
 
@@ -7551,6 +7554,184 @@ def forgetting_a_page_on_the_timeline_takes_it_out_of_the_store(b):
     await wait(() => !itemOf(doc, url), "the page to go");
     check(!(await remembered(word)).length, "still remembered");
     check(!(await core.store.getPage(url)), "still in the store");
+    win.gBrowser.removeTab(win.gBrowser.selectedTab);
+    """)
+
+
+RECALL_SYNC = """
+// The Firefox Sync engine of Browsing recall's visits, given records as
+// another device would send them (no account or server).
+const { Service: syncService } = ChromeUtils.importESModule(
+  "resource://services-sync/service.sys.mjs"
+);
+const { OrbitoRecallRecord } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoRecallSyncEngine.sys.mjs"
+);
+const { forgetId } = ChromeUtils.importESModule(
+  "chrome://browser/content/orbito/OrbitoRecallSync.sys.mjs"
+);
+async function recallEngine() {
+  await syncService.promiseInitialized;
+  let engine = syncService.engineManager.get("orbitorecall");
+  check(engine, "no Browsing recall Sync engine");
+  return engine;
+}
+async function applyRecall(...visits) {
+  let records = visits.map(({ id, ...fields }) => {
+    let record = new OrbitoRecallRecord("orbitorecall", id);
+    Object.assign(record.cleartext, { kind: "visit", dwellMs: null, space: null, ...fields });
+    return record;
+  });
+  await (await recallEngine())._store.applyIncomingBatch(records);
+}
+function choose(doc, device) {
+  let select = doc.getElementById("device");
+  select.value = device;
+  select.dispatchEvent(new doc.defaultView.Event("change"));
+}
+"""
+
+
+@test
+def the_timeline_lists_and_forgets_other_devices_visits(b):
+    b.js(RECALL + TIMELINE + RECALL_SYNC + """
+    let word = `Synced${Date.now()}`;
+    let now = Date.now();
+    let local = `https://local.example/${word}`;
+    let laptop = `https://laptop.example/${word}`;
+    let phone = `https://phone.example/${word}`;
+    let engine = await recallEngine();
+    let tracker = engine._tracker;
+    tracker.start();
+    tracker.clearChangedIDs();
+    let syncing = Object.getOwnPropertyDescriptor(OrbitoRecall, "syncing");
+    Object.defineProperty(OrbitoRecall, "syncing", { get: () => true, configurable: true });
+    try {
+      await core.store.savePage({ url: local, title: `Local ${word}`, text: `${word} 이 기기에서 읽은 글` }, now - 1000);
+      await applyRecall(
+        { id: `L${word}`.slice(0, 12), url: laptop, title: `Laptop ${word}`, visitedAt: now - 2000, dwellMs: 60000, device: "device-laptop", deviceName: "Work laptop" },
+        { id: `P${word}`.slice(0, 12), url: phone, title: `Phone ${word}`, visitedAt: now - 3000, device: "device-phone", deviceName: "Phone" },
+      );
+      let doc = await openTimeline();
+      let item = await wait(() => itemOf(doc, laptop), "the other device's visit to be listed");
+      let meta = item.querySelector(".item-meta").textContent;
+      check(meta.startsWith("laptop.example · ") && meta.endsWith(" · Work laptop"), `the other device's entry does not name it: ${meta}`);
+      check(item.querySelector(".summarize").hidden, "the other device's entry offers a summary");
+      check(!item.querySelector(".excerpt"), "the other device's entry shows an excerpt");
+      check(!itemOf(doc, local).querySelector(".item-meta").textContent.includes(" · Work laptop"), "this device's entry names a device");
+
+      let select = doc.getElementById("device");
+      check(!select.hidden, "the device menu is hidden with other devices' visits");
+      let names = [...select.options].map(o => o.textContent).join();
+      check(names == "All devices,This device,Phone,Work laptop", `the device menu lists ${names}`);
+      choose(doc, "device-laptop");
+      await wait(() => itemOf(doc, laptop) && !itemOf(doc, phone) && !itemOf(doc, local), "the laptop's visits only");
+      choose(doc, "local");
+      await wait(() => itemOf(doc, local) && !itemOf(doc, laptop) && !itemOf(doc, phone), "this device's visits only");
+      choose(doc, "");
+      await wait(() => itemOf(doc, local) && itemOf(doc, laptop) && itemOf(doc, phone), "every device's visits again");
+
+      check(!(await remembered(word)).some(url => url == laptop || url == phone), "OrbitoRecall.search finds another device's visit");
+      let search = doc.getElementById("search");
+      search.value = `Laptop ${word}`;
+      search.dispatchEvent(new doc.defaultView.Event("input"));
+      await wait(() => itemOf(doc, laptop) && !itemOf(doc, phone), "the timeline search to find the other device's visit by title");
+      search.value = "";
+      search.dispatchEvent(new doc.defaultView.Event("input"));
+      await wait(() => itemOf(doc, local) && itemOf(doc, phone), "the full list again");
+
+      item = itemOf(doc, laptop);
+      item.querySelector(".forget").click();
+      let question = item.querySelector(".actions span").textContent;
+      check(question == "Forget this page on all your devices?", `the forget question is ${question}`);
+      item.querySelector(".confirm-forget").click();
+      await wait(() => !itemOf(doc, laptop), "the other device's entry to go");
+      check(itemOf(doc, phone), "another page went with it");
+      check(!(await core.store.searchRemoteVisits(word)).some(v => v.url == laptop), "the other device's visit is still kept");
+      check((await core.store.recallForgets()).get(laptop) >= now, "no forget kept for the page");
+      await wait(async () => Object.keys(await tracker.getChangedIDs()).includes(forgetId(laptop)), "the forget to be tracked for Sync");
+
+      await applyRecall({ id: `O${word}`.slice(0, 12), url: laptop, title: `Late ${word}`, visitedAt: now - 5000, device: "device-offline", deviceName: "Offline" });
+      check(!(await core.store.searchRemoteVisits(word)).some(v => v.url == laptop), "an older visit arriving after the forget is kept");
+      check(!(await OrbitoRecall.devices()).some(d => d.id == "device-offline"), "the late visit's device is listed");
+    } finally {
+      Object.defineProperty(OrbitoRecall, "syncing", syncing);
+      tracker.clearChangedIDs();
+      await core.store.deleteRemoteRecall();
+    }
+    win.gBrowser.removeTab(win.gBrowser.selectedTab);
+    """)
+
+
+@test
+def the_timeline_lays_a_day_out_by_hour_and_reading_session(b):
+    b.js(RECALL + TIMELINE + """
+    let word = `Session${Date.now()}`;
+    // A day of its own, long enough ago that no other test reads on it.
+    let today = new Date();
+    let at = (hour, minute) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - 40, hour, minute).getTime();
+    let a = `https://sess.example/${word}/a`;
+    let other = `https://other.example/${word}/b`;
+    let late = `https://late.example/${word}/c`;
+    let read = async (url, time, minutes) => {
+      let saved = await core.store.savePage({ url, title: `Page ${url.split("/").pop()} ${word}`, text: `${word} ${url}` }, time);
+      await core.store.setVisitDwell(saved.visitId, minutes * 60000);
+    };
+    await read(a, at(10, 0), 10);
+    await read(other, at(10, 20), 10);
+    await read(a, at(10, 30), 5);
+    await read(late, at(15, 0), 5);
+    let doc = await openTimeline();
+    for (let i = 0; i < 40 && !itemOf(doc, late); i++) {
+      doc.getElementById("more").scrollIntoView();
+      await sleep(200);
+    }
+    let text = node => node.textContent.replace(/[\u2068\u2069]/g, "");
+    let day = itemOf(doc, late).closest(".day");
+    check(text(day.querySelector(".day-summary")) == "3 pages · 30 min", text(day.querySelector(".day-summary")));
+    let hours = [...day.querySelectorAll(".hours .hour")];
+    check(hours.length == 24, `${hours.length} hours`);
+    let read10 = hours.map((h, i) => h.querySelector(".part") ? i : null).filter(i => i != null).join();
+    check(read10 == "10,15", `the hours read: ${read10}`);
+
+    // 15:00 alone; 10:00 to 10:35 one session, a's two visits one entry.
+    let sessions = [...day.querySelectorAll(".session")];
+    check(sessions.length == 2, `${sessions.length} sessions`);
+    check(sessions[0].querySelectorAll(".page").length == 1 && itemOf(sessions[0], late), "the afternoon session");
+    let morning = sessions[1];
+    let urls = [...morning.querySelectorAll(".page")].map(li => li.dataset.url).join();
+    check(urls == [a, other].join(), `the morning session lists ${urls}`);
+    check(text(morning.querySelector(".session-title")) == "sess.example and 1 other", text(morning.querySelector(".session-title")));
+    check(text(morning.querySelector(".session-summary")) == "2 pages · 25 min", text(morning.querySelector(".session-summary")));
+    check(itemOf(morning, a).querySelector(".item-meta").textContent.endsWith("read for 15 min"), itemOf(morning, a).querySelector(".item-meta").textContent);
+
+    // Open all opens the session's pages in background tabs.
+    let timelineTab = win.gBrowser.selectedTab;
+    morning.querySelector(".reopen").click();
+    let opened = await wait(() => {
+      let found = win.gBrowser.tabs.filter(t => [a, other].includes(t.linkedBrowser.currentURI.spec));
+      return found.length == 2 && found;
+    }, "the session's pages in tabs");
+    check(win.gBrowser.selectedTab == timelineTab, "a page opened in front");
+    opened.forEach(t => win.gBrowser.removeTab(t));
+
+    // A summary made that day stays when the day is laid out again.
+    let summarized = itemOf(sessions[0], late);
+    use("openai", "mock-echo");
+    summarized.querySelector(".summarize").click();
+    await wait(() => summarized.querySelector(".summary")?.textContent.includes("echo:"), "the summary");
+
+    // Forgetting the session forgets its pages; the day is laid out again.
+    morning.querySelector(".forget-session").click();
+    let question = text(morning.querySelector(".session-actions span"));
+    check(question == "Forget these 2 pages? Their other visits go too.", question);
+    morning.querySelector(".confirm-forget-session").click();
+    await wait(() => !itemOf(doc, a) && !itemOf(doc, other), "the session's pages to go");
+    day = itemOf(doc, late).closest(".day");
+    check(day.querySelectorAll(".session").length == 1, "the forgotten session is still listed");
+    check(text(day.querySelector(".day-summary")) == "1 page · 5 min", text(day.querySelector(".day-summary")));
+    check(itemOf(day, late).querySelector(".summary")?.textContent.includes("echo:") && itemOf(day, late).querySelector(".summarize").hidden, "the summary went");
+    check(!(await core.store.getPage(a)) && !(await core.store.getPage(other)) && await core.store.getPage(late), "the store kept the wrong pages");
     win.gBrowser.removeTab(win.gBrowser.selectedTab);
     """)
 

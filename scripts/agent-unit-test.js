@@ -4335,6 +4335,247 @@ await (async () => {
   });
 })();
 
+// The rules for another device's Browsing recall records
+// (OrbitoRecallSync.sys.mjs).
+await (async () => {
+  const { forgetId, incomingActions, isForgetId, newVisitGuid, recordTTL } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/OrbitoRecallSync.sys.mjs"
+  );
+
+  function assertEquals(actual, expected) {
+    let a = JSON.stringify(actual, null, 2);
+    let e = JSON.stringify(expected, null, 2);
+    if (a != e) {
+      throw new Error(`Expected:\n${e}\nActual:\n${a}`);
+    }
+  }
+
+  const DAY = 86400000;
+  const NOW = 1_800_000_000_000;
+  let visit = (id, url, visitedAt, device = "other") => ({
+    id, kind: "visit", url, title: `Title ${id}`, visitedAt, dwellMs: 5000, space: "s1", device, deviceName: "Laptop",
+  });
+  let forget = (url, at) => ({ id: forgetId(url), kind: "forget", url, at });
+  let context = (more = {}) => ({
+    localDeviceId: "here",
+    forgets: new Map(),
+    isExcluded: url => new URL(url).hostname.endsWith("bank.example"),
+    cutoff: NOW - 180 * DAY,
+    ...more,
+  });
+  let kept = actions => actions.upsert.map(v => v.guid);
+
+  test("recall sync ids are URL-safe, a forget's the same for a URL on every device", () => {
+    let guid = newVisitGuid();
+    assertEquals([guid.length, /^[A-Za-z0-9_-]+$/.test(guid), isForgetId(guid)], [12, true, false]);
+    let id = forgetId("https://a.example/page?q=1");
+    assertEquals([id == forgetId("https://a.example/page?q=1"), id == forgetId("https://a.example/page?q=2")], [true, false]);
+    assertEquals([id.length <= 64, /^[A-Za-z0-9_-]+$/.test(id), isForgetId(id)], [true, true, true]);
+    assertEquals([recordTTL(180), recordTTL(0), recordTTL("30")], [180 * 86400, null, 30 * 86400]);
+  });
+
+  test("incomingActions keeps another device's visit as it comes", () => {
+    let actions = incomingActions([visit("v1", "https://a.example/", NOW - DAY)], context());
+    assertEquals(actions.upsert, [{
+      guid: "v1", url: "https://a.example/", title: "Title v1", visited_at: NOW - DAY, dwell_ms: 5000,
+      space_id: "s1", device_id: "other", device_name: "Laptop",
+    }]);
+    assertEquals([actions.remove, actions.forgets, actions.purge, actions.reupload], [[], [], [], []]);
+  });
+
+  test("incomingActions drops this device's own visits", () => {
+    let actions = incomingActions([visit("mine", "https://a.example/", NOW - DAY, "here"), visit("theirs", "https://a.example/", NOW - DAY)], context());
+    assertEquals([kept(actions), actions.remove], [["theirs"], ["mine"]]);
+  });
+
+  test("incomingActions drops visits to excluded sites", () => {
+    let actions = incomingActions([visit("bank", "https://www.bank.example/login", NOW - DAY), visit("news", "https://news.example/", NOW - DAY)], context());
+    assertEquals([kept(actions), actions.remove], [["news"], ["bank"]]);
+  });
+
+  test("incomingActions drops visits older than the retention period, none without one", () => {
+    let records = [visit("old", "https://a.example/", NOW - 200 * DAY), visit("new", "https://a.example/", NOW - 179 * DAY)];
+    let actions = incomingActions(records, context());
+    assertEquals([kept(actions), actions.remove], [["new"], ["old"]]);
+    assertEquals(kept(incomingActions(records, context({ cutoff: null }))), ["old", "new"]);
+  });
+
+  test("incomingActions: a forget drops the visits until it, in any order and arriving later", () => {
+    let url = "https://a.example/";
+    // In one batch, the forget after the visits it drops.
+    let actions = incomingActions([
+      visit("before", url, NOW - 2 * DAY),
+      visit("same", url, NOW - DAY),
+      visit("other", "https://b.example/", NOW - 2 * DAY),
+      forget(url, NOW - DAY),
+    ], context());
+    assertEquals([kept(actions), actions.remove], [["other"], ["before", "same"]]);
+    assertEquals(actions.forgets, [{ url, at: NOW - DAY }]);
+    // The visits kept before it, this device's and the others', go too.
+    assertEquals(actions.purge, [{ url, at: NOW - DAY }]);
+    // An older visit an offline device sends afterwards is dropped.
+    let late = incomingActions([visit("late", url, NOW - 3 * DAY, "offline")], context({ forgets: new Map([[url, NOW - DAY]]) }));
+    assertEquals([kept(late), late.remove, late.purge, late.forgets], [[], ["late"], [], []]);
+  });
+
+  test("incomingActions keeps a visit after the forget", () => {
+    let url = "https://a.example/";
+    let actions = incomingActions([forget(url, NOW - 2 * DAY), visit("again", url, NOW - DAY)], context());
+    assertEquals(kept(actions), ["again"]);
+    let later = incomingActions([visit("again", url, NOW - DAY)], context({ forgets: new Map([[url, NOW - 2 * DAY]]) }));
+    assertEquals([kept(later), later.remove], [["again"], []]);
+  });
+
+  test("incomingActions: of two forgets of a URL the later one wins", () => {
+    let url = "https://a.example/";
+    // An earlier forget than the one kept here changes nothing; ours goes back.
+    let older = incomingActions([forget(url, NOW - 3 * DAY), visit("between", url, NOW - 2 * DAY)], context({ forgets: new Map([[url, NOW - DAY]]) }));
+    assertEquals([older.forgets, older.purge, older.reupload, kept(older), older.remove], [[], [], [forgetId(url)], [], ["between"]]);
+    // A later one replaces it and drops what is between them.
+    let newer = incomingActions([forget(url, NOW - DAY)], context({ forgets: new Map([[url, NOW - 3 * DAY]]) }));
+    assertEquals([newer.forgets, newer.purge, newer.reupload], [[{ url, at: NOW - DAY }], [{ url, at: NOW - DAY }], []]);
+    // The same one again changes nothing.
+    let same = incomingActions([forget(url, NOW - DAY)], context({ forgets: new Map([[url, NOW - DAY]]) }));
+    assertEquals([same.forgets, same.purge, same.reupload], [[], [], []]);
+  });
+
+  test("incomingActions: a forget past the retention period is not kept but still drops", () => {
+    let url = "https://a.example/";
+    let actions = incomingActions([forget(url, NOW - 200 * DAY)], context());
+    assertEquals([actions.forgets, actions.purge], [[], [{ url, at: NOW - 200 * DAY }]]);
+  });
+
+  test("incomingActions removes the visit of a tombstone and skips malformed records", () => {
+    let actions = incomingActions([
+      { id: "gone", deleted: true },
+      { id: "nourl", kind: "visit", visitedAt: NOW, device: "other" },
+      { id: "nodevice", kind: "visit", url: "https://a.example/", visitedAt: NOW },
+      { id: forgetId("x"), kind: "forget", url: "x" },
+      { id: "what", kind: "unknown" },
+    ], context());
+    assertEquals([actions.upsert, actions.remove, actions.forgets], [[], ["gone", "nourl", "nodevice"], []]);
+  });
+})();
+
+// How the timeline lays out visits: days, hours and reading sessions
+// (OrbitoTimelineSessions.sys.mjs).
+await (async () => {
+  const { timelineDays, deviceKey, SESSION_GAP_MS } = ChromeUtils.importESModule(
+    "chrome://browser/content/orbito/OrbitoTimelineSessions.sys.mjs"
+  );
+
+  function assertEquals(actual, expected) {
+    let a = JSON.stringify(actual, null, 2);
+    let e = JSON.stringify(expected, null, 2);
+    if (a != e) {
+      throw new Error(`Expected:\n${e}\nActual:\n${a}`);
+    }
+  }
+
+  // A calendar in minutes from midnight of day 1, in UTC whatever the
+  // machine's time zone: 1440 minutes a day.
+  const MIN = 60000;
+  const at = (day, hour, minute = 0) => ((day - 1) * 1440 + hour * 60 + minute) * MIN;
+  const calendar = {
+    dayOf: time => `d${Math.floor(time / MIN / 1440) + 1}`,
+    hourOf: time => Math.floor((time / MIN) % 1440 / 60),
+  };
+  const laptop = { id: "laptop", name: "Laptop" };
+  let visit = (url, time, dwellMin, device = null) => ({
+    url, title: `T ${url}`, start: `text ${url}`, visited_at: time, dwell_ms: dwellMin == null ? null : dwellMin * MIN, device,
+  });
+  let shape = days => days.map(d => ({
+    day: d.day,
+    sessions: d.sessions.map(s => s.entries.map(e => `${e.url}@${deviceKey(e.device)}`)),
+  }));
+
+  test("timelineDays splits a day's visits at gaps longer than the session gap", () => {
+    let days = timelineDays([
+      visit("https://a.example/1", at(1, 13, 0), 10),
+      // Ends at 12:50, ten minutes before the next: the same session.
+      visit("https://a.example/2", at(1, 12, 40), 10),
+      // Ends at 12:00, forty minutes before: a new one.
+      visit("https://b.example/", at(1, 11, 50), 10),
+    ], calendar);
+    assertEquals(shape(days), [{ day: "d1", sessions: [["https://a.example/1@local", "https://a.example/2@local"], ["https://b.example/@local"]] }]);
+    let [first, second] = days[0].sessions;
+    assertEquals([first.start, first.end, first.dwellMs, first.pages], [at(1, 12, 40), at(1, 13, 10), 20 * MIN, 2]);
+    assertEquals([second.start, second.end], [at(1, 11, 50), at(1, 12, 0)]);
+    assertEquals(SESSION_GAP_MS, 30 * MIN);
+  });
+
+  test("timelineDays measures the gap from a visit's end, an unknown dwell ending at its start", () => {
+    let joined = timelineDays([
+      visit("https://a.example/", at(1, 13, 0), 5),
+      // Read for an hour from 11:40: ends 12:40, twenty minutes before.
+      visit("https://b.example/", at(1, 11, 40), 60),
+    ], calendar);
+    let apart = timelineDays([
+      visit("https://a.example/", at(1, 13, 0), 5),
+      visit("https://b.example/", at(1, 11, 40), null),
+    ], calendar);
+    assertEquals([joined[0].sessions.length, apart[0].sessions.length], [1, 2]);
+    assertEquals([apart[0].dwellMs, apart[0].sessions[1].entries[0].dwell_ms], [5 * MIN, null]);
+  });
+
+  test("timelineDays ends a session at midnight and lists days latest first", () => {
+    let days = timelineDays([
+      visit("https://late.example/", at(1, 23, 50), 5),
+      visit("https://early.example/", at(2, 0, 5), 5),
+    ], calendar);
+    assertEquals(shape(days), [
+      { day: "d2", sessions: [["https://early.example/@local"]] },
+      { day: "d1", sessions: [["https://late.example/@local"]] },
+    ]);
+  });
+
+  test("timelineDays merges a device's visits to a page in a session, apart from another device's", () => {
+    let days = timelineDays([
+      visit("https://a.example/", at(1, 10, 30), 3),
+      visit("https://a.example/", at(1, 10, 20), 4, laptop),
+      { ...visit("https://a.example/", at(1, 10, 10), 2), title: "Older title" },
+      visit("https://a.example/", at(1, 10, 0), null),
+    ], calendar);
+    let [session] = days[0].sessions;
+    assertEquals(shape(days)[0].sessions, [["https://a.example/@local", "https://a.example/@laptop"]]);
+    let [here, there] = session.entries;
+    assertEquals([here.visits, here.dwell_ms, here.visited_at, here.title], [3, 5 * MIN, at(1, 10, 30), "T https://a.example/"]);
+    assertEquals([there.visits, there.dwell_ms, there.device.name], [1, 4 * MIN, "Laptop"]);
+    assertEquals([session.pages, days[0].pages], [1, 1]);
+  });
+
+  test("timelineDays counts each hour's reading by device, this device first", () => {
+    let [day] = timelineDays([
+      visit("https://a.example/", at(1, 13, 50), 20, laptop),
+      visit("https://b.example/", at(1, 13, 10), 10),
+      visit("https://c.example/", at(1, 9, 0), null),
+    ], calendar);
+    assertEquals(day.devices, ["local", "laptop"]);
+    // A visit counts in the hour it started, even when it runs past it.
+    assertEquals(day.hours[13], { visits: 2, dwellMs: 30 * MIN, byDevice: { laptop: 20 * MIN, local: 10 * MIN } });
+    assertEquals([day.hours[9], day.hours[14].visits], [{ visits: 1, dwellMs: 0, byDevice: { local: 0 } }, 0]);
+    assertEquals([day.pages, day.dwellMs], [3, 30 * MIN]);
+  });
+
+  test("timelineDays names a session's hosts by reading time, ties latest first", () => {
+    let [day] = timelineDays([
+      visit("https://news.example/1", at(1, 10, 40), 2),
+      visit("https://docs.example/a", at(1, 10, 30), 5),
+      visit("https://news.example/2", at(1, 10, 20), 2),
+      visit("https://blog.example/", at(1, 10, 10), 4),
+      visit("not a url", at(1, 10, 0), 1),
+    ], calendar);
+    assertEquals(day.sessions[0].domains, ["docs.example", "news.example", "blog.example", "not a url"]);
+  });
+
+  test("timelineDays takes visits in any order and lists none for none", () => {
+    let visits = [visit("https://a.example/", at(1, 9, 0), 1), visit("https://b.example/", at(1, 10, 0), 1)];
+    assertEquals(shape(timelineDays(visits, calendar)), shape(timelineDays([...visits].reverse(), calendar)));
+    assertEquals(timelineDays(visits, calendar)[0].sessions[0].entries[0].url, "https://b.example/");
+    assertEquals(timelineDays([], calendar), []);
+  });
+})();
+
 let failures = [];
 for (let [name, fn] of tests) {
   try {

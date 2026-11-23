@@ -74,6 +74,8 @@ orbito-settings-turn-on-sync = 동기화 켜기
 orbito-settings-choose-what-to-sync = 동기화할 항목 선택
 # The item for the Shell's lists in Firefox's "Choose what to sync".
 orbito-sync-engine-shell = Orbito Pin, Space, Dock
+# The item for Browsing recall's visits, which the timeline shows.
+orbito-sync-engine-recall = Orbito 타임라인
 orbito-settings-sync-now = 지금 동기화
 orbito-settings-newtab-remote-tabs = 새 탭에 다른 기기의 탭 보이기
 orbito-settings-newtab-remote-tabs-hint = 새 탭의 최근 방문 아래에 다른 기기에서 열어 둔 탭을 보여 줍니다.

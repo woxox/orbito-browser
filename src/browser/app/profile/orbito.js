@@ -227,6 +227,9 @@ pref("orbito.interline.google.baseURL", "");
 // other devices (shell/OrbitoShellSyncEngine.sys.mjs), unless turned off in
 // "Choose what to sync".
 pref("services.sync.engine.orbito", true);
+// And Browsing recall's visits, for the timeline
+// (OrbitoRecallSyncEngine.sys.mjs).
+pref("services.sync.engine.orbitorecall", true);
 
 // The import wizard lists Arc and Dia (OrbitoMigrators.sys.mjs), as
 // Firefox's own browser.migrate.<key>.enabled prefs do for its migrators.
